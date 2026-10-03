@@ -1,0 +1,241 @@
+import { DurableObject } from 'cloudflare:workers';
+import { RESULT_COLORS } from '../data/colors.ts';
+import { DISPLAY_MANIFEST } from '../data/display-manifest.ts';
+import { QUESTIONS } from '../data/questions.ts';
+import { ADMIN_COOKIE, DEVICE_COOKIE, authKeyFromToken, clearCookie, newToken, readCookie, sessionCookie } from './auth.ts';
+import { ExhibitCore } from './core.ts';
+import type { Connection, ConnectionMeta, Store } from './core.ts';
+import type { ServerMessage } from '../shared/protocol.ts';
+
+/** Durable ObjectのSQLiteストレージを使うキー・値ストア。 */
+class SqlStore implements Store {
+  constructor(private readonly sql: SqlStorage) {
+    sql.exec('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+  }
+
+  get<T>(key: string): T | undefined {
+    const row = this.sql.exec<{ value: string }>('SELECT value FROM kv WHERE key = ?', key).toArray()[0];
+    return row ? (JSON.parse(row.value) as T) : undefined;
+  }
+
+  put(key: string, value: unknown): void {
+    this.sql.exec(
+      'INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      key,
+      JSON.stringify(value),
+    );
+  }
+
+  delete(key: string): void {
+    this.sql.exec('DELETE FROM kv WHERE key = ?', key);
+  }
+
+  list<T>(prefix: string): [string, T][] {
+    return this.sql
+      .exec<{ key: string; value: string }>(
+        'SELECT key, value FROM kv WHERE key >= ? AND key < ? ORDER BY key',
+        prefix,
+        `${prefix}￿`,
+      )
+      .toArray()
+      .map((row) => [row.key, JSON.parse(row.value) as T]);
+  }
+}
+
+const json = (body: unknown, status = 200, headers: HeadersInit = {}) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers },
+  });
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const left = encoder.encode(a);
+  const right = encoder.encode(b);
+  if (left.byteLength !== right.byteLength) return false;
+  return crypto.subtle.timingSafeEqual(left, right);
+}
+
+/** 展示全体で一つのDurable Object（仕様書9.3節）。 */
+export class Exhibit extends DurableObject<Env> {
+  private readonly core: ExhibitCore;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.core = new ExhibitCore({
+      store: new SqlStore(ctx.storage.sql),
+      now: () => Date.now(),
+      randomId: () => crypto.randomUUID(),
+      randomDigits: (length) => {
+        const values = crypto.getRandomValues(new Uint32Array(length));
+        return Array.from(values, (value) => String(value % 10)).join('');
+      },
+      connections: () =>
+        ctx
+          .getWebSockets()
+          .filter((socket) => socket.readyState === WebSocket.OPEN)
+          .map((socket) => this.wrap(socket)),
+      questions: QUESTIONS,
+      colors: RESULT_COLORS,
+      manifest: DISPLAY_MANIFEST,
+    });
+  }
+
+  private wrap(socket: WebSocket): Connection {
+    return {
+      get meta() {
+        return socket.deserializeAttachment() as ConnectionMeta;
+      },
+      setMeta: (meta) => socket.serializeAttachment(meta),
+      send: (message: ServerMessage) => {
+        try {
+          socket.send(JSON.stringify(message));
+        } catch {
+          // 切断済みの接続への送信失敗は無視する。
+        }
+      },
+      close: (code, reason) => {
+        try {
+          socket.close(code, reason);
+        } catch {
+          // 切断済み。
+        }
+      },
+    };
+  }
+
+  private async schedule(): Promise<void> {
+    const wakeAt = this.core.nextWakeAt();
+    if (wakeAt === null) await this.ctx.storage.deleteAlarm();
+    else await this.ctx.storage.setAlarm(Math.max(wakeAt, Date.now() + 10));
+  }
+
+  /** Workerが Upgrade 前に呼ぶ認可（仕様書9.3節）。 */
+  async authorizeRealtime(token: string | null, role: string | null, screenId: string | null): Promise<number> {
+    const authKey = token ? await authKeyFromToken(token) : null;
+    const check = this.core.authorizeRealtime(authKey, role, screenId);
+    return check.ok ? 200 : check.status;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    this.core.current();
+    try {
+      return await this.route(request);
+    } finally {
+      await this.schedule();
+    }
+  }
+
+  private async route(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+
+    if (path === '/api/realtime') return this.upgrade(request, url);
+    if (path === '/api/pair' && method === 'POST') return this.pair(request);
+    if (path === '/api/session' && method === 'GET') return this.whoami(request);
+    if (path === '/api/admin/login' && method === 'POST') return this.login(request);
+
+    if (path.startsWith('/api/admin/')) {
+      const adminKey = await this.adminKey(request);
+      if (!adminKey) return json({ error: 'UNAUTHENTICATED' }, 401);
+      if (path === '/api/admin/logout' && method === 'POST') {
+        this.core.revokeSession(adminKey);
+        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(ADMIN_COOKIE) });
+      }
+      if (path === '/api/admin/sessions' && method === 'GET') {
+        return json({ sessions: this.core.listDeviceSessions(), availableScreens: this.core.availableScreens() });
+      }
+      const revoke = path.match(/^\/api\/admin\/sessions\/([^/]+)$/);
+      if (revoke && method === 'DELETE') {
+        return this.core.revokeDeviceSessionById(decodeURIComponent(revoke[1]))
+          ? json({ ok: true })
+          : json({ error: 'NOT_FOUND' }, 404);
+      }
+      if (path === '/api/admin/pairing-codes' && method === 'POST') {
+        const body = (await request.json().catch(() => null)) as { role?: unknown; screenId?: unknown } | null;
+        if (body?.role !== 'controller' && body?.role !== 'display') return json({ error: 'INVALID_REQUEST' }, 400);
+        const screenId = typeof body.screenId === 'string' ? body.screenId : null;
+        const issued = this.core.issuePairingCode(body.role, screenId);
+        return issued.ok ? json(issued) : json({ error: 'INVALID_REQUEST', message: issued.reason }, 400);
+      }
+    }
+    return json({ error: 'NOT_FOUND' }, 404);
+  }
+
+  private async adminKey(request: Request): Promise<string | null> {
+    const token = readCookie(request, ADMIN_COOKIE);
+    if (!token) return null;
+    const authKey = await authKeyFromToken(token);
+    const session = this.core.resolveSession(authKey);
+    return session?.kind === 'admin' ? authKey : null;
+  }
+
+  private async login(request: Request): Promise<Response> {
+    const body = (await request.json().catch(() => null)) as { passphrase?: unknown } | null;
+    const expected = this.env.ADMIN_PASSPHRASE;
+    if (!expected || typeof body?.passphrase !== 'string' || !timingSafeEqual(body.passphrase, expected)) {
+      return json({ error: 'UNAUTHENTICATED' }, 401);
+    }
+    const token = newToken();
+    this.core.issueSession(await authKeyFromToken(token), 'admin', 'admin', null);
+    return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(ADMIN_COOKIE, token) });
+  }
+
+  private async pair(request: Request): Promise<Response> {
+    const body = (await request.json().catch(() => null)) as { code?: unknown } | null;
+    if (typeof body?.code !== 'string' || !/^\d{6}$/.test(body.code)) return json({ error: 'INVALID_CODE' }, 400);
+    const token = newToken();
+    const paired = this.core.pair(body.code, await authKeyFromToken(token));
+    if (!paired.ok) return json({ error: 'INVALID_CODE' }, 400);
+    const { role, screenId } = paired.session;
+    return json(
+      { role, screenId, location: role === 'display' ? `/display/${encodeURIComponent(screenId ?? '')}` : '/' },
+      200,
+      { 'Set-Cookie': sessionCookie(DEVICE_COOKIE, token) },
+    );
+  }
+
+  private async whoami(request: Request): Promise<Response> {
+    const token = readCookie(request, DEVICE_COOKIE);
+    const session = token ? this.core.resolveSession(await authKeyFromToken(token)) : null;
+    if (!session || session.kind !== 'device') return json({ error: 'UNAUTHENTICATED' }, 401);
+    return json({ role: session.role, screenId: session.screenId });
+  }
+
+  private async upgrade(request: Request, url: URL): Promise<Response> {
+    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
+    const role = url.searchParams.get('role');
+    const cookieName = role === 'admin' ? ADMIN_COOKIE : DEVICE_COOKIE;
+    const token = readCookie(request, cookieName);
+    const authKey = token ? await authKeyFromToken(token) : null;
+    const check = this.core.authorizeRealtime(authKey, role, url.searchParams.get('screenId'));
+    if (!check.ok || !authKey) return new Response(null, { status: check.ok ? 401 : check.status });
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment(this.core.createConnectionMeta(authKey, check.session, crypto.randomUUID()));
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    this.core.handleMessage(this.wrap(socket), message);
+    await this.schedule();
+  }
+
+  async webSocketClose(socket: WebSocket): Promise<void> {
+    this.core.handleClose(this.wrap(socket));
+    await this.schedule();
+  }
+
+  async webSocketError(socket: WebSocket): Promise<void> {
+    this.core.handleClose(this.wrap(socket));
+    await this.schedule();
+  }
+
+  async alarm(): Promise<void> {
+    this.core.handleAlarm();
+    await this.schedule();
+  }
+}
