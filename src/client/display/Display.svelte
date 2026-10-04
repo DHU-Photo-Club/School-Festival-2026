@@ -13,7 +13,8 @@
   import PhotoImage from '../common/PhotoImage.svelte';
   import { RealtimeClient } from '../lib/realtime.ts';
   import { fetchDeviceSession, watchReducedMotion } from '../lib/session.ts';
-  import { drawScene } from './renderer.ts';
+  import { createRenderer } from './renderer.ts';
+  import type { SceneRenderer } from './renderer.ts';
 
   let { screenId }: { screenId: string } = $props();
 
@@ -42,6 +43,7 @@
   let veil = $state<HTMLDivElement>();
 
   let client: RealtimeClient | null = null;
+  let renderer: SceneRenderer | null = null;
   let frame = 0;
   let lastDrawn = '';
   let idleReference: number | null = null;
@@ -109,11 +111,16 @@
     });
   }
 
+  /**
+   * canvasはCSS画素の半分の解像度で描き、表示時に引き伸ばす。描くのはなだらかなグラデーションと
+   * 全面の塗りだけなので見た目は変わらず、フラグメントシェーダーの負荷が `devicePixelRatio` に依存しない。
+   */
+  const CANVAS_SCALE = 0.5;
+
   function resize() {
     if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(window.innerWidth * ratio);
-    canvas.height = Math.round(window.innerHeight * ratio);
+    canvas.width = Math.max(1, Math.round(window.innerWidth * CANVAS_SCALE));
+    canvas.height = Math.max(1, Math.round(window.innerHeight * CANVAS_SCALE));
     lastDrawn = '';
   }
 
@@ -216,8 +223,8 @@
     applyLayers(scene);
     const key = JSON.stringify(scene.primitives);
     if (key !== lastDrawn) {
-      const context = canvas.getContext('2d', { alpha: false });
-      if (context) drawScene(context, scene.primitives);
+      renderer ??= createRenderer(canvas, () => (lastDrawn = ''));
+      renderer.draw(scene.primitives);
       lastDrawn = key;
     }
   }

@@ -101,7 +101,7 @@ test('reduced-motion でも全状態が色面の切り替えと静止した構�
   await page.getByRole('button', { name: '診断をはじめる' }).click();
   await page.getByRole('button', { name: '進む' }).click();
 
-  // 質問: 輪は静止して表示される。
+  // 質問: 色のにじみは静止して表示される。
   // 属性は状態の受信で、canvas は次の描画フレームで変わるため、描画を待ってから比べる。
   await expect(displays[0].page.locator('main.display')).toHaveAttribute('data-phase', 'question');
   await expect.poll(() => canvasPixel(displays[0].page, 0.5, 0.3)).not.toBe('#0B0B0B');
@@ -109,7 +109,7 @@ test('reduced-motion でも全状態が色面の切り替えと静止した構�
   const still = await canvasDigest(displays[0].page);
   await displays[0].page.waitForTimeout(1_000);
   expect(await canvasDigest(displays[0].page)).toBe(still);
-  // 画面ごとに輪の区画がずれて見える。
+  // 画面ごとににじみの区画がずれて見える。
   expect(await canvasDigest(displays[1].page)).not.toBe(still);
 
   for (let index = 0; index < QUESTIONS.length; index += 1) {
@@ -118,7 +118,7 @@ test('reduced-motion でも全状態が色面の切り替えと静止した構�
     const before = await canvasDigest(displays[0].page);
     await page.getByRole('button', { name: '次へ' }).click();
     if (index < QUESTIONS.length - 1) {
-      // 一問確定すると、輪を一区画回した構図へ即時に切り替わり、その後は静止する。
+      // 一問確定すると、にじみを一区画回した構図へ即時に切り替わり、その後は静止する。
       await expect.poll(() => canvasDigest(displays[0].page), { timeout: 1_000 }).not.toBe(before);
       const after = await canvasDigest(displays[0].page);
       await displays[0].page.waitForTimeout(500);

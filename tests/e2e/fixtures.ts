@@ -105,29 +105,42 @@ export class ExhibitHarness {
   }
 }
 
+/**
+ * 展示ディスプレイのcanvasを読む。展示ディスプレイはWebGLで描き、描画結果を保持する設定にしているため、
+ * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。`stride` 画素ごとに一つ読む。
+ */
+async function readCanvas(page: Page, x: number, y: number, w: number, h: number, stride: number): Promise<number[]> {
+  return page.evaluate(
+    ([px, py, pw, ph, step]) => {
+      const source = document.querySelector('canvas') as HTMLCanvasElement;
+      const copy = document.createElement('canvas');
+      copy.width = source.width;
+      copy.height = source.height;
+      const context = copy.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+      context.drawImage(source, 0, 0);
+      const left = Math.min(copy.width - 1, Math.floor(copy.width * px));
+      const top = Math.min(copy.height - 1, Math.floor(copy.height * py));
+      const { data } = context.getImageData(left, top, Math.max(1, Math.floor(copy.width * pw)), Math.max(1, Math.floor(copy.height * ph)));
+      const samples: number[] = [];
+      for (let i = 0; i < data.length; i += step * 4) samples.push(data[i], data[i + 1], data[i + 2]);
+      return samples;
+    },
+    [x, y, w, h, stride] as const,
+  );
+}
+
 /** 展示ディスプレイのcanvasの画素を読む。座標は0〜1の比率。 */
 export async function canvasPixel(page: Page, x: number, y: number): Promise<string> {
-  return page.evaluate(
-    ([px, py]) => {
-      const canvas = document.querySelector('canvas') as HTMLCanvasElement;
-      const context = canvas.getContext('2d') as CanvasRenderingContext2D;
-      const [r, g, b] = context.getImageData(Math.floor(canvas.width * px), Math.floor(canvas.height * py), 1, 1).data;
-      return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
-    },
-    [x, y],
-  );
+  const [r, g, b] = await readCanvas(page, x, y, 0, 0, 1);
+  return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
 }
 
 /** canvas全体の画素の要約（変化の検出に使う）。 */
 export async function canvasDigest(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const canvas = document.querySelector('canvas') as HTMLCanvasElement;
-    const context = canvas.getContext('2d') as CanvasRenderingContext2D;
-    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-    let hash = 0;
-    for (let i = 0; i < data.length; i += 4099) hash = (hash * 31 + data[i]) | 0;
-    return String(hash);
-  });
+  const samples = await readCanvas(page, 0, 0, 1, 1, 1023);
+  let hash = 0;
+  for (const value of samples) hash = (hash * 31 + value) | 0;
+  return String(hash);
 }
 
 /** iPadの質問画面で、スライダーの位置（0〜4）をタップする。 */

@@ -45,7 +45,7 @@ for (const displayCount of [1, 3]) {
       const digest = await canvasDigest(displays[0].page);
       await next.click();
       if (index < QUESTIONS.length - 1) {
-        // 一問確定するたびに全画面の revision が増え、輪が回り始める。
+        // 一問確定するたびに全画面の revision が増え、にじみが回り始める。
         for (const display of displays) await expect.poll(() => revisionOf(display)).toBe(before + 1);
         await expect.poll(() => canvasDigest(displays[0].page), { timeout: 3_000 }).not.toBe(digest);
       }

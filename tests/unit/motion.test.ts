@@ -2,17 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { RESULT_COLORS } from '../../src/data/colors.ts';
 import { INACTIVITY_MS, JUDGING_MS } from '../../src/shared/machine.ts';
 import {
+  BLOOM_WARP,
   COLORS,
   computeScene,
   idleCrossfade,
   idleCycleIndex,
   NEUTRAL_ORDER,
   RESULT_FORMS,
+  resultFormPrimitives,
   ringAngle,
   ringOrder,
   ringSteps,
+  spectrumOffset,
 } from '../../src/shared/motion.ts';
-import type { Scene, SceneInput } from '../../src/shared/motion.ts';
+import type { Primitive, Scene, SceneInput } from '../../src/shared/motion.ts';
 import { COLOR_IDS } from '../../src/shared/types.ts';
 import type { ColorId, DisplayState } from '../../src/shared/types.ts';
 
@@ -46,7 +49,7 @@ const questionState = (lastOperationAt: number, revision = 12): Partial<DisplayS
   revision,
 });
 
-const ringOf = (scene: Scene) => scene.primitives.find((primitive) => primitive.type === 'ring');
+const spectrumOf = (scene: Scene) => scene.primitives.find((primitive) => primitive.type === 'spectrum');
 
 describe('決定性', () => {
   it('同じ入力からは同じ描画内容を返す', () => {
@@ -64,9 +67,16 @@ describe('決定性', () => {
     expect(ringAngle('s', 5, 1)).toBeCloseTo(ringAngle('s', 4, 0));
     expect(ringAngle('s', 6, 2)).toBeCloseTo(ringAngle('s', 5, 1));
   });
+
+  it('色のにじみは右隣の画面へ一区画ずつ続き、一問確定すると右へ一区画ずれる', () => {
+    // 区画の位置 = x / 幅 × span - offset。右隣の画面は一区画先から始まる。
+    expect(spectrumOffset('s', 5, 1)).toBeCloseTo(spectrumOffset('s', 5, 0) - 1);
+    // 一問確定すると、右隣の画面が直前の自画面と同じ構図になる。
+    expect(spectrumOffset('s', 6, 1)).toBeCloseTo(spectrumOffset('s', 5, 0));
+  });
 });
 
-describe('質問中の輪', () => {
+describe('質問中の色のにじみ', () => {
   it('revision が増えた時刻から6秒かけて一区画回る', () => {
     const changedAt = T0 + 20_000;
     const state = { ...base(questionState(changedAt)).state };
@@ -80,15 +90,22 @@ describe('質問中の輪', () => {
     const at = T0 + 23_456;
     const first = computeScene(base(questionState(T0 + 20_000), { now: at }));
     const reconnected = computeScene(base(questionState(T0 + 20_000), { now: at }));
-    expect(ringOf(reconnected)).toEqual(ringOf(first));
+    expect(spectrumOf(reconnected)).toEqual(spectrumOf(first));
   });
 
   it('8色を同じ面積で並べ、どの色も強調しない', () => {
-    const ring = ringOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
-    expect(ring?.type).toBe('ring');
-    if (ring?.type !== 'ring') return;
-    expect(ring.colors).toHaveLength(8);
-    expect(new Set(ring.colors).size).toBe(8);
+    const spectrum = spectrumOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
+    expect(spectrum?.type).toBe('spectrum');
+    if (spectrum?.type !== 'spectrum') return;
+    expect(spectrum.colors).toHaveLength(8);
+    expect(new Set(spectrum.colors).size).toBe(8);
+    expect(spectrum.intensity).toBe(1);
+  });
+
+  it('ノイズは質問の開始からの経過秒で流れ、reduced-motion では流れない', () => {
+    const at = (reducedMotion: boolean) => spectrumOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 12_500, reducedMotion })));
+    expect(at(false)).toMatchObject({ drift: 12.5 });
+    expect(at(true)).toMatchObject({ drift: 0 });
   });
 
   it('reduced-motion では呼吸せず、時刻が進んでも同じ構図のまま', () => {
@@ -100,7 +117,7 @@ describe('質問中の輪', () => {
   it('reduced-motion でも一問確定で構図が切り替わる', () => {
     const before = computeScene(base(questionState(T0 + 1_000, 12), { now: T0 + 5_000, reducedMotion: true }));
     const after = computeScene(base(questionState(T0 + 5_000, 13), { now: T0 + 5_001, reducedMotion: true }));
-    expect(ringOf(after)).not.toEqual(ringOf(before));
+    expect(spectrumOf(after)).not.toEqual(spectrumOf(before));
   });
 });
 
@@ -122,7 +139,7 @@ describe('判定と結果', () => {
   it('判定は1.2秒で黒へ沈む', () => {
     const scene = computeScene(base(judging('red'), { now: T0 + 1_500 }));
     expect(scene.primitives).toContainEqual({ type: 'fill', color: COLORS.dark, alpha: 1 });
-    expect(ringOf(scene)).toBeUndefined();
+    expect(spectrumOf(scene)).toBeUndefined();
   });
 
   it.each(COLOR_IDS)('%s: 結果開始の最初のフレームで結果色の形が見えている', (colorId) => {
@@ -177,8 +194,42 @@ describe('判定と結果', () => {
     const state: Partial<DisplayState> = { phase: 'result', resultColorId: 'cyan', phaseStartedAt: start, phaseEndsAt: start + 60_000 };
     const even = computeScene(base(state, { now: start + 200, displayOrder: 0 })).primitives[1];
     const odd = computeScene(base(state, { now: start + 200, displayOrder: 1 })).primitives[1];
-    expect(even).toMatchObject({ type: 'rect', x: 0 });
-    expect(odd.type === 'rect' && odd.x + odd.w).toBeCloseTo(1920);
+    expect(even).toMatchObject({ type: 'bloom', shape: 'line', x: 0, dx: 1 });
+    expect(odd).toMatchObject({ type: 'bloom', shape: 'line', x: 1920, dx: -1 });
+  });
+
+  /** 描画側と同じ式で、点 `(px, py)` の起点からの距離を求める。 */
+  const distance = (bloom: Extract<Primitive, { type: 'bloom' }>, px: number, py: number, width: number, height: number) => {
+    const along = (px - bloom.x) * bloom.dx + (py - bloom.y) * bloom.dy;
+    if (bloom.shape === 'line') return along;
+    if (bloom.shape === 'band') return Math.abs(along);
+    return Math.min(px, width - px, py, height - py);
+  };
+
+  it.each(COLOR_IDS)('%s: 広がり始めは画面の一部だけに色があり、円の形を使わない', (colorId) => {
+    const blooms = resultFormPrimitives(colorId, '#FFFFFF', 0, 1920, 1080, 0, 0) as Extract<Primitive, { type: 'bloom' }>[];
+    for (const bloom of blooms) {
+      expect(['line', 'band', 'frame']).toContain(bloom.shape);
+      if (bloom.shape !== 'frame') expect(Math.hypot(bloom.dx, bloom.dy)).toBeCloseTo(1);
+    }
+    const covered = (px: number, py: number) => blooms.some((bloom) => distance(bloom, px, py, 1920, 1080) < bloom.reach + bloom.feather * (1 + BLOOM_WARP));
+    expect(covered(960, 540) && covered(0, 0) && covered(1920, 1080) && covered(0, 1080) && covered(1920, 0)).toBe(false);
+  });
+
+  it.each(COLOR_IDS)('%s: 広がりの終わりでは、縁がノイズで揺れても画面全体を塗りつぶす', (colorId) => {
+    for (const [width, height] of [
+      [1920, 1080],
+      [1080, 1920],
+    ]) {
+      const blooms = resultFormPrimitives(colorId, '#FFFFFF', 1, width, height, 0, 0) as Extract<Primitive, { type: 'bloom' }>[];
+      for (let gx = 0; gx <= 8; gx += 1) {
+        for (let gy = 0; gy <= 8; gy += 1) {
+          const [px, py] = [(width * gx) / 8, (height * gy) / 8];
+          const covered = blooms.some((bloom) => distance(bloom, px, py, width, height) + bloom.feather * BLOOM_WARP <= bloom.reach - bloom.feather);
+          expect(covered, `${width}x${height} (${px}, ${py})`).toBe(true);
+        }
+      }
+    }
   });
 });
 
