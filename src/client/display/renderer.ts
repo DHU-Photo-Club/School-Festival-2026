@@ -49,14 +49,6 @@ export function drawScene(context: CanvasRenderingContext2D, primitives: readonl
           context.fill();
         }
         break;
-      case 'fan':
-        context.beginPath();
-        context.moveTo(primitive.cx, primitive.cy);
-        context.arc(primitive.cx, primitive.cy, primitive.r, primitive.start, primitive.start + primitive.sweep);
-        context.closePath();
-        context.fillStyle = primitive.color;
-        context.fill();
-        break;
     }
   }
   context.globalAlpha = 1;

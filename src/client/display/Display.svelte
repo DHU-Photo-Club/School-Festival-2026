@@ -128,13 +128,18 @@
     resultChoice = { sessionId, colorId, photo: status === 'loaded' ? photo : null };
   }
 
+  /** 値が変わったときだけ書き換え、変化のないフレームでスタイルの再計算を起こさない。 */
+  function setStyle(element: HTMLElement | undefined, property: 'opacity' | 'backgroundColor', value: string) {
+    if (element && element.style[property] !== value) element.style[property] = value;
+  }
+
+  const opacity = (value: number) => String(Math.round(value * 1000) / 1000);
+
   function applyLayers(scene: Scene) {
-    if (idleLayer) idleLayer.style.opacity = String(scene.idleLayer);
-    if (resultLayer) resultLayer.style.opacity = String(scene.resultLayer);
-    if (veil) {
-      veil.style.opacity = scene.veil ? String(scene.veil.opacity) : '0';
-      if (scene.veil) veil.style.backgroundColor = scene.veil.color;
-    }
+    setStyle(idleLayer, 'opacity', opacity(scene.idleLayer));
+    setStyle(resultLayer, 'opacity', opacity(scene.resultLayer));
+    setStyle(veil, 'opacity', opacity(scene.veil?.opacity ?? 0));
+    if (scene.veil) setStyle(veil, 'backgroundColor', scene.veil.color);
   }
 
   function tick(timestamp: number) {
@@ -149,10 +154,10 @@
       if (nextCycle !== cycle) cycle = nextCycle;
       const fade = idleCrossfade(now, idleReference, reducedMotion);
       const showPrevious = now - idleReference >= 8_000;
-      idleLayer?.querySelectorAll<HTMLElement>('[data-slot]').forEach((element) => {
+      for (const element of idleLayer?.querySelectorAll<HTMLElement>('[data-slot]') ?? []) {
         const slot = element.dataset.slot;
-        element.style.opacity = slot === 'current' ? String(fade) : slot === 'previous' && showPrevious ? String(1 - fade) : '0';
-      });
+        setStyle(element, 'opacity', opacity(slot === 'current' ? fade : slot === 'previous' && showPrevious ? 1 - fade : 0));
+      }
     }
     if (state.phase === 'idle' && previousBackground && now - state.phaseStartedAt > IDLE_RETURN_MS) {
       previousBackground = null;

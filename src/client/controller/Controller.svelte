@@ -249,8 +249,9 @@
           <Ring sessionId={exhibit.sessionId} angle={ring.angle} size="64px" />
           <p class="progress">{exhibit.questionIndex + 1} / {QUESTIONS.length}</p>
         </header>
-        <h1 class="prompt">{question.prompt}</h1>
-        {#key question.id}
+        <div class="body">
+          <h1 class="prompt">{question.prompt}</h1>
+          {#key question.id}
           <Slider
             {question}
             value={draft}
@@ -258,7 +259,8 @@
             onselect={(index) => (draft = index)}
             oninteract={(value) => (interacting = value)}
           />
-        {/key}
+          {/key}
+        </div>
         <footer>
           {#if exhibit.questionIndex > 0}
             <button class="secondary-button" disabled={!online || pending !== null} onclick={() => send({ name: 'back' })}>
@@ -374,7 +376,7 @@
   }
   .question {
     display: grid;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto 1fr auto;
     gap: 32px;
     justify-items: center;
     align-items: center;
@@ -391,6 +393,12 @@
   .progress {
     font-size: 20px;
     letter-spacing: 0.1em;
+  }
+  .question .body {
+    display: grid;
+    gap: 56px;
+    justify-items: center;
+    width: 100%;
   }
   .prompt {
     text-align: center;

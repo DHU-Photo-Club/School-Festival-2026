@@ -37,7 +37,7 @@ export const RESULT_FORMS: Readonly<Record<ColorId, { form: ResultForm; duration
   green: { form: 'risingBand', durationMs: 2_200 },
   cyan: { form: 'sweepingBand', durationMs: 1_600 },
   blue: { form: 'closingRing', durationMs: 2_000 },
-  violet: { form: 'turningFan', durationMs: 2_600 },
+  violet: { form: 'cornerCircle', durationMs: 2_600 },
   magenta: { form: 'meetingCircles', durationMs: 1_400 },
 };
 
@@ -48,7 +48,7 @@ export type ResultForm =
   | 'risingBand'
   | 'sweepingBand'
   | 'closingRing'
-  | 'turningFan'
+  | 'cornerCircle'
   | 'meetingCircles';
 
 /** 色相が隣り合わない固定順（docs/visual-language.md 2.2節）。 */
@@ -142,8 +142,7 @@ export type Primitive =
   | { type: 'ring'; cx: number; cy: number; outer: number; inner: number; angle: number; colors: string[] }
   | { type: 'circle'; cx: number; cy: number; r: number; color: string }
   | { type: 'rect'; x: number; y: number; w: number; h: number; color: string }
-  | { type: 'ellipseHole'; cx: number; cy: number; rx: number; ry: number; color: string; holeColor: string }
-  | { type: 'fan'; cx: number; cy: number; r: number; start: number; sweep: number; color: string };
+  | { type: 'ellipseHole'; cx: number; cy: number; rx: number; ry: number; color: string; holeColor: string };
 
 export interface Scene {
   primitives: Primitive[];
@@ -240,16 +239,8 @@ export function resultFormPrimitive(
         holeColor: COLORS.dark,
       };
     }
-    case 'turningFan':
-      return {
-        type: 'fan',
-        cx: width / 2,
-        cy: height / 2,
-        r: halfDiagonal * 1.01,
-        start: -Math.PI / 2,
-        sweep: lerp(Math.PI * 0.1, Math.PI * 2, p),
-        color,
-      };
+    case 'cornerCircle':
+      return { type: 'circle', cx: 0, cy: 0, r: lerp(seed * 1.5, Math.hypot(width, height), p), color };
     case 'meetingCircles':
       return { type: 'circle', cx: 0, cy: height / 2, r: lerp(seed, halfDiagonal * 1.02, p), color };
   }
