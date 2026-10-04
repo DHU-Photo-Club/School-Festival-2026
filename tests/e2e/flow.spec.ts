@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { RESULT_COLORS } from '../../src/data/colors.ts';
+import { PHOTOS } from '../../src/data/photos.ts';
+import { resultPhotoFor } from '../../src/shared/assignment.ts';
 import { QUESTIONS } from '../../src/data/questions.ts';
 import { canvasDigest, canvasPixel, ExhibitHarness, sliderValue, tapStop } from './fixtures.ts';
 import type { Device } from './fixtures.ts';
@@ -71,16 +73,24 @@ for (const displayCount of [1, 3]) {
       await expect(display.page.locator('main.display')).toHaveAttribute('data-result-color', color?.id ?? '');
     }
     await displays[0].page.waitForTimeout(4_500);
-    const shown = new Set<string>();
-    for (const display of displays) {
+    const shown: string[] = [];
+    for (const [displayOrder, display] of displays.entries()) {
       expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(color?.backgroundColor);
-      await expect(display.page.locator('main.display')).toHaveAttribute('data-result-view', 'photo');
-      const photo = display.page.locator(`.photo[data-result-color="${color?.id}"] img`);
-      await expect(photo).toBeVisible();
-      shown.add((await photo.getAttribute('data-photo-id')) ?? '');
+      // 写真がある画面は写真、足りない画面は複製せずに色名のタイポグラフィ（仕様書7.2.4節）。
+      const assigned = color ? resultPhotoFor(PHOTOS, color.id, displayOrder) : null;
+      if (assigned) {
+        await expect(display.page.locator('main.display')).toHaveAttribute('data-result-view', 'photo');
+        const photo = display.page.locator(`.photo[data-result-color="${color?.id}"] img`);
+        await expect(photo).toBeVisible();
+        await expect(photo).toHaveAttribute('data-photo-id', assigned.id);
+        shown.push(assigned.id);
+      } else {
+        await expect(display.page.locator('main.display')).toHaveAttribute('data-result-view', 'typography');
+        await expect(display.page.locator('.color-name')).toHaveText(name);
+      }
     }
     // 同じ写真を複数の画面へ割り当てない。
-    expect(shown.size).toBe(displays.length);
+    expect(new Set(shown).size).toBe(shown.length);
 
     // 管理画面に同期差が表示される。
     await expect(harness.admin.page.getByTestId('sync-spread')).not.toHaveText('—');

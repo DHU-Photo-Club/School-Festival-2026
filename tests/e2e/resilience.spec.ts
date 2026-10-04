@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { RESULT_COLORS } from '../../src/data/colors.ts';
+import { PHOTOS } from '../../src/data/photos.ts';
+import { resultPhotoFor } from '../../src/shared/assignment.ts';
+import { COLOR_IDS } from '../../src/shared/types.ts';
 import { QUESTIONS } from '../../src/data/questions.ts';
-import { ExhibitHarness, tapStop } from './fixtures.ts';
+import { controllableNetwork, ExhibitHarness, expectedResultView, tapStop } from './fixtures.ts';
 import type { Device } from './fixtures.ts';
 
 async function startQuestions(ipad: Device) {
@@ -79,18 +82,21 @@ test('通信断中のiPadは操作できず、復旧後は welcome のサーバ�
   test.setTimeout(120_000);
   const harness = await ExhibitHarness.open(browser);
   const [display] = await harness.pairDisplays(1);
-  const ipad = await harness.pair('controller');
+  let network: Awaited<ReturnType<typeof controllableNetwork>> | undefined;
+  const ipad = await harness.pair('controller', null, {}, async (context) => {
+    network = await controllableNetwork(context);
+  });
   await startQuestions(ipad);
   await tapStop(ipad.page, 2);
 
-  await ipad.context.setOffline(true);
+  await network?.down();
   await expect(ipad.page.getByText('再接続しています')).toBeVisible({ timeout: 25_000 });
   await expect(ipad.page.getByRole('button', { name: '次へ' })).toBeDisabled();
   // 通信断の間にほかの端末から状態が変わる。
   await harness.admin.page.getByRole('button', { name: '強制リセット' }).click();
   await expect(display.page.locator('main.display')).toHaveAttribute('data-phase', 'idle');
 
-  await ipad.context.setOffline(false);
+  await network?.up();
   await expect(ipad.page.getByText('再接続しています')).toHaveCount(0, { timeout: 30_000 });
   await expect(ipad.page.getByRole('button', { name: '診断をはじめる' })).toBeVisible();
   await expect(harness.admin.page.getByTestId('device-controller')).toContainText('接続中');
@@ -103,14 +109,17 @@ test('通信断中のiPadは操作できず、復旧後は welcome のサーバ�
 test('切断した展示ディスプレイは管理画面で切断表示になり、再接続すると接続中へ戻る', async ({ browser }) => {
   test.setTimeout(120_000);
   const harness = await ExhibitHarness.open(browser);
-  const [display] = await harness.pairDisplays(1);
+  let network: Awaited<ReturnType<typeof controllableNetwork>> | undefined;
+  const display = await harness.pair('display', 'display-1', {}, async (context) => {
+    network = await controllableNetwork(context);
+  });
   const row = harness.admin.page.getByTestId('device-display-1');
   await expect(row).toContainText('接続中');
-  await display.context.setOffline(true);
+  await network?.down();
   await expect(row).toContainText('切断', { timeout: 30_000 });
   // 切断中も展示画面は最後の表示を維持し、来場者向けの警告を出さない。
   await expect(display.page.getByText('再接続')).toHaveCount(0);
-  await display.context.setOffline(false);
+  await network?.up();
   await expect(row).toContainText('接続中', { timeout: 30_000 });
   await display.context.close();
   await harness.close();
@@ -136,8 +145,9 @@ test('結果写真を読み込めない画面は開始時刻を遅らせずタ�
   const harness = await ExhibitHarness.open(browser);
   const code = await harness.issueCode('display', 'display-1');
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
-  // display-1 に割り当てられる各色の写真（resultOrder 0）の取得を失敗させる。
-  await context.route(/\/photos\/kari-[a-z]+-01\.(avif|jpg)$/, (route) => route.abort());
+  // display-1 に割り当てられる各色の写真の取得を失敗させる。
+  const assigned = COLOR_IDS.flatMap((colorId) => resultPhotoFor(PHOTOS, colorId, 0)?.id ?? []);
+  await context.route(new RegExp(`/photos/(${assigned.join('|')})\\.(avif|jpg)$`), (route) => route.abort());
   await context.request.post('/api/pair', { data: { code } });
   const page = await context.newPage();
   await page.goto('/display/display-1');
@@ -152,7 +162,7 @@ test('結果写真を読み込めない画面は開始時刻を遅らせずタ�
   await expect(page.locator('main.display')).toHaveAttribute('data-result-view', 'typography');
   await expect(page.locator('.color-name')).toHaveText(name);
   await expect(page.locator('.color-name')).toHaveCSS('color', hexToRgb(color?.foregroundColor ?? ''));
-  await expect(other.page.locator('main.display')).toHaveAttribute('data-result-view', 'photo');
+  await expect(other.page.locator('main.display')).toHaveAttribute('data-result-view', expectedResultView(color?.id ?? 'red', 1));
   // 写真のない画面も同じ結果開始時刻で計測される。
   await expect(harness.admin.page.getByTestId('sync-spread')).not.toHaveText('—');
   const spread = Number((await harness.admin.page.getByTestId('sync-spread').innerText()).replace('ms', ''));

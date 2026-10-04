@@ -16,7 +16,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#F8E4E7',
     message: '近くにあるものの温度を、まっすぐ受け取れる色。',
     tieBreakPriority: 0,
-    representativePhotoId: 'kari-red-01',
+    representativePhotoId: 'sdi1218-3',
   },
   {
     id: 'orange',
@@ -26,7 +26,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#FCEADF',
     message: '夕方のように、誰かと過ごす時間をあたためる色。',
     tieBreakPriority: 3,
-    representativePhotoId: 'kari-orange-01',
+    representativePhotoId: 'sdi0743',
   },
   {
     id: 'yellow',
@@ -36,7 +36,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#FBF1D6',
     message: 'ひらけた場所の光のように、軽やかに広がる色。',
     tieBreakPriority: 1,
-    representativePhotoId: 'kari-yellow-01',
+    representativePhotoId: 'sdi1092-2',
   },
   {
     id: 'green',
@@ -46,7 +46,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#DDF2EA',
     message: '水と葉のあいだで、静かに育っていく色。',
     tieBreakPriority: 2,
-    representativePhotoId: 'kari-green-01',
+    representativePhotoId: 'sdi0225',
   },
   {
     id: 'cyan',
@@ -56,7 +56,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#DCF1F4',
     message: '風が通りぬけるように、景色を映して澄んでいく色。',
     tieBreakPriority: 4,
-    representativePhotoId: 'kari-cyan-01',
+    representativePhotoId: 'sdi0565-2',
   },
   {
     id: 'blue',
@@ -66,7 +66,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#E0E7F6',
     message: '夜の奥行きのなかで、ひとつのことに向かう色。',
     tieBreakPriority: 6,
-    representativePhotoId: 'kari-blue-01',
+    representativePhotoId: 'sdi1195-3',
   },
   {
     id: 'violet',
@@ -76,7 +76,7 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#ECE4F6',
     message: '影と余韻をまとって、いつもと違う景色を見せる色。',
     tieBreakPriority: 7,
-    representativePhotoId: 'kari-violet-01',
+    representativePhotoId: 'sdi1031-2',
   },
   {
     id: 'magenta',
@@ -86,6 +86,6 @@ export const RESULT_COLORS: readonly ResultColor[] = [
     foregroundColor: '#F8E1EE',
     message: '遊びごころで、その場をはなやかに動かす色。',
     tieBreakPriority: 5,
-    representativePhotoId: 'kari-magenta-01',
+    representativePhotoId: 'sdi1070-2',
   },
 ];

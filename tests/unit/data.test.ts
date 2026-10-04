@@ -18,6 +18,7 @@ import { createQrModel, generateQrWithRetry, QR_RETRY_DELAY_MS } from '../../src
 import { resultAvailability } from '../../src/worker/result-page.ts';
 
 const data = { colors: RESULT_COLORS, questions: QUESTIONS, photos: PHOTOS, manifest: DISPLAY_MANIFEST };
+const representative = (colorId: string) => RESULT_COLORS.find((color) => color.id === colorId)?.representativePhotoId;
 
 describe('展示データ', () => {
   it('仮データは検証を通る', () => {
@@ -30,10 +31,10 @@ describe('展示データ', () => {
 
   it('代表画像が同色でない、配布不可、クレジットなし、存在しない場合を検出する', () => {
     const photos = PHOTOS.map((photo) =>
-      photo.id === 'kari-red-01' ? { ...photo, shareAllowed: false } : photo.id === 'kari-blue-01' ? { ...photo, creditName: null } : photo,
+      photo.id === representative('red') ? { ...photo, shareAllowed: false } : photo.id === representative('blue') ? { ...photo, creditName: null } : photo,
     );
     const colors = RESULT_COLORS.map((color) =>
-      color.id === 'green' ? { ...color, representativePhotoId: 'kari-cyan-01' } : color.id === 'violet' ? { ...color, representativePhotoId: 'none' } : color,
+      color.id === 'green' ? { ...color, representativePhotoId: representative('cyan') ?? '' } : color.id === 'violet' ? { ...color, representativePhotoId: 'none' } : color,
     );
     const errors = validateExhibitData({ ...data, photos, colors });
     expect(errors).toEqual(
@@ -47,13 +48,13 @@ describe('展示データ', () => {
   });
 
   it('写真IDの重複と形式違反、未定義の resultColorId を検出する', () => {
-    const photos = [...PHOTOS, { ...PHOTOS[0] }, { ...PHOTOS[1], id: 'Bad_ID' }, { ...PHOTOS[2], id: 'kari-x', resultColorId: 'pink' as never }];
+    const photos = [...PHOTOS, { ...PHOTOS[0] }, { ...PHOTOS[1], id: 'Bad_ID' }, { ...PHOTOS[2], id: 'photo-x', resultColorId: 'pink' as never }];
     const errors = validateExhibitData({ ...data, photos });
     expect(errors).toEqual(
       expect.arrayContaining([
         `写真ID ${PHOTOS[0].id} が重複しています`,
         '写真ID Bad_ID の形式が不正です',
-        '写真 kari-x の resultColorId pink は未定義です',
+        '写真 photo-x の resultColorId pink は未定義です',
       ]),
     );
   });
@@ -82,8 +83,8 @@ describe('展示データ', () => {
   }, 60_000);
 
   it('写真ファイルの欠落を検出する', async () => {
-    const errors = await validatePhotoFiles([{ ...PHOTOS[0], id: 'kari-missing' }], DISPLAY_MANIFEST, join(import.meta.dirname, '..', '..', 'public', 'photos'));
-    expect(errors).toEqual(['kari-missing.avif: ファイルがありません', 'kari-missing.jpg: ファイルがありません']);
+    const errors = await validatePhotoFiles([{ ...PHOTOS[0], id: 'missing-photo' }], DISPLAY_MANIFEST, join(import.meta.dirname, '..', '..', 'public', 'photos'));
+    expect(errors).toEqual(['missing-photo.avif: ファイルがありません', 'missing-photo.jpg: ファイルがありません']);
   });
 });
 

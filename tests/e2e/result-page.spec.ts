@@ -23,19 +23,21 @@ test('未定義の colorId は404', async ({ request }) => {
   }
 });
 
+const representative = (colorId: string) => RESULT_COLORS.find((color) => color.id === colorId)?.representativePhotoId ?? '';
+
 test('.avif の取得を失敗させると、写真要素の currentSrc が対応する .jpg になり同じ写真を表示する', async ({ page }) => {
   await page.route('**/*.avif', (route) => route.abort());
   await page.goto('/result/green');
-  const image = page.locator('img[data-photo-id="kari-green-01"]');
+  const image = page.locator(`img[data-photo-id="${representative('green')}"]`);
   await expect(image).toBeVisible();
-  await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.currentSrc)).toMatch(/\/photos\/kari-green-01\.jpg$/);
+  await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.currentSrc)).toMatch(new RegExp(`/photos/${representative('green')}\\.jpg$`));
   expect(await image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
 });
 
 test('代表画像を読み込めない場合は色面とメッセージを表示し、画像枠とクレジットを隠す', async ({ page }) => {
-  await page.route(/\/photos\/kari-blue-01\.(avif|jpg)$/, (route) => route.abort());
+  await page.route(new RegExp(`/photos/${representative('blue')}\\.(avif|jpg)$`), (route) => route.abort());
   await page.goto('/result/blue');
-  await expect(page.getByRole('heading', { name: 'コバルトブルー' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: RESULT_COLORS.find((color) => color.id === 'blue')?.name })).toBeVisible();
   await expect(page.locator('figure')).toHaveCount(0);
   await expect(page.locator('figcaption')).toHaveCount(0);
 });

@@ -7,7 +7,8 @@
 - `docs/visual-language.md` で演出のビジュアル言語を決定
 - 土台: pnpm、Vite 8、Svelte 5、Cloudflare Vite plugin、Vitest、Playwright、TypeScript 6（`svelte-check` が TypeScript 7 に未対応のため6系に固定）
 - 共通モジュール（`src/shared/`）: 型、判定、状態遷移、メッセージ検証、写真割り当て、時刻補正、演出の純粋関数、データ検証、結果URL
-- 仮データ（`src/data/`）: 色、質問と配点、写真40点（各色5点）、`displayManifest`（3画面）、開催情報
+- 仮データ（`src/data/`）: 色、質問と配点、`displayManifest`（3画面）、開催情報
+- 写真: 提供された12点（原本 `photos/originals/`）から `pnpm export-photos` で表示用のAVIFとJPEGを書き出した。生成した仮写真（`kari-*`）は削除
 - Durable Object（`src/worker/`）: 認証、ペアリング、WebSocket Hibernation、alarm、冪等性、操作端末、同期計測、運用通知
 - 画面（`src/client/`）: iPad、展示ディスプレイ、管理画面、管理ログイン、結果ページ
 - production build時の検証（`build/`）: `PUBLIC_ORIGIN`、`RESULTS_PUBLISHED_UNTIL`、色・診断・写真定義、写真ファイル
@@ -41,3 +42,6 @@
 10. **配点の偏り**。仮の配点で78,125通りの分布は最小10.85%（green）から最大14.43%（blue）。「極端な偏り」の基準が仕様書にないため、テストは全色が一度は出ることだけを確かめている（`pnpm distribution` で分布を表示）。
 11. **仮の `PUBLIC_ORIGIN` でもproduction buildが通る**。ビルド時に確かめられるのはHTTPS、末尾スラッシュなし、`dpc-school-festival.<subdomain>.workers.dev` の形までで、subdomainが実在するかはアカウント情報がないと確かめられない。仮値 `tbd-subdomain` のままデプロイしないこと。
 12. **冪等性記録と回答の消去**。最終回答の受理、強制リセット、放置による初期化で回答を消去するとき、回答を含む冪等性記録も消している（13章）。消した要求を10分以内に再送されると保存済みの応答ではなく `STALE_REVISION` を返す（状態は変わらない）。8.5節「同じ応答を返す」とのずれで、プライバシー要件を優先した。
+13. **写真の結果色の割り当て（仮）**。提供された12点の `resultColorId`、各色の代表画像、`shareAllowed`、`creditName`、`idleOrder` は、写真の主題から仮に決めた値（`src/data/photos.ts`）。写真担当責任者による決定が必要。現在の割り当て: red `sdi1218-3`、orange `sdi0743`、yellow `sdi1092-2`、green `sdi0225` `sdi0776`、cyan `sdi0565-2` `sdi1091`、blue `sdi1195-3` `sdi1134-2`、violet `sdi1031-2` `sdi1163-3`、magenta `sdi1070-2`。各色1〜2点のため、3画面構成では写真のない画面が色名のタイポグラフィになる（12.2節の目安は各色「展示ディスプレイ数 + 2」点以上）。
+14. **写真の長辺**。原本の長辺は2048px。仮の `displayManifest`（1920×1080）に合わせて表示用は長辺1920pxで書き出している。4Kディスプレイに決まった場合、原本より大きくは書き出せないため拡大表示になる。
+15. **原本の管理**。`photos/originals/` はリポジトリへコミットしていない。原本をリポジトリで管理するか、別の場所に保管するかの決定が必要。

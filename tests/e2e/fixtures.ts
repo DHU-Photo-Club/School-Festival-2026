@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from '@playwright/test';
+import { PHOTOS } from '../../src/data/photos.ts';
+import { resultPhotoFor } from '../../src/shared/assignment.ts';
+import type { ColorId } from '../../src/shared/types.ts';
 
 /** 開発サーバーと同じ規則で管理パスフレーズを読む（.dev.vars、なければ環境変数）。 */
 export function adminPassphrase(): string {
@@ -70,6 +73,7 @@ export class ExhibitHarness {
     role: 'controller' | 'display',
     screenId: string | null = null,
     options: BrowserContextOptions = {},
+    beforeOpen?: (context: BrowserContext) => Promise<void>,
   ): Promise<Device> {
     const code = await this.issueCode(role, screenId);
     const context = await this.browser.newContext({
@@ -79,6 +83,7 @@ export class ExhibitHarness {
     const response = await context.request.post('/api/pair', { data: { code } });
     expect(response.status()).toBe(200);
     const { location } = (await response.json()) as { location: string };
+    await beforeOpen?.(context);
     const page = await context.newPage();
     await page.goto(location);
     return { context, page };
@@ -136,4 +141,42 @@ export async function tapStop(page: Page, index: number): Promise<void> {
 
 export async function sliderValue(page: Page): Promise<string> {
   return page.locator('.slider input[type="range"]').inputValue();
+}
+
+/** 写真定義から決まる結果表示の種類。写真が足りない画面はタイポグラフィ（仕様書7.2.4節）。 */
+export function expectedResultView(colorId: ColorId, displayOrder: number): 'photo' | 'typography' {
+  return resultPhotoFor(PHOTOS, colorId, displayOrder) ? 'photo' : 'typography';
+}
+
+/**
+ * 端末のWebSocketをテストから中継し、通信断を再現する。`context.setOffline` は開いているWebSocketを
+ * 確実には止めないため、中継でメッセージを止めて、切断のないまま応答が途絶える状態を作る。
+ * ページを開く前に呼ぶ。
+ */
+export async function controllableNetwork(context: BrowserContext) {
+  let offline = false;
+  const mocked: { close: () => Promise<void> }[] = [];
+  await context.routeWebSocket(/\/api\/realtime/, (ws) => {
+    if (offline) {
+      // 通信断中の再接続は届かない。サーバーへつながず、復旧時に閉じて再接続させる。
+      mocked.push({ close: () => ws.close({ code: 1001, reason: 'network restored' }) });
+      return;
+    }
+    const server = ws.connectToServer();
+    ws.onMessage((message) => {
+      if (!offline) server.send(message);
+    });
+    server.onMessage((message) => {
+      if (!offline) ws.send(message);
+    });
+  });
+  return {
+    async down() {
+      offline = true;
+    },
+    async up() {
+      offline = false;
+      for (const socket of mocked.splice(0)) await socket.close();
+    },
+  };
 }

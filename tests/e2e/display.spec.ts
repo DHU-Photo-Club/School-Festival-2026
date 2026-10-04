@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { RESULT_COLORS } from '../../src/data/colors.ts';
 import { QUESTIONS } from '../../src/data/questions.ts';
-import { canvasDigest, canvasPixel, ExhibitHarness, tapStop } from './fixtures.ts';
+import { canvasDigest, canvasPixel, ExhibitHarness, expectedResultView, tapStop } from './fixtures.ts';
 import type { Device } from './fixtures.ts';
 
 /** 現在枠の待機写真のIDと不透明度。 */
@@ -79,10 +79,10 @@ test('管理画面の表示確認で全画面が結果色の完了状態を表�
   }
   const violet = RESULT_COLORS.find((color) => color.id === 'violet');
   await harness.admin.page.getByRole('button', { name: violet?.name }).click();
-  for (const display of displays) {
+  for (const [displayOrder, display] of displays.entries()) {
     await expect(display.page.locator('main.display')).toHaveAttribute('data-result-color', 'violet');
     await expect.poll(() => canvasPixel(display.page, 0.5, 0.01)).toBe(violet?.backgroundColor);
-    await expect(display.page.locator('main.display')).toHaveAttribute('data-result-view', 'photo');
+    await expect(display.page.locator('main.display')).toHaveAttribute('data-result-view', expectedResultView('violet', displayOrder));
   }
   await harness.admin.page.getByRole('button', { name: '表示確認を終了' }).click();
   for (const display of displays) {
@@ -102,12 +102,13 @@ test('reduced-motion でも全状態が色面の切り替えと静止した構�
   await page.getByRole('button', { name: '進む' }).click();
 
   // 質問: 輪は静止して表示される。
+  // 属性は状態の受信で、canvas は次の描画フレームで変わるため、描画を待ってから比べる。
   await expect(displays[0].page.locator('main.display')).toHaveAttribute('data-phase', 'question');
-  await displays[0].page.waitForTimeout(300);
+  await expect.poll(() => canvasPixel(displays[0].page, 0.5, 0.3)).not.toBe('#0B0B0B');
+  await expect.poll(() => canvasPixel(displays[1].page, 0.5, 0.3)).not.toBe('#0B0B0B');
   const still = await canvasDigest(displays[0].page);
   await displays[0].page.waitForTimeout(1_000);
   expect(await canvasDigest(displays[0].page)).toBe(still);
-  expect(await canvasPixel(displays[0].page, 0.5, 0.3)).not.toBe('#0B0B0B');
   // 画面ごとに輪の区画がずれて見える。
   expect(await canvasDigest(displays[1].page)).not.toBe(still);
 
@@ -125,17 +126,18 @@ test('reduced-motion でも全状態が色面の切り替えと静止した構�
     }
   }
 
-  // 判定: 即時に黒。
-  await expect(displays[0].page.locator('main.display')).toHaveAttribute('data-phase', /judging|result/);
-  const judgingPixel = await canvasPixel(displays[0].page, 0.5, 0.5);
+  // 判定: 即時に黒（判定は2秒なので、その間に黒になることを確かめる）。
+  await expect.poll(() => canvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] }).toBe('#000000');
   const name = await page.locator('.color-name').innerText({ timeout: 5_000 });
   const color = RESULT_COLORS.find((candidate) => candidate.name === name);
-  expect(['#000000', color?.baseColor, color?.backgroundColor]).toContain(judgingPixel);
 
   // 結果: 基準色の全面から完了状態へ一回だけ切り替わる。
-  for (const display of displays) {
+  for (const [displayOrder, display] of displays.entries()) {
     await expect.poll(() => canvasPixel(display.page, 0.5, 0.01), { timeout: 5_000 }).toBe(color?.backgroundColor);
-    await expect(display.page.locator('main.display')).toHaveAttribute('data-result-view', 'photo');
+    await expect(display.page.locator('main.display')).toHaveAttribute(
+      'data-result-view',
+      expectedResultView(color?.id ?? 'red', displayOrder),
+    );
   }
   await page.getByRole('button', { name: '最初に戻る' }).click();
   for (const display of displays) await expect(display.page.locator('main.display')).toHaveAttribute('data-phase', 'idle');
