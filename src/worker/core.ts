@@ -123,6 +123,7 @@ export type AuthCheck =
 const KEY_STATE = 'state';
 const KEY_CONTROLLER = 'controller';
 const KEY_SYNC = 'sync';
+const KEY_SYNC_EARLY = 'sync-early';
 const PREFIX_SESSION = 'session:';
 const PREFIX_PAIRING = 'pairing:';
 const PREFIX_IDEMPOTENCY = 'idem:';
@@ -135,6 +136,7 @@ const deviceKey = (role: Role, screenId: string | null) => (role === 'display' ?
  */
 export class ExhibitCore {
   private lastAdminRefreshAt = 0;
+  private lastInternalErrorAt: number | null = null;
 
   constructor(private readonly options: CoreOptions) {}
 
@@ -158,6 +160,9 @@ export class ExhibitCore {
 
   private commit(previous: ExhibitState, next: ExhibitState, sender: Connection | null): void {
     this.options.store.put(KEY_STATE, next);
+    if (Object.keys(previous.answers).length > 0 && Object.keys(next.answers).length === 0) {
+      this.purgeAnswerRecords();
+    }
     if (previous.phase === 'judging' && next.phase !== 'judging' && previous.sessionId) {
       this.openSyncReport(previous, next);
     }
@@ -213,6 +218,7 @@ export class ExhibitCore {
       ],
       controllerAssigned: this.options.store.get<ControllerHolder>(KEY_CONTROLLER) !== undefined,
       syncReport: this.options.store.get<SyncReport>(KEY_SYNC) ?? null,
+      lastInternalErrorAt: this.lastInternalErrorAt,
     };
   }
 
@@ -486,6 +492,8 @@ export class ExhibitCore {
     }
     connection.setMeta(meta);
     this.touchDevice(meta, now);
+    // 再接続した画面は読み込みをやり直すため、前の接続の先読み報告を消す（仕様書7.2.5節）。
+    if (meta.role === 'display') this.updateDevice(meta, { preload: null });
     const view = this.viewFor(meta, state);
     if (view) connection.send({ version: 1, type: 'welcome', serverTime: this.options.now(), state: view });
     this.refreshAdmins(state);
@@ -537,6 +545,12 @@ export class ExhibitCore {
     if (meta.role !== 'display') return this.errorMessage(message.requestId, 'FORBIDDEN');
     if (meta.screenId !== message.screenId) return this.errorMessage(message.requestId, 'FORBIDDEN');
     const report = this.options.store.get<SyncReport>(KEY_SYNC);
+    if (state.phase === 'judging' && state.sessionId === message.sessionId) {
+      // 画面の補正済み時刻がサーバーより先に結果開始時刻を過ぎた場合。結果へ進むときに計測へ加える。
+      const early = this.options.store.get<Record<string, number>>(KEY_SYNC_EARLY) ?? {};
+      this.options.store.put(KEY_SYNC_EARLY, { ...early, [message.screenId]: message.actualStartedAt });
+      return { version: 1, type: 'ack', requestId: message.requestId, revision: state.revision };
+    }
     if (!report || report.sessionId !== message.sessionId) {
       return this.errorMessage(message.requestId, 'INVALID_PHASE');
     }
@@ -603,10 +617,33 @@ export class ExhibitCore {
       connection.send(stored.response);
       return;
     }
-    const response = handle();
+    let response: ServerMessage;
+    try {
+      response = handle();
+    } catch (error) {
+      // 状態を変更せず、管理画面に障害を表示する。再送で解決しうるため応答を保存しない（仕様書8.5節）。
+      console.error('request failed', error instanceof Error ? error.name : 'Error');
+      this.lastInternalErrorAt = now;
+      this.refreshAdmins();
+      connection.send(this.errorMessage(requestId, 'INTERNAL_ERROR'));
+      return;
+    }
     this.options.store.put(key, { storedAt: now, response } satisfies IdempotencyRecord);
     this.pruneIdempotency(now);
     connection.send(response);
+  }
+
+  /**
+   * 回答を含む応答の冪等性記録を消す。最終回答の受理、強制リセット、放置による初期化で回答を消去するとき、
+   * 冪等性記録に残った回答も同じ処理で消す（仕様書13章）。消した要求が再送されても
+   * `expectedRevision` が一致しないため、状態は変わらない。
+   */
+  private purgeAnswerRecords(): void {
+    for (const [key, record] of this.options.store.list<IdempotencyRecord>(PREFIX_IDEMPOTENCY)) {
+      const state = 'state' in record.response ? record.response.state : undefined;
+      const answers = state && 'answers' in state ? (state as ExhibitState).answers : {};
+      if (Object.keys(answers).length > 0) this.options.store.delete(key);
+    }
   }
 
   private pruneIdempotency(now: number): void {
@@ -658,8 +695,13 @@ export class ExhibitCore {
         } else if ((connection.meta.helloAt ?? 0) > resultStartAt) {
           excludedReason = '結果開始後に接続';
         }
-        return { screenId: entry.screenId, actualStartedAt: null, excludedReason };
+        return { screenId: entry.screenId, actualStartedAt: null as number | null, excludedReason };
       });
+    const early = this.options.store.get<Record<string, number>>(KEY_SYNC_EARLY) ?? {};
+    this.options.store.delete(KEY_SYNC_EARLY);
+    for (const entry of entries) {
+      if (entry.excludedReason === null && early[entry.screenId] !== undefined) entry.actualStartedAt = early[entry.screenId];
+    }
     if (next.phase !== 'result') return;
     this.options.store.put(
       KEY_SYNC,

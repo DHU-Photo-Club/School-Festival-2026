@@ -467,3 +467,74 @@ describe('運用通知', () => {
     expect(device?.preload).toEqual({ succeeded: 9, failedPhotoIds: ['kari-red-02'] });
   });
 });
+
+describe('レビュー指摘への対応', () => {
+  it('強制リセットで、冪等性記録に残った回答も消える', () => {
+    const harness = new Harness();
+    const ipad = harness.connect('controller');
+    const admin = harness.connect('admin');
+    harness.command(ipad, { name: 'start' });
+    harness.command(ipad, { name: 'continue' });
+    harness.command(ipad, { name: 'answer', questionId: QUESTIONS[0].id, stopId: 'far-left' });
+    const withAnswers = () => [...harness.store.data.entries()].filter(([key, value]) => key.startsWith('idem:') && value.includes('far-left'));
+    expect(withAnswers().length).toBeGreaterThan(0);
+    harness.command(admin, { name: 'forceReset' }, { expectedRevision: null });
+    expect(withAnswers()).toEqual([]);
+  });
+
+  it('最終回答の受理で冪等性記録の回答も消え、最終回答の再送には同じ応答を返す', () => {
+    const harness = new Harness();
+    const ipad = harness.connect('controller');
+    harness.command(ipad, { name: 'start' });
+    harness.command(ipad, { name: 'continue' });
+    for (const question of QUESTIONS.slice(0, -1)) harness.command(ipad, { name: 'answer', questionId: question.id, stopId: 'far-right' });
+    const revision = harness.core.current().revision;
+    const final = { name: 'answer', questionId: QUESTIONS[6].id, stopId: 'far-right' };
+    const [first] = harness.command(ipad, final, { requestId: 'final', expectedRevision: revision });
+    expect([...harness.store.data.entries()].filter(([key, value]) => key.startsWith('idem:') && /"answers":\{"/.test(value))).toEqual([]);
+    const replay = harness.command(ipad, final, { requestId: 'final', expectedRevision: revision });
+    expect(replay.at(-1)).toEqual(first);
+  });
+
+  it('再接続した展示ディスプレイの前回の先読み報告を消す', () => {
+    const harness = new Harness();
+    const admin = harness.connect('admin');
+    const display = harness.connect('display', { screenId: 'display-1' });
+    harness.send(display, { type: 'diagnostic', requestId: 'p', name: 'preloadReport', succeeded: 10, failedPhotoIds: [] });
+    harness.send(display, { type: 'hello', clientId: 'again' });
+    const device = (admin.ofType('state').at(-1)?.state as AdminState).devices.find((entry) => entry.screenId === 'display-1');
+    expect(device?.preload).toBeNull();
+  });
+
+  it('サーバーより先に結果開始時刻を過ぎた画面の報告も計測に加える', () => {
+    const harness = new Harness();
+    const ipad = harness.connect('controller');
+    const admin = harness.connect('admin');
+    const d1 = harness.connect('display', { screenId: 'display-1' });
+    answerAll(harness, ipad);
+    const { sessionId, phaseEndsAt } = harness.core.current();
+    harness.advance(JUDGING_MS - 5);
+    harness.send(d1, { type: 'resultStarted', requestId: 'early', sessionId, screenId: 'display-1', actualStartedAt: (phaseEndsAt as number) + 2 });
+    expect(d1.last()).toMatchObject({ type: 'ack', requestId: 'early' });
+    harness.advance(5);
+    harness.alarm();
+    const sync = (admin.ofType('state').at(-1)?.state as AdminState).syncReport;
+    expect(sync?.entries.find((entry) => entry.screenId === 'display-1')?.actualStartedAt).toBe((phaseEndsAt as number) + 2);
+  });
+
+  it('処理中の例外には INTERNAL_ERROR を返し、状態を変えず、管理画面に障害を表示する', () => {
+    const harness = new Harness();
+    const ipad = harness.connect('controller');
+    const admin = harness.connect('admin');
+    const put = harness.store.put.bind(harness.store);
+    harness.store.put = (key, value) => {
+      if (key === 'state') throw new Error('storage failure');
+      put(key, value);
+    };
+    const [response] = harness.command(ipad, { name: 'start' });
+    harness.store.put = put;
+    expect(response).toMatchObject({ type: 'error', code: 'INTERNAL_ERROR', retryable: true });
+    expect(harness.core.current()).toMatchObject({ phase: 'idle', revision: 0 });
+    expect((admin.ofType('state').at(-1)?.state as AdminState).lastInternalErrorAt).not.toBeNull();
+  });
+});

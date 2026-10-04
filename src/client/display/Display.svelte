@@ -152,11 +152,21 @@
     if (idleReference !== null) {
       const nextCycle = idleCycleIndex(now, idleReference);
       if (nextCycle !== cycle) cycle = nextCycle;
+      // 最初の待機二作品は、接続後に初めて求めた枠の現在作品と次作品（仕様書7.2.5節）。
+      if (firstIdlePhotoIds === null) {
+        firstIdlePhotoIds = [nextCycle, nextCycle + 1]
+          .map((index) => idlePhotoFor(playlist, index, displayOrder)?.id)
+          .filter((id, index, ids): id is string => id !== undefined && ids.indexOf(id) === index);
+        maybeReportPreload();
+      }
+      // 枠の切り替えフレームでもDOMの更新を待たずに正しい写真を選ぶため、写真IDで不透明度を決める。
       const fade = idleCrossfade(now, idleReference, reducedMotion);
-      const showPrevious = now - idleReference >= 8_000;
-      for (const element of idleLayer?.querySelectorAll<HTMLElement>('[data-slot]') ?? []) {
-        const slot = element.dataset.slot;
-        setStyle(element, 'opacity', opacity(slot === 'current' ? fade : slot === 'previous' && showPrevious ? 1 - fade : 0));
+      const currentId = idlePhotoFor(playlist, nextCycle, displayOrder)?.id;
+      const previousId = nextCycle > 0 ? idlePhotoFor(playlist, nextCycle - 1, displayOrder)?.id : undefined;
+      for (const element of idleLayer?.querySelectorAll<HTMLElement>('[data-photo-id]') ?? []) {
+        if (element.tagName === 'IMG') continue;
+        const id = element.dataset.photoId;
+        setStyle(element, 'opacity', opacity(id === currentId ? fade : id === previousId ? 1 - fade : 0));
       }
     }
     if (state.phase === 'idle' && previousBackground && now - state.phaseStartedAt > IDLE_RETURN_MS) {
@@ -263,12 +273,6 @@
     return slots;
   });
 
-  $effect(() => {
-    if (firstIdlePhotoIds !== null || auth !== 'ok' || displayState === null) return;
-    firstIdlePhotoIds = idleSlots.filter((slot) => slot.slot !== 'previous').map((slot) => slot.photo.id);
-    maybeReportPreload();
-  });
-
   const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
 </script>
 
@@ -292,7 +296,7 @@
       {:else}
         <div class="frame">
           {#each idleSlots as { slot, photo } (photo.id)}
-            <div class="photo" data-slot={slot} style="opacity: 0">
+            <div class="photo" data-slot={slot} data-photo-id={photo.id} style="opacity: 0">
               <PhotoImage {photo} onstatus={(status) => setIdleStatus(photo.id, status)} />
             </div>
           {/each}

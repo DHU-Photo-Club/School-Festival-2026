@@ -92,6 +92,7 @@ export class RealtimeClient {
   private timers: ReturnType<typeof setInterval>[] = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stalled = false;
+  private measured = false;
 
   constructor(private readonly options: RealtimeOptions) {
     this.clientId = storedClientId(options.role);
@@ -194,7 +195,8 @@ export class RealtimeClient {
         this.welcomed = true;
         this.attempt = 0;
         this.lastPongAt = clientNow();
-        this.offset = message.serverTime - clientNow();
+        // 計測済みの補正値があれば、片道の遅延を含む welcome の値で上書きしない。
+        if (!this.measured) this.offset = message.serverTime - clientNow();
         this.revision = -1;
         this.applyState(message.state, message.state.revision);
         this.setStatus('open');
@@ -280,6 +282,7 @@ export class RealtimeClient {
     const estimate = estimateClock(this.samples);
     if (!estimate) return;
     this.offset = estimate.offset;
+    this.measured = true;
     if (this.options.role !== 'admin') {
       void this.request({
         type: 'diagnostic',

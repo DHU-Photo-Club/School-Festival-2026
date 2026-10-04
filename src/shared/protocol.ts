@@ -255,6 +255,8 @@ export type AdminState = Omit<ExhibitState, 'answers'> & {
   devices: DeviceStatus[];
   controllerAssigned: boolean;
   syncReport: SyncReport | null;
+  /** サーバー内部の失敗が最後に起きた時刻（仕様書8.5節 INTERNAL_ERROR）。 */
+  lastInternalErrorAt: number | null;
 };
 
 export type RoleState = ExhibitState | DisplayState | AdminState;

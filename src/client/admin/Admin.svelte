@@ -134,6 +134,10 @@
         <dd>{admin.sessionId ?? '—'}</dd>
         <dt>操作端末</dt>
         <dd>{admin.controllerAssigned ? '割り当て済み' : '未割り当て'}</dd>
+        <dt>障害</dt>
+        <dd class:bad={admin.lastInternalErrorAt !== null}>
+          {admin.lastInternalErrorAt === null ? 'なし' : `${time(admin.lastInternalErrorAt)} にサーバー内部の失敗`}
+        </dd>
       </dl>
       <div class="actions">
         <button onclick={() => command({ name: 'setAccepting', accepting: !admin?.accepting })} disabled={busy}>
