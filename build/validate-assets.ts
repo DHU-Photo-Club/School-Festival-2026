@@ -57,7 +57,7 @@ export async function validatePhotoFiles(photos: readonly Photo[], photosDir: st
       errors.push(`${photo.id}: AVIFとJPEGの画素寸法が一致しません`);
     }
     for (const decoded of found.slice(0, 1)) {
-      // displayManifest を使わないため、長辺は3,840px以下だけを確かめる（docs/progress.md 参照）。
+      // 長辺は3,840px以下（仕様書12.1節）。
       if (Math.max(decoded.width, decoded.height) > LONG_SIDE_MAX) {
         errors.push(`${photo.id}: 長辺が上限 ${LONG_SIDE_MAX}px を超えています`);
       }

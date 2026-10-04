@@ -314,7 +314,7 @@ export class ExhibitCore {
 
   /**
    * 登録済みの展示ディスプレイの画面ID。並び順で返す。
-   * 展示ディスプレイの台数は、有効な端末セッションを持つ展示ディスプレイの数とする（docs/progress.md 参照）。
+   * 展示ディスプレイの台数は、有効な端末セッションを持つ展示ディスプレイの数とする（仕様書7.2節）。
    */
   registeredScreens(): string[] {
     const now = this.options.now();
@@ -358,7 +358,7 @@ export class ExhibitCore {
       return { ok: false };
     }
     this.options.store.delete(PREFIX_PAIRING + code);
-    // 展示ディスプレイには、使用中でない最小の番号の画面IDを振る。
+    // 展示ディスプレイには、使用中でない最小の番号の画面IDを振る（仕様書7.2.1節）。
     const screenId = record.role === 'display' ? nextFreeScreenId(this.registeredScreens()) : null;
     const session = this.issueSession(authKey, 'device', record.role, screenId);
     this.refreshAdmins();
