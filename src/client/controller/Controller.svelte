@@ -200,6 +200,11 @@
 
 {#if auth === 'unpaired'}
   <Pairing />
+{:else if status === 'controllerInUse'}
+  <main class="screen center stack">
+    <p class="lead">別の端末で診断を操作しています。</p>
+    <p class="muted">スタッフにお声がけください。</p>
+  </main>
 {:else if auth === 'checking' || !exhibit}
   <main class="screen center"><p class="muted">接続しています</p></main>
 {:else}
@@ -316,9 +321,7 @@
       <p class="notice" role="status">{notice}</p>
     {/if}
 
-    {#if status === 'controllerInUse'}
-      <div class="overlay"><p>別の端末で診断を操作しています。</p><p class="muted">スタッフにお声がけください。</p></div>
-    {:else if status === 'closed'}
+    {#if status === 'closed'}
       <div class="overlay"><p>この画面は使用できません。</p><p class="muted">スタッフにお声がけください。</p></div>
     {:else if stalled}
       <div class="overlay"><p>操作を受け付けられませんでした。</p><p class="muted">スタッフにお声がけください。</p></div>

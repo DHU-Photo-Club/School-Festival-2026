@@ -57,9 +57,14 @@ export const NEUTRAL_ORDER: readonly ColorId[] = ['red', 'cyan', 'yellow', 'viol
 // ---- 補助関数 ----
 
 export const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-export const easeInOutSine = (t: number) => -(Math.cos(Math.PI * clamp01(t)) - 1) / 2;
-export const easeOutCubic = (t: number) => 1 - (1 - clamp01(t)) ** 3;
-export const easeInSine = (t: number) => 1 - Math.cos((clamp01(t) * Math.PI) / 2);
+/** 端点では厳密に0と1を返す。 */
+const eased = (ease: (t: number) => number) => (t: number) => {
+  const x = clamp01(t);
+  return x === 0 ? 0 : x === 1 ? 1 : ease(x);
+};
+export const easeInOutSine = eased((t) => (1 - Math.cos(Math.PI * t)) / 2);
+export const easeOutCubic = eased((t) => 1 - (1 - t) ** 3);
+export const easeInSine = eased((t) => 1 - Math.cos((t * Math.PI) / 2));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** FNV-1a 32bit。 */
