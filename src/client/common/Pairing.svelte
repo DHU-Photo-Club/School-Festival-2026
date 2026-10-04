@@ -1,8 +1,10 @@
 <script lang="ts">
   let { message = '' }: { message?: string } = $props();
 
-  let code = $state('');
+  let input = $state('');
   let busy = $state(false);
+  // 全角数字を半角へそろえ、数字以外を除く。形式の確認はこの値で行う。
+  const code = $derived(input.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0)).replace(/\D/g, ''));
   let failed = $state(false);
 
   async function submit(event: SubmitEvent) {
@@ -36,10 +38,9 @@
   <p>管理画面で発行した6桁のコードを入力してください。</p>
   <form onsubmit={submit}>
     <input
-      bind:value={code}
+      bind:value={input}
       inputmode="numeric"
       autocomplete="one-time-code"
-      pattern="[0-9]{6}"
       maxlength="6"
       aria-label="ペアリングコード"
       placeholder="000000"

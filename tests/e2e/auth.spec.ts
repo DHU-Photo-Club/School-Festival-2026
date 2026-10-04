@@ -96,3 +96,22 @@ test('未登録の端末は登録画面を表示する', async ({ page }) => {
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/admin\/login$/);
 });
+
+for (const [label, toInput] of [
+  ['半角', (code: string) => code],
+  ['全角', (code: string) => code.replace(/[0-9]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) + 0xfee0))],
+] as const) {
+  test(`端末の初期画面で${label}の6桁コードを入力して登録できる`, async ({ browser }) => {
+    const harness = await ExhibitHarness.open(browser);
+    const code = await harness.issueCode('display', 'display-2');
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.getByLabel('ペアリングコード').fill(toInput(code));
+    await page.getByRole('button', { name: '登録する' }).click();
+    await expect(page).toHaveURL(/\/display\/display-2$/);
+    await expect(page.locator('main.display')).toHaveAttribute('data-phase', /.+/);
+    await context.close();
+    await harness.close();
+  });
+}
