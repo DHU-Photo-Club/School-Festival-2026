@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { parse } from 'jsonc-parser';
 import type { Plugin } from 'vite';
 import { RESULT_COLORS } from '../src/data/colors.ts';
-import { DISPLAY_MANIFEST } from '../src/data/display-manifest.ts';
 import { PHOTOS } from '../src/data/photos.ts';
 import { QUESTIONS } from '../src/data/questions.ts';
 import { validateExhibitData, validatePublicOrigin, validatePublishedUntil } from '../src/shared/data-validation.ts';
@@ -40,9 +39,8 @@ export function exhibitChecks(): Plugin {
           colors: RESULT_COLORS,
           questions: QUESTIONS,
           photos: PHOTOS,
-          manifest: DISPLAY_MANIFEST,
         }),
-        ...(await validatePhotoFiles(PHOTOS, DISPLAY_MANIFEST, join(ROOT, 'public', 'photos'))),
+        ...(await validatePhotoFiles(PHOTOS, join(ROOT, 'public', 'photos'))),
       ];
       if (errors.length > 0) {
         this.error(`展示データの検証に失敗しました:\n${errors.map((error) => `- ${error}`).join('\n')}`);

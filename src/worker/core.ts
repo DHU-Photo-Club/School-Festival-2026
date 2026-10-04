@@ -19,7 +19,8 @@ import type {
   ServerMessage,
   SyncReport,
 } from '../shared/protocol.ts';
-import type { DisplayManifestEntry, ExhibitState, Question, ResultColor, Role } from '../shared/types.ts';
+import { displayOrderOf, nextFreeScreenId } from '../shared/screens.ts';
+import type { ExhibitState, Question, ResultColor, Role } from '../shared/types.ts';
 
 /** 認証・ペアリングセッションの有効期間（仕様書8.4節）。 */
 export const SESSION_TTL_MS = 12 * 60 * 60_000;
@@ -62,7 +63,6 @@ export interface AuthSession {
 
 interface PairingCode {
   role: 'controller' | 'display';
-  screenId: string | null;
   issuedAt: number;
   expiresAt: number;
 }
@@ -113,7 +113,6 @@ export interface CoreOptions {
   connections: () => Connection[];
   questions: readonly Question[];
   colors: readonly ResultColor[];
-  manifest: readonly DisplayManifestEntry[];
 }
 
 export type AuthCheck =
@@ -212,9 +211,7 @@ export class ExhibitCore {
       ...rest,
       devices: [
         status('controller', null),
-        ...[...this.options.manifest]
-          .sort((a, b) => a.displayOrder - b.displayOrder)
-          .map((entry) => status('display', entry.screenId)),
+        ...this.registeredScreens().map((screenId) => status('display', screenId)),
       ],
       controllerAssigned: this.options.store.get<ControllerHolder>(KEY_CONTROLLER) !== undefined,
       syncReport: this.options.store.get<SyncReport>(KEY_SYNC) ?? null,
@@ -315,39 +312,27 @@ export class ExhibitCore {
     return true;
   }
 
-  private screenInUse(screenId: string): boolean {
+  /**
+   * 登録済みの展示ディスプレイの画面ID。並び順で返す。
+   * 展示ディスプレイの台数は、有効な端末セッションを持つ展示ディスプレイの数とする（docs/progress.md 参照）。
+   */
+  registeredScreens(): string[] {
     const now = this.options.now();
-    return this.options.store
+    const screens = this.options.store
       .list<AuthSession>(PREFIX_SESSION)
-      .some(([, session]) => session.role === 'display' && session.screenId === screenId && now < session.expiresAt);
+      .filter(([, session]) => session.role === 'display' && session.screenId !== null && now < session.expiresAt)
+      .map(([, session]) => session.screenId as string);
+    return [...new Set(screens)].sort((a, b) => (displayOrderOf(a) ?? 0) - (displayOrderOf(b) ?? 0));
   }
 
-  /** 使用中でない展示ディスプレイの `screenId`。 */
-  availableScreens(): string[] {
-    return [...this.options.manifest]
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map((entry) => entry.screenId)
-      .filter((screenId) => !this.screenInUse(screenId));
-  }
-
-  /** 一回限りのペアリングコードを発行する（仕様書8.4節）。 */
-  issuePairingCode(
-    role: 'controller' | 'display',
-    screenId: string | null,
-  ): { ok: true; code: string; expiresAt: number } | { ok: false; reason: string } {
-    if (role === 'display') {
-      if (!screenId || !this.options.manifest.some((entry) => entry.screenId === screenId)) {
-        return { ok: false, reason: 'screenIdがdisplayManifestにありません。' };
-      }
-      if (this.screenInUse(screenId)) return { ok: false, reason: 'このscreenIdはほかの端末が使用中です。' };
-    }
+  /** 一回限りのペアリングコードを発行する（仕様書8.4節）。展示ディスプレイの画面IDは登録時に決める。 */
+  issuePairingCode(role: 'controller' | 'display'): { ok: true; code: string; expiresAt: number } {
     const now = this.options.now();
     this.prunePairingCodes(now);
     let code = this.options.randomDigits(6);
     while (this.options.store.get<PairingCode>(PREFIX_PAIRING + code)) code = this.options.randomDigits(6);
     const record: PairingCode = {
       role,
-      screenId: role === 'display' ? screenId : null,
       issuedAt: now,
       expiresAt: now + PAIRING_TTL_MS,
     };
@@ -372,9 +357,10 @@ export class ExhibitCore {
       this.options.store.delete(PREFIX_PAIRING + code);
       return { ok: false };
     }
-    if (record.role === 'display' && record.screenId && this.screenInUse(record.screenId)) return { ok: false };
     this.options.store.delete(PREFIX_PAIRING + code);
-    const session = this.issueSession(authKey, 'device', record.role, record.screenId);
+    // 展示ディスプレイには、使用中でない最小の番号の画面IDを振る。
+    const screenId = record.role === 'display' ? nextFreeScreenId(this.registeredScreens()) : null;
+    const session = this.issueSession(authKey, 'device', record.role, screenId);
     this.refreshAdmins();
     return { ok: true, session };
   }
@@ -680,14 +666,10 @@ export class ExhibitCore {
   private openSyncReport(judging: ExhibitState, next: ExhibitState): void {
     const resultStartAt = judging.phaseEndsAt ?? next.phaseStartedAt;
     const live = this.liveConnections();
-    const entries = [...this.options.manifest]
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map((entry) => {
+    const entries = this.registeredScreens().map((screenId) => {
         const connection = live.find(
           (candidate) =>
-            candidate.meta.role === 'display' &&
-            candidate.meta.screenId === entry.screenId &&
-            candidate.meta.helloAt !== null,
+            candidate.meta.role === 'display' && candidate.meta.screenId === screenId && candidate.meta.helloAt !== null,
         );
         let excludedReason: string | null = null;
         if (!connection || resultStartAt - connection.meta.lastReceivedAt >= STALE_AFTER_MS) {
@@ -695,7 +677,7 @@ export class ExhibitCore {
         } else if ((connection.meta.helloAt ?? 0) > resultStartAt) {
           excludedReason = '結果開始後に接続';
         }
-        return { screenId: entry.screenId, actualStartedAt: null as number | null, excludedReason };
+        return { screenId, actualStartedAt: null as number | null, excludedReason };
       });
     const early = this.options.store.get<Record<string, number>>(KEY_SYNC_EARLY) ?? {};
     this.options.store.delete(KEY_SYNC_EARLY);

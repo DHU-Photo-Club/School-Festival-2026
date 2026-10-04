@@ -27,7 +27,8 @@ describe('接続と配信', () => {
       ['phase', 'phaseEndsAt', 'phaseStartedAt', 'previewColorId', 'resultColorId', 'revision', 'sessionId'].sort(),
     );
     expect(adminState).not.toHaveProperty('answers');
-    expect(adminState.devices.map((device) => device.screenId)).toEqual([null, 'display-1', 'display-2', 'display-3']);
+    // 展示ディスプレイの一覧は、登録済みの画面だけ。
+    expect(adminState.devices.map((device) => device.screenId)).toEqual([null, 'display-1']);
   });
 
   it('command の送信元には ack、ほかの端末には state を配信する', () => {
@@ -365,27 +366,47 @@ describe('認証とペアリング', () => {
 
   it('ペアリングコードは一回限りで、5分を超えると使えない', () => {
     const harness = new Harness();
-    const issued = harness.core.issuePairingCode('controller', null);
-    if (!issued.ok) throw new Error('issue failed');
+    const issued = harness.core.issuePairingCode('controller');
     expect(issued.code).toMatch(/^\d{6}$/);
     expect(harness.core.pair(issued.code, 'k1').ok).toBe(true);
     expect(harness.core.pair(issued.code, 'k2').ok).toBe(false);
 
-    const expiring = harness.core.issuePairingCode('controller', null);
-    if (!expiring.ok) throw new Error('issue failed');
+    const expiring = harness.core.issuePairingCode('controller');
     harness.advance(PAIRING_TTL_MS);
     expect(harness.core.pair(expiring.code, 'k3').ok).toBe(false);
   });
 
-  it('展示ディスプレイのコードは displayManifest にあり使用中でない screenId だけに発行する', () => {
+  it('展示ディスプレイには登録順に、使用中でない最小の番号の画面IDを振る', () => {
     const harness = new Harness();
-    expect(harness.core.issuePairingCode('display', 'display-9').ok).toBe(false);
-    const issued = harness.core.issuePairingCode('display', 'display-1');
-    if (!issued.ok) throw new Error('issue failed');
-    const paired = harness.core.pair(issued.code, 'k1');
-    expect(paired).toMatchObject({ ok: true, session: { role: 'display', screenId: 'display-1' } });
-    expect(harness.core.issuePairingCode('display', 'display-1').ok).toBe(false);
-    expect(harness.core.availableScreens()).toEqual(['display-2', 'display-3']);
+    const pairDisplay = (key: string) => {
+      const paired = harness.core.pair(harness.core.issuePairingCode('display').code, key);
+      return paired.ok ? paired.session.screenId : null;
+    };
+    expect(pairDisplay('k1')).toBe('display-1');
+    expect(pairDisplay('k2')).toBe('display-2');
+    expect(pairDisplay('k3')).toBe('display-3');
+    expect(harness.core.registeredScreens()).toEqual(['display-1', 'display-2', 'display-3']);
+    // 失効させた番号は次の登録で使う。
+    harness.core.revokeSession('k2');
+    expect(pairDisplay('k4')).toBe('display-2');
+    // 有効期限が切れた端末は台数に数えない。
+    harness.advance(SESSION_TTL_MS);
+    expect(harness.core.registeredScreens()).toEqual([]);
+    expect(pairDisplay('k5')).toBe('display-1');
+  });
+
+  it('管理画面の端末一覧は、登録した展示ディスプレイの台数だけ並ぶ', () => {
+    const harness = new Harness();
+    const admin = harness.connect('admin');
+    for (const key of ['a', 'b', 'c', 'd', 'e']) harness.core.pair(harness.core.issuePairingCode('display').code, key);
+    const devices = (admin.ofType('state').at(-1)?.state as AdminState).devices;
+    expect(devices.filter((device) => device.role === 'display').map((device) => device.screenId)).toEqual([
+      'display-1',
+      'display-2',
+      'display-3',
+      'display-4',
+      'display-5',
+    ]);
   });
 
   it('端末セッションを失効させると接続を閉じる', () => {
@@ -405,12 +426,14 @@ describe('結果同期の計測', () => {
     const admin = harness.connect('admin');
     const d1 = harness.connect('display', { screenId: 'display-1' });
     const d2 = harness.connect('display', { screenId: 'display-2' });
+    // display-3 は登録済みだが、結果開始時点では接続していない。
+    const d3Session = harness.core.issueSession('d3-key', 'device', 'display', 'display-3');
     answerAll(harness, ipad);
     const judging = harness.core.current();
     const startAt = judging.phaseEndsAt as number;
     harness.advance(JUDGING_MS);
     harness.alarm();
-    const d3 = harness.connect('display', { screenId: 'display-3' });
+    const d3 = harness.open('d3-key', d3Session);
     const report = (connection: FakeConnection, screenId: string, actualStartedAt: number) =>
       harness.send(connection, { type: 'resultStarted', requestId: `r-${screenId}`, sessionId: judging.sessionId, screenId, actualStartedAt });
     report(d1, 'display-1', startAt + 8);

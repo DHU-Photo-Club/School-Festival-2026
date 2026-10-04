@@ -24,9 +24,7 @@
   let message = $state<string | null>(null);
   let alerts = $state<AlertMessage[]>([]);
   let sessions = $state<SessionRow[]>([]);
-  let availableScreens = $state<string[]>([]);
   let pairingRole = $state<'controller' | 'display'>('display');
-  let pairingScreen = $state('');
   let issued = $state<{ code: string; expiresAt: number; label: string } | null>(null);
   let client: RealtimeClient | null = null;
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -44,10 +42,7 @@
   async function loadSessions() {
     const response = await api('/api/admin/sessions');
     if (!response.ok) return;
-    const body = (await response.json()) as { sessions: SessionRow[]; availableScreens: string[] };
-    sessions = body.sessions;
-    availableScreens = body.availableScreens;
-    if (!availableScreens.includes(pairingScreen)) pairingScreen = availableScreens[0] ?? '';
+    sessions = ((await response.json()) as { sessions: SessionRow[] }).sessions;
   }
 
   async function command(next: Command) {
@@ -66,11 +61,11 @@
     const response = await api('/api/admin/pairing-codes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: pairingRole, screenId: pairingRole === 'display' ? pairingScreen : null }),
+      body: JSON.stringify({ role: pairingRole }),
     });
     const body = (await response.json()) as { code?: string; expiresAt?: number; message?: string };
     if (response.ok && body.code && body.expiresAt) {
-      issued = { code: body.code, expiresAt: body.expiresAt, label: pairingRole === 'display' ? pairingScreen : '診断用iPad' };
+      issued = { code: body.code, expiresAt: body.expiresAt, label: pairingRole === 'display' ? '展示ディスプレイ' : '診断用iPad' };
       message = null;
     } else {
       message = body.message ?? 'コードを発行できませんでした。';
@@ -152,6 +147,7 @@
 
     <section>
       <h2>端末</h2>
+      <p data-testid="display-count">展示ディスプレイ {admin.devices.filter((device) => device.role === 'display').length} 台（登録済み）</p>
       <table>
         <thead>
           <tr><th>端末</th><th>接続</th><th>最終受信</th><th>準備</th><th>時刻同期</th></tr>
@@ -257,13 +253,11 @@
         <option value="display">展示ディスプレイ</option>
         <option value="controller">診断用iPad</option>
       </select>
-      {#if pairingRole === 'display'}
-        <select bind:value={pairingScreen} aria-label="screenId">
-          {#each availableScreens as screen (screen)}<option value={screen}>{screen}</option>{/each}
-        </select>
-      {/if}
-      <button type="submit" disabled={pairingRole === 'display' && !pairingScreen}>ペアリングコードを発行</button>
+      <button type="submit">ペアリングコードを発行</button>
     </form>
+    <p class="muted">
+      展示ディスプレイは、登録した順に display-1、display-2…と番号が付き、その順に写真を割り当てます。来場者から見た順に登録してください。
+    </p>
     {#if issued}
       <p class="code">
         {issued.label}: <strong data-testid="pairing-code">{issued.code}</strong>（{time(issued.expiresAt)} まで有効、一回限り）

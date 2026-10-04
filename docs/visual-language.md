@@ -34,7 +34,7 @@
 
 - 補正済みサーバー時刻 `t`（`performance.timeOrigin + performance.now() + 時刻補正値`）
 - 受信状態の `sessionId`、`phase`、`phaseStartedAt`、`phaseEndsAt`、`revision`、`resultColorId`、`previewColorId`
-- 自画面の `displayOrder` と `displayManifest` の登録件数
+- 自画面の `displayOrder`（登録時に振られた画面ID `display-N` の N − 1）
 - `prefers-reduced-motion` の値
 
 同じ入力からは同じ画面を描く。再接続した画面はほかの画面と同じ位置から再開する。乱数は使わず、`sessionId` から作るハッシュ値を種にする。

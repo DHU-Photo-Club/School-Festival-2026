@@ -1,5 +1,5 @@
 import { COLOR_IDS } from './types.ts';
-import type { ColorId, DisplayManifestEntry, Photo, Question, ResultColor } from './types.ts';
+import type { ColorId, Photo, Question, ResultColor } from './types.ts';
 
 /** 写真IDの形式（仕様書12.1節）。 */
 export const PHOTO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -26,15 +26,14 @@ export function contrastRatio(a: string, b: string): number {
 
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 
-/** 色定義、診断定義、写真定義、`displayManifest` の整合性を確認し、問題の一覧を返す。 */
+/** 色定義、診断定義、写真定義の整合性を確認し、問題の一覧を返す。 */
 export function validateExhibitData(input: {
   colors: readonly ResultColor[];
   questions: readonly Question[];
   photos: readonly Photo[];
-  manifest: readonly DisplayManifestEntry[];
 }): string[] {
   const errors: string[] = [];
-  const { colors, questions, photos, manifest } = input;
+  const { colors, questions, photos } = input;
 
   const colorIds = colors.map((color) => color.id);
   for (const id of COLOR_IDS) {
@@ -93,16 +92,6 @@ export function validateExhibitData(input: {
       }
     }
   }
-
-  const screenIds = manifest.map((entry) => entry.screenId);
-  const orders = manifest.map((entry) => entry.displayOrder);
-  if (new Set(screenIds).size !== screenIds.length) errors.push('displayManifest の screenId が重複しています');
-  if (new Set(orders).size !== orders.length) errors.push('displayManifest の displayOrder が重複しています');
-  manifest.forEach((entry) => {
-    if (!/^display-[1-9][0-9]*$/.test(entry.screenId)) errors.push(`screenId ${entry.screenId} の形式が不正です`);
-  });
-  const sorted = [...orders].sort((a, b) => a - b);
-  if (sorted.some((order, index) => order !== index)) errors.push('displayOrder は0から連番にします');
 
   return errors;
 }

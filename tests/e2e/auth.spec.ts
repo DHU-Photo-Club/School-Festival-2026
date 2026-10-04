@@ -33,7 +33,7 @@ function upgradeStatus(baseURL: string, path: string, cookie = ''): Promise<numb
 
 test('未認証のUpgradeは401、役割不一致は403で、接続が成立しない', async ({ browser, baseURL, playwright }) => {
   const harness = await ExhibitHarness.open(browser);
-  const display = await harness.pair('display', 'display-1');
+  const display = await harness.pair('display');
   const cookie = (await display.context.cookies())
     .filter((entry) => entry.name === 'dpc_device')
     .map((entry) => `${entry.name}=${entry.value}`)
@@ -82,7 +82,7 @@ test('管理APIはログインなしで401', async ({ playwright, baseURL }) => 
 
 test('URLと端末セッションの画面IDが一致しない展示画面は表示を開始せず再登録を求める', async ({ browser }) => {
   const harness = await ExhibitHarness.open(browser);
-  const display = await harness.pair('display', 'display-1');
+  const display = await harness.pair('display');
   await display.page.goto('/display/display-2');
   await expect(display.page.getByText('この画面は再登録が必要です。')).toBeVisible();
   await expect(display.page.locator('canvas')).toHaveCount(0);
@@ -99,7 +99,7 @@ test('未登録の端末は登録画面を表示する', async ({ page }) => {
 
 test('端末の初期画面で6桁のコードを入力して登録できる', async ({ browser }) => {
   const harness = await ExhibitHarness.open(browser);
-  const code = await harness.issueCode('display', 'display-2');
+  const code = await harness.issueCode('display');
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto('/');
@@ -107,7 +107,7 @@ test('端末の初期画面で6桁のコードを入力して登録できる', a
   await expect(input).toHaveAttribute('pattern', '[0-9]{6}');
   await input.fill(code);
   await page.getByRole('button', { name: '登録する' }).click();
-  await expect(page).toHaveURL(/\/display\/display-2$/);
+  await expect(page).toHaveURL(/\/display\/display-1$/);
   await expect(page.locator('main.display')).toHaveAttribute('data-phase', /.+/);
   await context.close();
   await harness.close();

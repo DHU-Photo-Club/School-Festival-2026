@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DISPLAY_MANIFEST } from '../../src/data/display-manifest.ts';
 import { PHOTOS } from '../../src/data/photos.ts';
 import { idlePhotoFor, idlePlaylist, resultPhotoFor, resultPhotos } from '../../src/shared/assignment.ts';
 import { COLOR_IDS } from '../../src/shared/types.ts';
 import type { Photo } from '../../src/shared/types.ts';
+
+/** 三画面構成（仕様書9.5節）。 */
+const DISPLAY_ORDERS = [0, 1, 2];
 
 const photo = (id: string, patch: Partial<Photo> = {}): Photo => ({
   id,
@@ -30,8 +32,8 @@ describe('待機プレイリスト', () => {
   it('(cycleIndex + displayOrder) mod P 番目を表示し、同時刻に同じ写真を複数画面へ表示しない', () => {
     const playlist = idlePlaylist(PHOTOS);
     for (let cycle = 0; cycle < playlist.length * 2; cycle += 1) {
-      const shown = DISPLAY_MANIFEST.map((entry) => idlePhotoFor(playlist, cycle, entry.displayOrder)?.id);
-      expect(new Set(shown).size).toBe(DISPLAY_MANIFEST.length);
+      const shown = DISPLAY_ORDERS.map((order) => idlePhotoFor(playlist, cycle, order)?.id);
+      expect(new Set(shown).size).toBe(DISPLAY_ORDERS.length);
       expect(shown[0]).toBe(playlist[cycle % playlist.length].id);
     }
   });
@@ -59,7 +61,7 @@ describe('結果写真の割り当て', () => {
 
   it('仮データでは全色で画面ごとに異なる写真が割り当たる', () => {
     for (const colorId of COLOR_IDS) {
-      const shown = DISPLAY_MANIFEST.map((entry) => resultPhotoFor(PHOTOS, colorId, entry.displayOrder)?.id ?? null);
+      const shown = DISPLAY_ORDERS.map((order) => resultPhotoFor(PHOTOS, colorId, order)?.id ?? null);
       const photos = shown.filter((id) => id !== null);
       expect(new Set(photos).size).toBe(photos.length);
     }

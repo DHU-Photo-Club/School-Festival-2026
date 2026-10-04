@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { RESULT_COLORS } from '../../data/colors.ts';
-  import { DISPLAY_MANIFEST } from '../../data/display-manifest.ts';
   import { EXHIBIT } from '../../data/exhibit.ts';
   import { PHOTOS } from '../../data/photos.ts';
   import { idlePhotoFor, idlePlaylist, resultPhotoFor } from '../../shared/assignment.ts';
+  import { displayOrderOf } from '../../shared/screens.ts';
   import { computeScene, idleCrossfade, idleCycleIndex, IDLE_RETURN_MS } from '../../shared/motion.ts';
   import type { Scene } from '../../shared/motion.ts';
   import { COLOR_IDS } from '../../shared/types.ts';
@@ -19,8 +19,9 @@
 
   type LoadStatus = 'loading' | 'loaded' | 'failed';
 
-  const entry = DISPLAY_MANIFEST.find((candidate) => candidate.screenId === screenId) ?? null;
-  const displayOrder = entry?.displayOrder ?? 0;
+  // 並び順は登録時に振られた画面IDの番号で決まる。
+  const parsedOrder = displayOrderOf(screenId);
+  const displayOrder = parsedOrder ?? 0;
   const playlist = idlePlaylist(PHOTOS);
   // 8色それぞれで自分に割り当てられる結果写真（仕様書7.2.5節）。写真がない色は読み込まない。
   const resultAssignments = COLOR_IDS.map((colorId) => ({ colorId, photo: resultPhotoFor(PHOTOS, colorId, displayOrder) }));
@@ -223,7 +224,7 @@
 
   onMount(async () => {
     stopWatching = watchReducedMotion((reduced) => (reducedMotion = reduced));
-    if (!entry) {
+    if (parsedOrder === null) {
       auth = 'mismatch';
       return;
     }
@@ -279,7 +280,7 @@
 {#if auth === 'unpaired'}
   <Pairing />
 {:else if auth === 'mismatch'}
-  <Pairing message={entry ? 'この画面は再登録が必要です。' : `${screenId} は displayManifest に登録されていません。`} />
+  <Pairing message="この画面は再登録が必要です。" />
 {:else}
   <main
     class="display"

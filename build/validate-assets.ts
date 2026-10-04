@@ -2,7 +2,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import type { DisplayManifestEntry, Photo } from '../src/shared/types.ts';
+import type { Photo } from '../src/shared/types.ts';
 
 const MIB = 1024 * 1024;
 export const AVIF_MAX_BYTES = 2 * MIB;
@@ -33,14 +33,8 @@ async function inspect(file: string, format: 'heif' | 'jpeg', errors: string[], 
 }
 
 /** 写真ファイルの欠落、容量、デコード、寸法を確認し、問題の一覧を返す。 */
-export async function validatePhotoFiles(
-  photos: readonly Photo[],
-  manifest: readonly DisplayManifestEntry[],
-  photosDir: string,
-): Promise<string[]> {
+export async function validatePhotoFiles(photos: readonly Photo[], photosDir: string): Promise<string[]> {
   const errors: string[] = [];
-  const manifestLongSide = Math.max(0, ...manifest.map((entry) => Math.max(entry.width, entry.height)));
-  const longSideMax = Math.min(LONG_SIDE_MAX, manifestLongSide);
 
   for (const photo of photos) {
     const avif = join(photosDir, `${photo.id}.avif`);
@@ -63,8 +57,9 @@ export async function validatePhotoFiles(
       errors.push(`${photo.id}: AVIFとJPEGの画素寸法が一致しません`);
     }
     for (const decoded of found.slice(0, 1)) {
-      if (Math.max(decoded.width, decoded.height) > longSideMax) {
-        errors.push(`${photo.id}: 長辺が上限 ${longSideMax}px を超えています`);
+      // displayManifest を使わないため、長辺は3,840px以下だけを確かめる（docs/progress.md 参照）。
+      if (Math.max(decoded.width, decoded.height) > LONG_SIDE_MAX) {
+        errors.push(`${photo.id}: 長辺が上限 ${LONG_SIDE_MAX}px を超えています`);
       }
     }
   }

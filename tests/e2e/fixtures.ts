@@ -62,8 +62,8 @@ export class ExhibitHarness {
     if (await release.isEnabled()) await release.click();
   }
 
-  async issueCode(role: 'controller' | 'display', screenId: string | null = null): Promise<string> {
-    const response = await this.admin.context.request.post('/api/admin/pairing-codes', { data: { role, screenId } });
+  async issueCode(role: 'controller' | 'display'): Promise<string> {
+    const response = await this.admin.context.request.post('/api/admin/pairing-codes', { data: { role } });
     expect(response.status()).toBe(200);
     return ((await response.json()) as { code: string }).code;
   }
@@ -71,11 +71,10 @@ export class ExhibitHarness {
   /** 新しいブラウザコンテキストを端末として登録し、登録後の画面を開く。 */
   async pair(
     role: 'controller' | 'display',
-    screenId: string | null = null,
     options: BrowserContextOptions = {},
     beforeOpen?: (context: BrowserContext) => Promise<void>,
   ): Promise<Device> {
-    const code = await this.issueCode(role, screenId);
+    const code = await this.issueCode(role);
     const context = await this.browser.newContext({
       viewport: role === 'display' ? DISPLAY_VIEWPORT : IPAD_VIEWPORT,
       ...options,
@@ -92,7 +91,9 @@ export class ExhibitHarness {
   async pairDisplays(count: number, options: BrowserContextOptions = {}): Promise<Device[]> {
     const displays: Device[] = [];
     for (let index = 1; index <= count; index += 1) {
-      const display = await this.pair('display', `display-${index}`, options);
+      const display = await this.pair('display', options);
+      // 展示ディスプレイには登録順に display-1、display-2…が振られる。
+      await expect(display.page).toHaveURL(new RegExp(`/display/display-${index}$`));
       await expect(display.page.locator('main.display')).toHaveAttribute('data-phase', 'idle');
       displays.push(display);
     }

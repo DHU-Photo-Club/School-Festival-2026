@@ -83,7 +83,7 @@ test('通信断中のiPadは操作できず、復旧後は welcome のサーバ�
   const harness = await ExhibitHarness.open(browser);
   const [display] = await harness.pairDisplays(1);
   let network: Awaited<ReturnType<typeof controllableNetwork>> | undefined;
-  const ipad = await harness.pair('controller', null, {}, async (context) => {
+  const ipad = await harness.pair('controller', {}, async (context) => {
     network = await controllableNetwork(context);
   });
   await startQuestions(ipad);
@@ -110,7 +110,7 @@ test('切断した展示ディスプレイは管理画面で切断表示にな�
   test.setTimeout(120_000);
   const harness = await ExhibitHarness.open(browser);
   let network: Awaited<ReturnType<typeof controllableNetwork>> | undefined;
-  const display = await harness.pair('display', 'display-1', {}, async (context) => {
+  const display = await harness.pair('display', {}, async (context) => {
     network = await controllableNetwork(context);
   });
   const row = harness.admin.page.getByTestId('device-display-1');
@@ -143,7 +143,7 @@ test('result 開始から60秒後に操作がなくても待機表示へ戻る',
 
 test('結果写真を読み込めない画面は開始時刻を遅らせずタイポグラフィを表示する', async ({ browser }) => {
   const harness = await ExhibitHarness.open(browser);
-  const code = await harness.issueCode('display', 'display-1');
+  const code = await harness.issueCode('display');
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   // display-1 に割り当てられる各色の写真の取得を失敗させる。
   const assigned = COLOR_IDS.flatMap((colorId) => resultPhotoFor(PHOTOS, colorId, 0)?.id ?? []);
@@ -151,7 +151,7 @@ test('結果写真を読み込めない画面は開始時刻を遅らせずタ�
   await context.request.post('/api/pair', { data: { code } });
   const page = await context.newPage();
   await page.goto('/display/display-1');
-  const other = await harness.pair('display', 'display-2');
+  const other = await harness.pair('display');
   await expect(harness.admin.page.getByTestId('device-display-1')).toContainText('失敗', { timeout: 15_000 });
   await expect(harness.admin.page.getByTestId('device-display-2')).toContainText('準備完了');
 

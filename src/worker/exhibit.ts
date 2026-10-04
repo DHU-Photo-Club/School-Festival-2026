@@ -1,6 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
 import { RESULT_COLORS } from '../data/colors.ts';
-import { DISPLAY_MANIFEST } from '../data/display-manifest.ts';
 import { QUESTIONS } from '../data/questions.ts';
 import { ADMIN_COOKIE, DEVICE_COOKIE, authKeyFromToken, clearCookie, newToken, readCookie, sessionCookie } from './auth.ts';
 import { ExhibitCore } from './core.ts';
@@ -77,7 +76,6 @@ export class Exhibit extends DurableObject<Env> {
           .map((socket) => this.wrap(socket)),
       questions: QUESTIONS,
       colors: RESULT_COLORS,
-      manifest: DISPLAY_MANIFEST,
     });
   }
 
@@ -144,7 +142,7 @@ export class Exhibit extends DurableObject<Env> {
         return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(ADMIN_COOKIE) });
       }
       if (path === '/api/admin/sessions' && method === 'GET') {
-        return json({ sessions: this.core.listDeviceSessions(), availableScreens: this.core.availableScreens() });
+        return json({ sessions: this.core.listDeviceSessions() });
       }
       const revoke = path.match(/^\/api\/admin\/sessions\/([^/]+)$/);
       if (revoke && method === 'DELETE') {
@@ -153,11 +151,9 @@ export class Exhibit extends DurableObject<Env> {
           : json({ error: 'NOT_FOUND' }, 404);
       }
       if (path === '/api/admin/pairing-codes' && method === 'POST') {
-        const body = (await request.json().catch(() => null)) as { role?: unknown; screenId?: unknown } | null;
+        const body = (await request.json().catch(() => null)) as { role?: unknown } | null;
         if (body?.role !== 'controller' && body?.role !== 'display') return json({ error: 'INVALID_REQUEST' }, 400);
-        const screenId = typeof body.screenId === 'string' ? body.screenId : null;
-        const issued = this.core.issuePairingCode(body.role, screenId);
-        return issued.ok ? json(issued) : json({ error: 'INVALID_REQUEST', message: issued.reason }, 400);
+        return json(this.core.issuePairingCode(body.role));
       }
     }
     return json({ error: 'NOT_FOUND' }, 404);

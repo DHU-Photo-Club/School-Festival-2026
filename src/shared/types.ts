@@ -70,12 +70,3 @@ export interface Photo {
   creditName: string | null;
   creditUrl?: string;
 }
-
-export interface DisplayManifestEntry {
-  screenId: string;
-  displayOrder: number;
-  orientation: 'landscape' | 'portrait';
-  /** 物理解像度。写真の長辺の上限（仕様書12.1節）に使う。 */
-  width: number;
-  height: number;
-}

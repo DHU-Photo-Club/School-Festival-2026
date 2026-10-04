@@ -96,7 +96,7 @@ test('reduced-motion でも全状態が色面の切り替えと静止した構�
   test.setTimeout(120_000);
   const harness = await ExhibitHarness.open(browser);
   const displays = await harness.pairDisplays(3, { reducedMotion: 'reduce' });
-  const ipad = await harness.pair('controller', null, { reducedMotion: 'reduce' });
+  const ipad = await harness.pair('controller', { reducedMotion: 'reduce' });
   const { page } = ipad;
   await page.getByRole('button', { name: '診断をはじめる' }).click();
   await page.getByRole('button', { name: '進む' }).click();
@@ -198,5 +198,22 @@ test('「次へ」のタップから確定待ちの表示まで', async ({ brows
   expect(p95).toBeLessThanOrEqual(100);
   expect(timings.at(-1)).toBeLessThanOrEqual(150);
   await ipad.context.close();
+  await harness.close();
+});
+
+test('登録した台数の展示ディスプレイで動き、台数は登録しただけ増える', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const harness = await ExhibitHarness.open(browser);
+  await expect(harness.admin.page.getByTestId('display-count')).toContainText('0 台');
+  const displays = await harness.pairDisplays(5, { viewport: { width: 960, height: 540 } });
+  await expect(harness.admin.page.getByTestId('display-count')).toContainText('5 台');
+  for (let index = 1; index <= 5; index += 1) {
+    await expect(harness.admin.page.getByTestId(`device-display-${index}`)).toContainText('接続中');
+  }
+  // 5画面すべてが別々の待機写真を表示する。
+  await expect.poll(async () => (await currentIdle(displays[4])).opacity).toBe(1);
+  const ids = await Promise.all(displays.map(async (display) => (await currentIdle(display)).id));
+  expect(new Set(ids).size).toBe(5);
+  for (const display of displays) await display.context.close();
   await harness.close();
 });

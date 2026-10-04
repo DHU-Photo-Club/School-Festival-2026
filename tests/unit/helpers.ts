@@ -1,5 +1,4 @@
 import { RESULT_COLORS } from '../../src/data/colors.ts';
-import { DISPLAY_MANIFEST } from '../../src/data/display-manifest.ts';
 import { QUESTIONS } from '../../src/data/questions.ts';
 import type { ServerMessage } from '../../src/shared/protocol.ts';
 import type { Role } from '../../src/shared/types.ts';
@@ -72,7 +71,6 @@ export class Harness {
       connections: () => this.connections.filter((connection) => !connection.closed),
       questions: QUESTIONS,
       colors: RESULT_COLORS,
-      manifest: DISPLAY_MANIFEST,
     });
   }
 

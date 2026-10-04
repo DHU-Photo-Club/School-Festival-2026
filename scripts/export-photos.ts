@@ -4,7 +4,6 @@
 import { mkdirSync, readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import sharp from 'sharp';
-import { DISPLAY_MANIFEST } from '../src/data/display-manifest.ts';
 import { PHOTOS } from '../src/data/photos.ts';
 import { LONG_SIDE_MAX } from '../build/validate-assets.ts';
 
@@ -20,8 +19,8 @@ function photoIdFromFileName(fileName: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// 長辺は displayManifest の最大物理解像度の長辺以下、かつ3,840px以下。
-const longSide = Math.min(LONG_SIDE_MAX, ...DISPLAY_MANIFEST.map((entry) => Math.max(entry.width, entry.height)));
+// 長辺は3,840px以下。原本より大きくはしない。
+const longSide = LONG_SIDE_MAX;
 const defined = new Set(PHOTOS.map((photo) => photo.id));
 
 mkdirSync(OUTPUT, { recursive: true });

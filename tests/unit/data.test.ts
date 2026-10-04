@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validatePhotoFiles } from '../../build/validate-assets.ts';
 import { RESULT_COLORS } from '../../src/data/colors.ts';
-import { DISPLAY_MANIFEST } from '../../src/data/display-manifest.ts';
 import { PHOTOS } from '../../src/data/photos.ts';
 import { QUESTIONS } from '../../src/data/questions.ts';
 import { estimateClock } from '../../src/shared/clock.ts';
@@ -17,7 +16,7 @@ import { COLOR_IDS } from '../../src/shared/types.ts';
 import { createQrModel, generateQrWithRetry, QR_RETRY_DELAY_MS } from '../../src/client/lib/qr.ts';
 import { resultAvailability } from '../../src/worker/result-page.ts';
 
-const data = { colors: RESULT_COLORS, questions: QUESTIONS, photos: PHOTOS, manifest: DISPLAY_MANIFEST };
+const data = { colors: RESULT_COLORS, questions: QUESTIONS, photos: PHOTOS };
 const representative = (colorId: string) => RESULT_COLORS.find((color) => color.id === colorId)?.representativePhotoId;
 
 describe('展示データ', () => {
@@ -71,19 +70,12 @@ describe('展示データ', () => {
     );
   });
 
-  it('displayManifest の screenId と displayOrder の重複を検出する', () => {
-    const manifest = [...DISPLAY_MANIFEST, { ...DISPLAY_MANIFEST[0] }];
-    expect(validateExhibitData({ ...data, manifest })).toEqual(
-      expect.arrayContaining(['displayManifest の screenId が重複しています', 'displayManifest の displayOrder が重複しています']),
-    );
-  });
-
-  it('全写真IDに同寸法のAVIFとJPEGがあり、容量上限と長辺の上限を満たす', async () => {
-    expect(await validatePhotoFiles(PHOTOS, DISPLAY_MANIFEST, join(import.meta.dirname, '..', '..', 'public', 'photos'))).toEqual([]);
+  it('全写真IDに同寸法のAVIFとJPEGがあり、容量上限と長辺3,840px以下を満たす', async () => {
+    expect(await validatePhotoFiles(PHOTOS, join(import.meta.dirname, '..', '..', 'public', 'photos'))).toEqual([]);
   }, 60_000);
 
   it('写真ファイルの欠落を検出する', async () => {
-    const errors = await validatePhotoFiles([{ ...PHOTOS[0], id: 'missing-photo' }], DISPLAY_MANIFEST, join(import.meta.dirname, '..', '..', 'public', 'photos'));
+    const errors = await validatePhotoFiles([{ ...PHOTOS[0], id: 'missing-photo' }], join(import.meta.dirname, '..', '..', 'public', 'photos'));
     expect(errors).toEqual(['missing-photo.avif: ファイルがありません', 'missing-photo.jpg: ファイルがありません']);
   });
 });
