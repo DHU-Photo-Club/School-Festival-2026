@@ -6,11 +6,13 @@
   import { idlePhotoFor, idlePlaylist, resultPhotoFor } from '../../shared/assignment.ts';
   import { displayOrderOf } from '../../shared/screens.ts';
   import { computeScene, idleCrossfade, idleCycleIndex, IDLE_RETURN_MS } from '../../shared/motion.ts';
-  import type { Scene } from '../../shared/motion.ts';
+  import type { Scene, ShardLayer } from '../../shared/motion.ts';
+  import { shardPoses, spectrumColor } from '../../shared/shards.ts';
   import { COLOR_IDS } from '../../shared/types.ts';
   import type { ColorId, DisplayState, Photo } from '../../shared/types.ts';
   import Pairing from '../common/Pairing.svelte';
   import PhotoImage from '../common/PhotoImage.svelte';
+  import { drawShards, hexToRgb } from '../common/shards.ts';
   import { RealtimeClient } from '../lib/realtime.ts';
   import { fetchDeviceSession, watchReducedMotion } from '../lib/session.ts';
   import { createRenderer } from './renderer.ts';
@@ -38,6 +40,7 @@
   let resultChoice = $state<{ sessionId: string | null; colorId: ColorId; photo: Photo | null } | null>(null);
 
   let canvas = $state<HTMLCanvasElement>();
+  let shardCanvas = $state<HTMLCanvasElement>();
   let idleLayer = $state<HTMLDivElement>();
   let resultLayer = $state<HTMLDivElement>();
   let veil = $state<HTMLDivElement>();
@@ -46,6 +49,7 @@
   let renderer: SceneRenderer | null = null;
   let frame = 0;
   let lastDrawn = '';
+  let lastShards = '';
   let idleReference: number | null = null;
   let animateSessionId: string | null = null;
   let reportedSessionId: string | null = null;
@@ -117,11 +121,38 @@
    */
   const CANVAS_SCALE = 0.5;
 
+  /** 破片は輪郭を見せるため、CSS画素の2倍までの解像度で描く。 */
+  const shardRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+
   function resize() {
     if (!canvas) return;
     canvas.width = Math.max(1, Math.round(window.innerWidth * CANVAS_SCALE));
     canvas.height = Math.max(1, Math.round(window.innerHeight * CANVAS_SCALE));
     lastDrawn = '';
+    if (shardCanvas) {
+      shardCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
+      shardCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+      lastShards = '';
+    }
+  }
+
+  /** 質問中の破片を描く。破片の色は重心の横位置の区画で決まる（docs/visual-language.md 3.2節）。 */
+  function drawShardLayer(layer: ShardLayer | null) {
+    const context = shardCanvas?.getContext('2d');
+    if (!context) return;
+    const key = layer ? JSON.stringify(layer) : '';
+    if (key === lastShards) return;
+    lastShards = key;
+    if (!layer) {
+      drawShards(context, [], shardRatio(), 0);
+      return;
+    }
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const colors = layer.colors.map(hexToRgb);
+    drawShards(context, shardPoses(width, height, layer.time, layer.swell), shardRatio(), layer.intensity, (x) =>
+      spectrumColor((x / width) * layer.span - layer.offset, colors, layer.blend),
+    );
   }
 
   /**
@@ -227,6 +258,7 @@
       renderer.draw(scene.primitives);
       lastDrawn = key;
     }
+    drawShardLayer(scene.shards);
   }
 
   onMount(async () => {
@@ -297,6 +329,7 @@
     data-result-view={resultChoice ? (resultChoice.photo ? 'photo' : 'typography') : undefined}
   >
     <canvas bind:this={canvas}></canvas>
+    <canvas bind:this={shardCanvas}></canvas>
 
     <div class="layer" bind:this={idleLayer} style="opacity: 0">
       {#if displayOrder >= playlist.length}

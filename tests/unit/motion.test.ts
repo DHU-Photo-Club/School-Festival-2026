@@ -49,7 +49,7 @@ const questionState = (lastOperationAt: number, revision = 12): Partial<DisplayS
   revision,
 });
 
-const spectrumOf = (scene: Scene) => scene.primitives.find((primitive) => primitive.type === 'spectrum');
+const shardsOf = (scene: Scene) => scene.shards;
 
 describe('決定性', () => {
   it('同じ入力からは同じ描画内容を返す', () => {
@@ -68,7 +68,7 @@ describe('決定性', () => {
     expect(ringAngle('s', 6, 2)).toBeCloseTo(ringAngle('s', 5, 1));
   });
 
-  it('色のにじみは右隣の画面へ一区画ずつ続き、一問確定すると右へ一区画ずれる', () => {
+  it('破片の色は右隣の画面へ一区画ずつ続き、一問確定すると右へ一区画ずれる', () => {
     // 区画の位置 = x / 幅 × span - offset。右隣の画面は一区画先から始まる。
     expect(spectrumOffset('s', 5, 1)).toBeCloseTo(spectrumOffset('s', 5, 0) - 1);
     // 一問確定すると、右隣の画面が直前の自画面と同じ構図になる。
@@ -76,7 +76,7 @@ describe('決定性', () => {
   });
 });
 
-describe('質問中の色のにじみ', () => {
+describe('質問中の破片', () => {
   it('revision が増えた時刻から6秒かけて一区画回る', () => {
     const changedAt = T0 + 20_000;
     const state = { ...base(questionState(changedAt)).state };
@@ -90,34 +90,42 @@ describe('質問中の色のにじみ', () => {
     const at = T0 + 23_456;
     const first = computeScene(base(questionState(T0 + 20_000), { now: at }));
     const reconnected = computeScene(base(questionState(T0 + 20_000), { now: at }));
-    expect(spectrumOf(reconnected)).toEqual(spectrumOf(first));
+    expect(shardsOf(reconnected)).toEqual(shardsOf(first));
   });
 
   it('8色を同じ面積で並べ、どの色も強調しない', () => {
-    const spectrum = spectrumOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
-    expect(spectrum?.type).toBe('spectrum');
-    if (spectrum?.type !== 'spectrum') return;
-    expect(spectrum.colors).toHaveLength(8);
-    expect(new Set(spectrum.colors).size).toBe(8);
-    expect(spectrum.intensity).toBe(1);
+    const shards = shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
+    expect(shards).not.toBeNull();
+    expect(shards?.colors).toHaveLength(8);
+    expect(new Set(shards?.colors).size).toBe(8);
+    expect(shards?.intensity).toBe(1);
+    expect(shards?.swell).toBe(1);
   });
 
-  it('ノイズは質問の開始からの経過秒で流れ、reduced-motion では流れない', () => {
-    const at = (reducedMotion: boolean) => spectrumOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 12_500, reducedMotion })));
-    expect(at(false)).toMatchObject({ drift: 12.5 });
-    expect(at(true)).toMatchObject({ drift: 0 });
+  it('破片は補正済みサーバー時刻で動き、reduced-motion では止まる', () => {
+    const at = (reducedMotion: boolean) => shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 12_500, reducedMotion })));
+    expect(at(false)).toMatchObject({ time: T0 + 12_500 });
+    expect(at(true)).toMatchObject({ time: 0 });
   });
 
-  it('reduced-motion では呼吸せず、時刻が進んでも同じ構図のまま', () => {
+  it('一問確定すると輪がふくらんで元へ戻る', () => {
+    const changedAt = T0 + 20_000;
+    const swell = (now: number) => shardsOf(computeScene(base(questionState(changedAt), { now })))?.swell;
+    expect(swell(changedAt + 3_000)).toBeCloseTo(1.08);
+    expect(swell(changedAt + 6_000)).toBe(1);
+  });
+
+  it('reduced-motion では時刻が進んでも同じ構図のまま', () => {
     const at = (now: number) => computeScene(base(questionState(T0 + 1_000), { now, reducedMotion: true }));
     expect(at(T0 + 2_000).primitives).toEqual(at(T0 + 9_000).primitives);
+    expect(at(T0 + 2_000).shards).toEqual(at(T0 + 9_000).shards);
     expect(at(T0 + 2_000).animating).toBe(false);
   });
 
   it('reduced-motion でも一問確定で構図が切り替わる', () => {
     const before = computeScene(base(questionState(T0 + 1_000, 12), { now: T0 + 5_000, reducedMotion: true }));
     const after = computeScene(base(questionState(T0 + 5_000, 13), { now: T0 + 5_001, reducedMotion: true }));
-    expect(spectrumOf(after)).not.toEqual(spectrumOf(before));
+    expect(shardsOf(after)).not.toEqual(shardsOf(before));
   });
 });
 
@@ -139,7 +147,7 @@ describe('判定と結果', () => {
   it('判定は1.2秒で黒へ沈む', () => {
     const scene = computeScene(base(judging('red'), { now: T0 + 1_500 }));
     expect(scene.primitives).toContainEqual({ type: 'fill', color: COLORS.dark, alpha: 1 });
-    expect(spectrumOf(scene)).toBeUndefined();
+    expect(shardsOf(scene)).toBeNull();
   });
 
   it.each(COLOR_IDS)('%s: 結果開始の最初のフレームで結果色の形が見えている', (colorId) => {
@@ -160,6 +168,7 @@ describe('判定と結果', () => {
     const settled = computeScene(base(result, { now: start + 10_000 }));
     expect(settled).toEqual({
       primitives: [{ type: 'fill', color: color?.backgroundColor }],
+      shards: null,
       idleLayer: 0,
       resultLayer: 1,
       veil: null,

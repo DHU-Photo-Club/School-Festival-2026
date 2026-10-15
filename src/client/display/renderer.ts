@@ -6,9 +6,9 @@ export interface SceneRenderer {
   draw(primitives: readonly Primitive[]): void;
 }
 
-/** 一フレームで重ねる描画内容の上限。`computeScene` は最大4つ（背景、暗転、にじみ2つ）を返す。 */
+/** 一フレームで重ねる描画内容の上限。`computeScene` は最大3つ（暗転、結果色のにじみ2つ）を返す。 */
 const MAX_LAYERS = 4;
-const KIND = { fill: 0, spectrum: 1, bloom: 2 } as const;
+const KIND = { fill: 0, bloom: 1 } as const;
 const SHAPE = { line: 0, band: 1, frame: 2 } as const;
 
 const VERTEX_SHADER = `#version 300 es
@@ -29,11 +29,10 @@ uniform vec2 u_size;
 uniform int u_count;
 uniform int u_kind[MAX_LAYERS];
 uniform vec4 u_color[MAX_LAYERS];
-// spectrum: (offset, span, rise, spread)  bloom: (x, y, dx, dy)
+// bloom: (x, y, dx, dy)
 uniform vec4 u_geometry[MAX_LAYERS];
-// spectrum: (blend, intensity, drift, 0)  bloom: (reach, feather, shape, drift)
+// bloom: (reach, feather, shape, drift)
 uniform vec4 u_params[MAX_LAYERS];
-uniform vec3 u_spectrum[8];
 
 out vec4 outColor;
 
@@ -61,30 +60,6 @@ float flow(vec2 q, float t) {
   n += 0.30 * noise(q * 2.3 + vec2(-0.017, 0.024) * t + 5.2);
   n += 0.15 * noise(q * 4.7 + vec2(0.029, 0.011) * t + 11.7);
   return n * 2.0 - 1.0;
-}
-
-vec4 spectrum(vec2 p, vec2 q, vec4 g, vec4 k) {
-  float spread = g.w;
-  if (spread <= 0.0 || k.y <= 0.0) return vec4(0.0);
-  float t = k.z;
-  // 色の位置と明るさの山を、画面短辺ほどの大きな模様のノイズで揺らす。
-  float lean = (u_size.y - p.y) / u_size.y - 0.5;
-  float s = p.x / u_size.x * g.y - g.x + flow(q * 0.6, t) * 0.7 + lean * 0.35;
-  float lift = u_size.y - p.y + flow(q * 0.6 + 17.0, t) * spread * 0.45;
-
-  // colors[i] の区画の中央で i になる位置。隣の区画の中央へ向けて blend の幅で溶け合う。
-  s -= 0.5;
-  float i0 = floor(s);
-  float f = s - i0;
-  float w = smoothstep(0.5 - k.x * 0.5, 0.5 + k.x * 0.5, f);
-  int a = int(mod(i0, 8.0));
-  int b = int(mod(i0 + 1.0, 8.0));
-  vec3 rgb = mix(u_spectrum[a], u_spectrum[b], w);
-
-  // 下端から rise の高さを明るさの山とし、上へ早く、下へゆるやかに背景へ溶ける。
-  float x = (lift - g.z) / (spread * (lift < g.z ? 1.8 : 0.8));
-  float glow = exp(-x * x) * (0.8 + 0.2 * flow(q * 0.9 + 3.1, t));
-  return vec4(rgb, clamp(glow * k.y, 0.0, 1.0));
 }
 
 vec4 bloom(vec2 p, vec2 q, vec4 color, vec4 g, vec4 k) {
@@ -119,9 +94,6 @@ void main() {
     vec4 layer;
     if (u_kind[i] == 0) {
       layer = u_color[i];
-    } else if (u_kind[i] == 1) {
-      layer = spectrum(p, q, u_geometry[i], u_params[i]);
-      soft += layer.a * (1.0 - layer.a);
     } else {
       layer = bloom(p, q, u_color[i], u_geometry[i], u_params[i]);
       soft += layer.a * (1.0 - layer.a);
@@ -148,7 +120,7 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   return shader;
 }
 
-type Uniforms = Record<'size' | 'count' | 'kind' | 'color' | 'geometry' | 'params' | 'spectrum', WebGLUniformLocation | null>;
+type Uniforms = Record<'size' | 'count' | 'kind' | 'color' | 'geometry' | 'params', WebGLUniformLocation | null>;
 
 function setup(gl: WebGL2RenderingContext): Uniforms {
   const program = gl.createProgram();
@@ -173,7 +145,6 @@ function setup(gl: WebGL2RenderingContext): Uniforms {
     color: at('u_color'),
     geometry: at('u_geometry'),
     params: at('u_params'),
-    spectrum: at('u_spectrum'),
   };
 }
 
@@ -183,18 +154,12 @@ function drawGl(gl: WebGL2RenderingContext, uniforms: Uniforms, primitives: read
   const color = new Float32Array(MAX_LAYERS * 4);
   const geometry = new Float32Array(MAX_LAYERS * 4);
   const params = new Float32Array(MAX_LAYERS * 4);
-  const spectrum = new Float32Array(8 * 3);
   layers.forEach((primitive, index) => {
     const o = index * 4;
     kind[index] = KIND[primitive.type];
     switch (primitive.type) {
       case 'fill':
         color.set([...parseHex(primitive.color), primitive.alpha ?? 1], o);
-        break;
-      case 'spectrum':
-        geometry.set([primitive.offset, primitive.span, primitive.rise, primitive.spread], o);
-        params.set([primitive.blend, primitive.intensity, primitive.drift, 0], o);
-        primitive.colors.slice(0, 8).forEach((entry, i) => spectrum.set(parseHex(entry), i * 3));
         break;
       case 'bloom':
         color.set([...parseHex(primitive.color), 1], o);
@@ -211,12 +176,11 @@ function drawGl(gl: WebGL2RenderingContext, uniforms: Uniforms, primitives: read
   gl.uniform4fv(uniforms.color, color);
   gl.uniform4fv(uniforms.geometry, geometry);
   gl.uniform4fv(uniforms.params, params);
-  gl.uniform3fv(uniforms.spectrum, spectrum);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 /**
- * WebGL2を使えない環境の代替描画。色のにじみはcanvasの線形グラデーションで近似し、ノイズの揺れは描かない。
+ * WebGL2を使えない環境の代替描画。結果色のにじみはcanvasの線形グラデーションで近似し、ノイズの揺れは描かない。
  */
 function draw2d(context: CanvasRenderingContext2D, primitives: readonly Primitive[]): void {
   const { width, height } = context.canvas;
@@ -228,44 +192,12 @@ function draw2d(context: CanvasRenderingContext2D, primitives: readonly Primitiv
         context.fillStyle = primitive.color;
         context.fillRect(0, 0, width, height);
         break;
-      case 'spectrum':
-        drawSpectrum2d(context, primitive);
-        break;
       case 'bloom':
         drawBloom2d(context, primitive);
         break;
     }
     context.restore();
   }
-}
-
-function drawSpectrum2d(context: CanvasRenderingContext2D, primitive: Extract<Primitive, { type: 'spectrum' }>): void {
-  const { width, height } = context.canvas;
-  const { offset, span, rise, spread, colors } = primitive;
-  if (spread <= 0 || primitive.intensity <= 0 || colors.length === 0) return;
-  // 区画 i の中央の横位置。画面の外の区画まで並べて、両端の色が途切れないようにする。
-  const centerX = (index: number) => ((index + 0.5 + offset) / span) * width;
-  const first = Math.floor(-offset) - 1;
-  const last = Math.ceil(span - offset) + 1;
-  const hue = context.createLinearGradient(centerX(first), 0, centerX(last), 0);
-  for (let index = first; index <= last; index += 1) {
-    hue.addColorStop((index - first) / (last - first), colors[((index % colors.length) + colors.length) % colors.length]);
-  }
-  const top = rise + spread * 1.6;
-  const glow = context.createLinearGradient(0, height, 0, height - top);
-  glow.addColorStop(0, `rgba(0,0,0,${Math.exp(-((rise / (spread * 1.8)) ** 2))})`);
-  glow.addColorStop(Math.min(1, rise / top), 'rgba(0,0,0,1)');
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  const layer = new OffscreenCanvas(width, height);
-  const layerContext = layer.getContext('2d');
-  if (!layerContext) return;
-  layerContext.fillStyle = hue;
-  layerContext.fillRect(0, 0, width, height);
-  layerContext.globalCompositeOperation = 'destination-in';
-  layerContext.fillStyle = glow;
-  layerContext.fillRect(0, 0, width, height);
-  context.globalAlpha = primitive.intensity;
-  context.drawImage(layer, 0, 0);
 }
 
 function drawBloom2d(context: CanvasRenderingContext2D, primitive: Extract<Primitive, { type: 'bloom' }>): void {

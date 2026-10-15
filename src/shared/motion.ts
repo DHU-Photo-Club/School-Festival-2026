@@ -11,8 +11,6 @@ export const GLOW_APPEAR_DELAY_MS = 600;
 export const GLOW_APPEAR_MS = 3_000;
 export const GLOW_TURN_MS = 6_000;
 export const GLOW_PULSE = 0.08;
-export const GLOW_BREATH_MS = 12_000;
-export const GLOW_BREATH = 0.015;
 export const JUDGING_FADE_MS = 1_200;
 export const RESULT_SETTLE_MS = 1_000;
 export const RESULT_PHOTO_DELAY_MS = 400;
@@ -51,13 +49,10 @@ export type ResultForm =
   | 'diagonalTide'
   | 'meetingTides';
 
-/** 質問中の色のにじみで、画面の幅に並ぶ区画の数（docs/visual-language.md 3.2節）。 */
+/** 質問中の破片の色で、画面の幅に並ぶ区画の数（docs/visual-language.md 3.2節）。 */
 export const SPECTRUM_SPAN = 2.5;
 /** 隣り合う色が溶け合う幅（区画に対する割合）。 */
 export const SPECTRUM_BLEND = 0.9;
-/** 明るさの山の高さ（画面の下端から、画面の高さに対する割合）と、背景へ溶ける幅（画面短辺に対する割合）。 */
-export const SPECTRUM_RISE = 0.4;
-export const SPECTRUM_SPREAD = 0.48;
 /** 結果色の縁のぼけ幅（画面短辺に対する割合）。広がり始めから終わりへ広げる（docs/visual-language.md 3.4節）。 */
 export const BLOOM_FEATHER_START = 0.2;
 export const BLOOM_FEATHER_END = 0.75;
@@ -149,7 +144,7 @@ export function ringAngle(sessionId: string | null, steps: number, displayOrder:
 }
 
 /**
- * 質問中の色のにじみのずれ（区画数）。iPadの輪の回転角を区画数で表した値で、画面の左端に
+ * 質問中の破片の色のずれ（区画数）。iPadの輪の回転角を区画数で表した値で、画面の左端に
  * `-offset` 番目の区画の位置が来る。画面が右へ一つ進むごとに一区画戻し、一問確定すると一区画進む。
  */
 export function spectrumOffset(sessionId: string | null, steps: number, displayOrder: number): number {
@@ -164,23 +159,6 @@ export function spectrumOffset(sessionId: string | null, steps: number, displayO
  */
 export type Primitive =
   | { type: 'fill'; color: string; alpha?: number }
-  /**
-   * 質問中の8色のにじみ。横位置で色が決まり、画面の幅に `span` 区画が並ぶ。`colors[i]` は
-   * 位置 `x / 幅 × span - offset` が `i` から `i + 1` までの区画を占める（8区画で一巡する）。
-   * 画面の下端から `rise` の高さに明るさの山を置き、`spread` の幅で上下の背景へ溶ける。
-   * `intensity` は0〜1。
-   */
-  | {
-      type: 'spectrum';
-      offset: number;
-      span: number;
-      blend: number;
-      rise: number;
-      spread: number;
-      colors: string[];
-      intensity: number;
-      drift: number;
-    }
   /**
    * 結果色のにじみ。起点からの距離 `d` が `reach - feather` より近い範囲を塗りつぶし、
    * `reach + feather` より遠い範囲は塗らない。距離はどれも直線か画面の縁から測る。
@@ -201,8 +179,28 @@ export type Primitive =
       drift: number;
     };
 
+/**
+ * 質問中の三角形の破片（docs/visual-language.md 3.2節）。配置と動きは `shardPoses` で求め、
+ * 破片の色は重心の横位置で決まる。`colors[i]` は位置 `x / 幅 × span - offset` が `i` から
+ * `i + 1` までの区画を占める（8区画で一巡する）。
+ */
+export interface ShardLayer {
+  /** `shardPoses` に渡す経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
+  time: number;
+  /** 輪の半径の倍率。 */
+  swell: number;
+  offset: number;
+  span: number;
+  blend: number;
+  colors: string[];
+  /** 不透明度（0〜1）。 */
+  intensity: number;
+}
+
 export interface Scene {
   primitives: Primitive[];
+  /** WebGLの描画の上に重ねる破片。 */
+  shards: ShardLayer | null;
   /** 待機写真またはタイトルの層の不透明度。 */
   idleLayer: number;
   /** 結果写真またはタイポグラフィの層の不透明度。 */
@@ -234,20 +232,17 @@ const colorOf = (colors: readonly ResultColor[], id: ColorId | null) => colors.f
 /** 状態の開始時刻からの経過秒。reduced-motionではノイズを流さない。 */
 const driftOf = (now: number, since: number, reducedMotion: boolean) => (reducedMotion ? 0 : Math.max(0, now - since) / 1000);
 
-/** 質問中の色のにじみ。`scale` は帯の太さの倍率で、0で消える。 */
-function questionSpectrum(input: SceneInput, scale: number, steps: number): Primitive {
-  const { state, now, width, height, reducedMotion, colors } = input;
-  const breath = reducedMotion ? 0 : GLOW_BREATH * Math.sin((2 * Math.PI * (now - state.phaseStartedAt)) / GLOW_BREATH_MS);
+/** 質問中の破片。reduced-motionでは時刻を進めず、初期配置のまま止める。 */
+function questionShards(input: SceneInput, intensity: number, steps: number, swell = 1): ShardLayer {
+  const { state, now, reducedMotion, colors } = input;
   return {
-    type: 'spectrum',
+    time: reducedMotion ? 0 : now,
+    swell,
     offset: spectrumOffset(state.sessionId, steps, input.displayOrder),
     span: SPECTRUM_SPAN,
     blend: SPECTRUM_BLEND,
-    rise: SPECTRUM_RISE * height * (1 + breath),
-    spread: SPECTRUM_SPREAD * Math.min(width, height) * Math.max(0, scale),
     colors: ringOrder(state.sessionId).map((id) => colorOf(colors, id)?.baseColor ?? COLORS.line),
-    intensity: clamp01(scale),
-    drift: driftOf(now, state.phaseStartedAt, reducedMotion),
+    intensity: clamp01(intensity),
   };
 }
 
@@ -321,10 +316,11 @@ function resultScene(input: SceneInput): Scene {
   const { state, now, colors, reducedMotion, width, height, displayOrder } = input;
   const color = colorOf(colors, state.resultColorId);
   if (!color || !state.resultColorId) {
-    return { primitives: [{ type: 'fill', color: COLORS.dark }], idleLayer: 0, resultLayer: 0, veil: null, animating: false };
+    return { primitives: [{ type: 'fill', color: COLORS.dark }], shards: null, idleLayer: 0, resultLayer: 0, veil: null, animating: false };
   }
   const complete: Scene = {
     primitives: [{ type: 'fill', color: color.backgroundColor }],
+    shards: null,
     idleLayer: 0,
     resultLayer: 1,
     veil: null,
@@ -337,7 +333,7 @@ function resultScene(input: SceneInput): Scene {
   const elapsed = now - startAt;
   if (reducedMotion) {
     if (elapsed < RESULT_REDUCED_HOLD_MS) {
-      return { primitives: [{ type: 'fill', color: color.baseColor }], idleLayer: 0, resultLayer: 0, veil: null, animating: true };
+      return { primitives: [{ type: 'fill', color: color.baseColor }], shards: null, idleLayer: 0, resultLayer: 0, veil: null, animating: true };
     }
     return complete;
   }
@@ -357,6 +353,7 @@ function resultScene(input: SceneInput): Scene {
   }
   return {
     primitives,
+    shards: null,
     idleLayer: 0,
     resultLayer: easeInOutSine((elapsed - durationMs - RESULT_PHOTO_DELAY_MS) / RESULT_PHOTO_FADE_MS),
     veil: null,
@@ -371,12 +368,13 @@ export function computeScene(input: SceneInput): Scene {
   if (state.phase === 'idle' || state.phase === 'intro') {
     const preview = state.phase === 'idle' ? colorOf(colors, state.previewColorId) : null;
     if (preview) {
-      return { primitives: [{ type: 'fill', color: preview.backgroundColor }], idleLayer: 0, resultLayer: 1, veil: null, animating: false };
+      return { primitives: [{ type: 'fill', color: preview.backgroundColor }], shards: null, idleLayer: 0, resultLayer: 1, veil: null, animating: false };
     }
     const sinceIdle = now - state.phaseStartedAt;
     const veiled = state.phase === 'idle' && input.previousBackground !== null && !reducedMotion && sinceIdle < IDLE_RETURN_MS;
     return {
       primitives: [{ type: 'fill', color: COLORS.idle }],
+      shards: null,
       idleLayer: 1,
       resultLayer: 0,
       veil: veiled ? { color: input.previousBackground as string, opacity: 1 - easeInOutSine(sinceIdle / IDLE_RETURN_MS) } : null,
@@ -392,7 +390,8 @@ export function computeScene(input: SceneInput): Scene {
     const pulse = !reducedMotion && changedAt > state.phaseStartedAt && turn < 1 ? GLOW_PULSE * Math.sin(Math.PI * clamp01(turn)) : 0;
     const steps = ringSteps(state, now, GLOW_TURN_MS, reducedMotion);
     return {
-      primitives: [{ type: 'fill', color: COLORS.idle }, questionSpectrum(input, appear * (1 + pulse), steps)],
+      primitives: [{ type: 'fill', color: COLORS.idle }],
+      shards: questionShards(input, appear, steps, 1 + pulse),
       idleLayer: reducedMotion ? 0 : 1 - easeInOutSine(sinceStart / QUESTION_PHOTO_FADE_MS),
       resultLayer: 0,
       veil: null,
@@ -403,14 +402,12 @@ export function computeScene(input: SceneInput): Scene {
   // `judging`。結果開始時刻を過ぎたフレームからは結果を描く（仕様書8.7節）。
   if (state.phase === 'judging' && (state.phaseEndsAt === null || now < state.phaseEndsAt)) {
     if (reducedMotion) {
-      return { primitives: [{ type: 'fill', color: COLORS.dark }], idleLayer: 0, resultLayer: 0, veil: null, animating: false };
+      return { primitives: [{ type: 'fill', color: COLORS.dark }], shards: null, idleLayer: 0, resultLayer: 0, veil: null, animating: false };
     }
     const fade = easeInSine((now - state.phaseStartedAt) / JUDGING_FADE_MS);
     const primitives: Primitive[] = [{ type: 'fill', color: COLORS.idle }, { type: 'fill', color: COLORS.dark, alpha: fade }];
-    if (fade < 1) {
-      primitives.push(questionSpectrum(input, 1 - fade, ringSteps(state, now, GLOW_TURN_MS, false)));
-    }
-    return { primitives, idleLayer: 0, resultLayer: 0, veil: null, animating: true };
+    const shards = fade < 1 ? questionShards(input, 1 - fade, ringSteps(state, now, GLOW_TURN_MS, false)) : null;
+    return { primitives, shards, idleLayer: 0, resultLayer: 0, veil: null, animating: true };
   }
 
   return resultScene(input);

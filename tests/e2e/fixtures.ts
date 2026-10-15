@@ -107,17 +107,18 @@ export class ExhibitHarness {
 
 /**
  * 展示ディスプレイのcanvasを読む。展示ディスプレイはWebGLで描き、描画結果を保持する設定にしているため、
- * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。`stride` 画素ごとに一つ読む。
+ * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。破片のcanvasは重ねて写す。`stride` 画素ごとに一つ読む。
  */
 async function readCanvas(page: Page, x: number, y: number, w: number, h: number, stride: number): Promise<number[]> {
   return page.evaluate(
     ([px, py, pw, ph, step]) => {
-      const source = document.querySelector('canvas') as HTMLCanvasElement;
+      const [source, ...overlays] = document.querySelectorAll<HTMLCanvasElement>('main.display canvas');
       const copy = document.createElement('canvas');
       copy.width = source.width;
       copy.height = source.height;
       const context = copy.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
       context.drawImage(source, 0, 0);
+      for (const overlay of overlays) context.drawImage(overlay, 0, 0, copy.width, copy.height);
       const left = Math.min(copy.width - 1, Math.floor(copy.width * px));
       const top = Math.min(copy.height - 1, Math.floor(copy.height * py));
       const { data } = context.getImageData(left, top, Math.max(1, Math.floor(copy.width * pw)), Math.max(1, Math.floor(copy.height * ph)));
@@ -133,6 +134,15 @@ async function readCanvas(page: Page, x: number, y: number, w: number, h: number
 export async function canvasPixel(page: Page, x: number, y: number): Promise<string> {
   const [r, g, b] = await readCanvas(page, x, y, 0, 0, 1);
   return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+}
+
+/** canvasに背景 `#0B0B0B` 以外の色が描かれているか。 */
+export async function canvasHasGraphics(page: Page): Promise<boolean> {
+  const samples = await readCanvas(page, 0, 0, 1, 1, 257);
+  for (let i = 0; i < samples.length; i += 3) {
+    if (samples[i] !== 0x0b || samples[i + 1] !== 0x0b || samples[i + 2] !== 0x0b) return true;
+  }
+  return false;
 }
 
 /** canvas全体の画素の要約（変化の検出に使う）。 */
