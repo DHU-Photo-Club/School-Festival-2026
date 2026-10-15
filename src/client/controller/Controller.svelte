@@ -16,6 +16,7 @@
   import { fetchDeviceSession, watchReducedMotion } from '../lib/session.ts';
   import QrCode from './QrCode.svelte';
   import Ring from './Ring.svelte';
+  import ShardField from './ShardField.svelte';
   import Slider from './Slider.svelte';
   import type { SliderMode } from './Slider.svelte';
 
@@ -169,7 +170,6 @@
     if (!exhibit) return { angle: 0, radius: 1, thickness: 1 };
     const t = reducedMotion ? exhibit.phaseStartedAt : now;
     switch (exhibit.phase) {
-      case 'idle':
       case 'intro':
         return { angle: reducedMotion ? 0 : ((t % IDLE_TURN_MS) / IDLE_TURN_MS) * 360, radius: 1, thickness: 1 };
       case 'question':
@@ -214,16 +214,17 @@
     style:background={exhibit.phase === 'result' && color ? color.backgroundColor : undefined}
     style:color={exhibit.phase === 'result' && color ? color.foregroundColor : undefined}
   >
+    {#if exhibit.phase === 'idle'}
+      <ShardField still={reducedMotion || !exhibit.accepting} dim={!exhibit.accepting} />
+    {/if}
     {#if exhibit.phase === 'idle' && !exhibit.accepting}
-      <section class="center stack">
-        <Ring sessionId={null} angle={0} size="min(56vmin, 420px)" gray />
+      <section class="center stack top">
         <h1>{EXHIBIT.title}</h1>
         <p class="lead">ただいま受付を停止しています</p>
         <p class="muted">しばらくお待ちください</p>
       </section>
     {:else if exhibit.phase === 'idle'}
-      <section class="center stack">
-        <Ring sessionId={null} angle={ring.angle} size="min(56vmin, 420px)" />
+      <section class="center stack top">
         <h1>{EXHIBIT.title}</h1>
         <p class="muted">いくつかの質問に答えると、今のあなたを表す色がひとつ選ばれます。</p>
         <button class="primary-button" disabled={!online || pending !== null} onclick={() => send({ name: 'start' })}>
@@ -350,6 +351,16 @@
   }
   .stack {
     gap: 24px;
+  }
+  /* 破片の輪の内側（直径は画面短辺のおよそ45%）に収める。 */
+  .top {
+    position: relative;
+    gap: 20px;
+    max-width: min(42vmin, 360px);
+    margin: 0 auto;
+  }
+  .top .muted {
+    font-size: 15px;
   }
   h1 {
     margin: 0;
