@@ -36,8 +36,15 @@ function page(title: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style>
+  @font-face {
+    font-family: 'MOBO-Regular';
+    src: url('/fonts/MOBO-Regular.otf') format('opentype');
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+  }
   body { margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 12px; padding: 24px;
-    background: #0B0B0B; color: #E8E6E3; font-family: system-ui, sans-serif; text-align: center; }
+    background: #0B0B0B; color: #E8E6E3; font-family: 'MOBO-Regular', system-ui, sans-serif; text-align: center; }
   h1 { font-size: 20px; font-weight: 600; margin: 0; }
   p { margin: 0; color: #B5B2AE; }
 </style>

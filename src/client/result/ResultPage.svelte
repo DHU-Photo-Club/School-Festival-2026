@@ -71,7 +71,6 @@
   }
   .message {
     margin: 0;
-    max-width: 22em;
     line-height: 1.7;
   }
   figure {

@@ -1,23 +1,22 @@
-/**
- * 展示ディスプレイの画面IDと並び順。画面IDは登録時にサーバーが空いている最小の番号から振り、
- * `display-1` の並び順（`displayOrder`）を0とする。
- */
-const SCREEN_ID = /^display-([1-9][0-9]*)$/;
+import type { ScreenRole } from './types.ts';
 
-export function screenIdFor(displayOrder: number): string {
-  return `display-${displayOrder + 1}`;
+/** 画面IDの番号は役割ごとに割り当て、並び順は0から数える。 */
+const SCREEN_ID = /^(display|photo)-([1-9][0-9]*)$/;
+
+export function screenIdFor(displayOrder: number, role: ScreenRole = 'display'): string {
+  return `${role}-${displayOrder + 1}`;
 }
 
 /** 画面IDから並び順を求める。形式が違えば `null`。 */
-export function displayOrderOf(screenId: string): number | null {
+export function displayOrderOf(screenId: string, role: ScreenRole = 'display'): number | null {
   const match = screenId.match(SCREEN_ID);
-  return match ? Number(match[1]) - 1 : null;
+  return match && match[1] === role ? Number(match[2]) - 1 : null;
 }
 
 /** 使用中の画面IDを除いた、最も小さい番号の画面ID。 */
-export function nextFreeScreenId(used: Iterable<string>): string {
+export function nextFreeScreenId(used: Iterable<string>, role: ScreenRole = 'display'): string {
   const taken = new Set(used);
   let order = 0;
-  while (taken.has(screenIdFor(order))) order += 1;
-  return screenIdFor(order);
+  while (taken.has(screenIdFor(order, role))) order += 1;
+  return screenIdFor(order, role);
 }

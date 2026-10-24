@@ -2,13 +2,14 @@
   import { onDestroy, onMount } from 'svelte';
   import { RESULT_COLORS } from '../../data/colors.ts';
   import type { Command } from '../../shared/machine.ts';
+  import type { DeviceRole } from '../../shared/types.ts';
   import type { AdminState } from '../../shared/protocol.ts';
   import { RealtimeClient } from '../lib/realtime.ts';
   import type { AlertMessage, ConnectionStatus } from '../lib/realtime.ts';
 
   interface SessionRow {
     id: string;
-    role: 'controller' | 'display';
+    role: DeviceRole;
     screenId: string | null;
     issuedAt: number;
     expiresAt: number;
@@ -16,6 +17,8 @@
     connected: boolean;
   }
 
+  const DEVICE_ROLES = ['controller', 'display', 'photo'] as const;
+  const DEVICE_LABELS = { controller: '診断用iPad', display: '展示ディスプレイ', photo: '写真用' } as const;
   const PHASE_LABELS = { idle: '待機', intro: '導入', question: '質問', judging: '判定', result: '結果' } as const;
 
   let admin = $state<AdminState | null>(null);
@@ -24,8 +27,8 @@
   let message = $state<string | null>(null);
   let alerts = $state<AlertMessage[]>([]);
   let sessions = $state<SessionRow[]>([]);
-  let pairingRole = $state<'controller' | 'display'>('display');
-  let issued = $state<{ code: string; expiresAt: number; label: string } | null>(null);
+  let issued = $state<Partial<Record<DeviceRole, { code: string; expiresAt: number }>>>({});
+  let issuing = $state<Partial<Record<DeviceRole, boolean>>>({});
   let client: RealtimeClient | null = null;
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -56,19 +59,26 @@
     if (next.name === 'releaseController') void loadSessions();
   }
 
-  async function issueCode(event: SubmitEvent) {
-    event.preventDefault();
-    const response = await api('/api/admin/pairing-codes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: pairingRole }),
-    });
-    const body = (await response.json()) as { code?: string; expiresAt?: number; message?: string };
-    if (response.ok && body.code && body.expiresAt) {
-      issued = { code: body.code, expiresAt: body.expiresAt, label: pairingRole === 'display' ? '展示ディスプレイ' : '診断用iPad' };
-      message = null;
-    } else {
-      message = body.message ?? 'コードを発行できませんでした。';
+  async function issueCode(role: DeviceRole) {
+    if (issuing[role]) return;
+    issuing[role] = true;
+    try {
+      const response = await api('/api/admin/pairing-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      const body = (await response.json()) as { code?: string; expiresAt?: number; message?: string };
+      if (response.ok && body.code && body.expiresAt) {
+        issued[role] = { code: body.code, expiresAt: body.expiresAt };
+        message = null;
+      } else {
+        message = body.message ?? 'コードを発行できませんでした。';
+      }
+    } catch {
+      message = 'コードを発行できませんでした。';
+    } finally {
+      issuing[role] = false;
     }
   }
 
@@ -113,8 +123,9 @@
 
   {#if message}<p class="message" role="alert">{message}</p>{/if}
 
+  <div class="dashboard">
   {#if admin}
-    <section>
+    <section class="state-panel">
       <h2>展示状態</h2>
       <dl>
         <dt>段階</dt>
@@ -145,45 +156,56 @@
       </div>
     </section>
 
-    <section>
+    <section class="devices-panel">
       <h2>端末</h2>
       <p data-testid="display-count">展示ディスプレイ {admin.devices.filter((device) => device.role === 'display').length} 台（登録済み）</p>
-      <table>
-        <thead>
-          <tr><th>端末</th><th>接続</th><th>最終受信</th><th>準備</th><th>時刻同期</th></tr>
-        </thead>
-        <tbody>
-          {#each admin.devices as device (device.screenId ?? 'controller')}
-            <tr data-testid="device-{device.screenId ?? 'controller'}">
-              <td>{device.role === 'controller' ? '診断用iPad' : device.screenId}</td>
-              <td class:bad={!device.connected}>{device.connected ? '接続中' : '切断'}</td>
-              <td>{time(device.lastReceivedAt)}</td>
-              <td>
-                {#if device.role === 'controller'}
-                  —
-                {:else if device.preload}
-                  準備完了（成功 {device.preload.succeeded}件{device.preload.failedPhotoIds.length > 0
-                    ? `、失敗 ${device.preload.failedPhotoIds.join(', ')}`
-                    : ''}）
-                {:else}
-                  未報告
-                {/if}
-              </td>
-              <td class:bad={device.clockSync?.degraded}>
-                {#if device.clockSync}
-                  {device.clockSync.degraded ? '同期精度低下' : '正常'}（往復 {Math.round(device.clockSync.minRoundTripTime)}ms、差
-                  {Math.round(device.clockSync.offsetSpread)}ms）
-                {:else}
-                  未計測
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <div class="device-columns">
+        {#each DEVICE_ROLES as role (role)}
+          <div class="device-group" role="group" aria-labelledby="devices-{role}">
+            <h3 id="devices-{role}">{DEVICE_LABELS[role]}</h3>
+            <div class="device-list">
+              {#each admin.devices.filter((device) => device.role === role) as device (device.screenId ?? 'controller')}
+                <article class="device-card" data-testid="device-{device.screenId ?? 'controller'}">
+                  <div class="device-heading">
+                    <h4>{device.screenId ?? DEVICE_LABELS.controller}</h4>
+                    <span class:bad={!device.connected}>{device.connected ? '接続中' : '切断'}</span>
+                  </div>
+                  <dl class="device-details">
+                    <dt>最終受信</dt>
+                    <dd>{time(device.lastReceivedAt)}</dd>
+                    <dt>準備</dt>
+                    <dd>
+                      {#if device.role !== 'display'}
+                        —
+                      {:else if device.preload}
+                        準備完了（成功 {device.preload.succeeded}件{device.preload.failedPhotoIds.length > 0
+                          ? `、失敗 ${device.preload.failedPhotoIds.join(', ')}`
+                          : ''}）
+                      {:else}
+                        未報告
+                      {/if}
+                    </dd>
+                    <dt>時刻同期</dt>
+                    <dd class:bad={device.clockSync?.degraded}>
+                      {#if device.clockSync}
+                        {device.clockSync.degraded ? '同期精度低下' : '正常'}（往復 {Math.round(device.clockSync.minRoundTripTime)}ms、差
+                        {Math.round(device.clockSync.offsetSpread)}ms）
+                      {:else}
+                        未計測
+                      {/if}
+                    </dd>
+                  </dl>
+                </article>
+              {:else}
+                <p class="muted">登録済みの端末はありません。</p>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
     </section>
 
-    <section>
+    <section class="sync-panel">
       <h2>結果同期</h2>
       {#if admin.syncReport}
         <p>
@@ -209,7 +231,7 @@
       {/if}
     </section>
 
-    <section>
+    <section class="preview-panel">
       <h2>結果色の表示確認</h2>
       <div class="colors">
         {#each RESULT_COLORS as color (color.id)}
@@ -230,7 +252,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="notices-panel">
       <h2>運用通知</h2>
       {#if alerts.length === 0}
         <p class="muted">通知はありません。</p>
@@ -246,29 +268,40 @@
     </section>
   {/if}
 
-  <section>
+  <section class="registration-panel">
     <h2>端末の登録</h2>
-    <form class="pairing" onsubmit={issueCode}>
-      <select bind:value={pairingRole} aria-label="端末種別">
-        <option value="display">展示ディスプレイ</option>
-        <option value="controller">診断用iPad</option>
-      </select>
-      <button type="submit">ペアリングコードを発行</button>
-    </form>
+    <div class="pairing-columns">
+      {#each DEVICE_ROLES as role (role)}
+        <form
+          class="pairing"
+          aria-label="{DEVICE_LABELS[role]}のコード発行"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void issueCode(role);
+          }}
+        >
+          <h3>{DEVICE_LABELS[role]}</h3>
+          <button type="submit" disabled={issuing[role]}>{issuing[role] ? '発行中…' : 'コードを発行'}</button>
+          <div class="pairing-result" aria-live="polite">
+            {#if issued[role]}
+              <p class="code">
+                <strong data-testid="pairing-code">{issued[role].code}</strong>
+              </p>
+            {/if}
+          </div>
+        </form>
+      {/each}
+    </div>
     <p class="muted">
       展示ディスプレイは、登録した順に display-1、display-2…と番号が付き、その順に写真を割り当てます。来場者から見た順に登録してください。
+      写真用は photo-1、photo-2…と番号が付き、診断とは独立して待機用の写真を8秒ごとに繰り返し表示します。
     </p>
-    {#if issued}
-      <p class="code">
-        {issued.label}: <strong data-testid="pairing-code">{issued.code}</strong>（{time(issued.expiresAt)} まで有効、一回限り）
-      </p>
-    {/if}
     <table>
       <thead><tr><th>端末</th><th>発行</th><th>最終受信</th><th>接続</th><th></th></tr></thead>
       <tbody>
         {#each sessions as session (session.id)}
-          <tr>
-            <td>{session.role === 'display' ? session.screenId : '診断用iPad'}</td>
+          <tr data-testid="session-{session.id}">
+            <td>{session.role === 'controller' ? DEVICE_LABELS.controller : `${DEVICE_LABELS[session.role]} ${session.screenId}`}</td>
             <td>{time(session.issuedAt)}</td>
             <td>{time(session.lastReceivedAt)}</td>
             <td>{session.connected ? '接続中' : '切断'}</td>
@@ -278,21 +311,137 @@
       </tbody>
     </table>
   </section>
+  </div>
 </main>
 
 <style>
   .admin {
-    max-width: 1100px;
+    max-width: 1920px;
     margin: 0 auto;
-    padding: 24px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .dashboard {
     display: grid;
-    gap: 28px;
-    font-size: 15px;
+    gap: 16px;
+    min-height: 0;
+  }
+  section {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #121211;
+    overflow-wrap: anywhere;
+  }
+  section > p {
+    margin: 0 0 12px;
+  }
+  section > p:last-child {
+    margin-bottom: 0;
+  }
+  .pairing-columns + p {
+    margin-top: 12px;
+  }
+  .pairing-columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .pairing {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #1a1918;
+  }
+  .pairing h3 {
+    margin: 0;
+    font-size: 14px;
+  }
+  .pairing button {
+    flex: none;
+    margin-top: 0;
+    padding: 8px;
+  }
+  .pairing-result {
+    min-height: 30px;
+  }
+  .pairing-result > p {
+    margin: 0;
+  }
+  .devices-panel {
+    display: flex;
+    flex-direction: column;
+  }
+  .device-columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .device-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .device-group h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+  }
+  .device-list {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-height: 0;
+  }
+  .device-list > p {
+    margin: 0;
+  }
+  .device-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #1a1918;
+  }
+  .device-heading {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin-bottom: 8px;
+  }
+  .device-heading h4 {
+    margin: 0;
+    font-size: 14px;
+  }
+  .device-details {
+    margin: 0;
+    gap: 4px 8px;
+  }
+  ul {
+    margin: 0;
+    padding-left: 20px;
+  }
+  li + li {
+    margin-top: 8px;
   }
   header {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 16px;
+    flex-shrink: 0;
   }
   h1 {
     margin: 0;
@@ -330,14 +479,12 @@
     margin: 0;
   }
   .actions,
-  .colors,
-  .pairing {
+  .colors {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
   }
-  button,
-  select {
+  button {
     padding: 8px 14px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -387,8 +534,57 @@
     border-radius: 8px;
     background: #3a2a10;
   }
+  .code {
+    margin: 0;
+  }
   .code strong {
-    font-size: 24px;
-    letter-spacing: 0.2em;
+    display: block;
+    font-size: 20px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  @media (max-width: 767px) {
+    .device-columns,
+    .pairing-columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (min-width: 1200px) and (min-height: 800px) {
+    .admin {
+      height: 100dvh;
+    }
+    .dashboard {
+      flex: 1;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+      grid-template-rows: minmax(310px, 1.2fr) minmax(170px, 0.7fr) minmax(120px, 0.6fr);
+      grid-template-areas:
+        'state devices devices'
+        'preview sync registration'
+        'notices sync registration';
+    }
+    section {
+      min-height: 0;
+      overflow: auto;
+      scrollbar-gutter: stable;
+    }
+    .state-panel { grid-area: state; }
+    .devices-panel { grid-area: devices; }
+    .device-columns {
+      flex: 1;
+      min-height: 0;
+    }
+    .device-list {
+      overflow: auto;
+      scrollbar-gutter: stable;
+    }
+    .sync-panel { grid-area: sync; }
+    .preview-panel { grid-area: preview; }
+    .notices-panel { grid-area: notices; }
+    .registration-panel { grid-area: registration; }
+    th {
+      position: sticky;
+      top: -16px;
+      background: #121211;
+    }
   }
 </style>

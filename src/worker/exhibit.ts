@@ -152,7 +152,7 @@ export class Exhibit extends DurableObject<Env> {
       }
       if (path === '/api/admin/pairing-codes' && method === 'POST') {
         const body = (await request.json().catch(() => null)) as { role?: unknown } | null;
-        if (body?.role !== 'controller' && body?.role !== 'display') return json({ error: 'INVALID_REQUEST' }, 400);
+        if (body?.role !== 'controller' && body?.role !== 'display' && body?.role !== 'photo') return json({ error: 'INVALID_REQUEST' }, 400);
         return json(this.core.issuePairingCode(body.role));
       }
     }
@@ -186,7 +186,7 @@ export class Exhibit extends DurableObject<Env> {
     if (!paired.ok) return json({ error: 'INVALID_CODE' }, 400);
     const { role, screenId } = paired.session;
     return json(
-      { role, screenId, location: role === 'display' ? `/display/${encodeURIComponent(screenId ?? '')}` : '/' },
+      { role, screenId, location: role === 'controller' ? '/' : `/${role}/${encodeURIComponent(screenId ?? '')}` },
       200,
       { 'Set-Cookie': sessionCookie(DEVICE_COOKIE, token) },
     );

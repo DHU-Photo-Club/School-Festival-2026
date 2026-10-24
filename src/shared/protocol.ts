@@ -1,6 +1,6 @@
 import type { Command } from './machine.ts';
 import { COLOR_IDS, SLIDER_STOP_IDS } from './types.ts';
-import type { ColorId, DisplayState, ExhibitState, SliderStopId } from './types.ts';
+import type { ColorId, DeviceRole, DisplayState, ExhibitState, SliderStopId } from './types.ts';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -223,7 +223,7 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 }
 
 export interface DeviceStatus {
-  role: 'controller' | 'display';
+  role: DeviceRole;
   screenId: string | null;
   connected: boolean;
   lastReceivedAt: number | null;

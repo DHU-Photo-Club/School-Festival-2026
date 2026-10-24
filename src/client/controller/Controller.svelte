@@ -130,8 +130,8 @@
       auth = 'unpaired';
       return;
     }
-    if (session.role === 'display') {
-      location.replace(`/display/${encodeURIComponent(session.screenId ?? '')}`);
+    if (session.role !== 'controller') {
+      location.replace(`/${session.role}/${encodeURIComponent(session.screenId ?? '')}`);
       return;
     }
     auth = 'ok';
@@ -346,18 +346,17 @@
   .center {
     display: grid;
     place-content: center;
+    grid-template-columns: minmax(0, 1fr);
     justify-items: center;
     text-align: center;
   }
   .stack {
     gap: 24px;
   }
-  /* 破片の輪の内側（直径は画面短辺のおよそ45%）に収める。 */
   .top {
     position: relative;
     gap: 20px;
-    max-width: min(42vmin, 360px);
-    margin: 0 auto;
+    width: 100%;
   }
   .top .muted {
     font-size: 15px;
@@ -377,12 +376,11 @@
   }
   .muted {
     color: var(--muted);
-    max-width: 32em;
   }
   .intro {
     display: grid;
     gap: 12px;
-    max-width: 30em;
+    width: 100%;
     font-size: 18px;
   }
   .question {
@@ -391,7 +389,6 @@
     gap: 32px;
     justify-items: center;
     align-items: center;
-    max-width: 720px;
     width: 100%;
     margin: 0 auto;
   }
@@ -419,7 +416,6 @@
     display: flex;
     justify-content: space-between;
     width: 100%;
-    max-width: 640px;
     gap: 16px;
   }
   .result {
@@ -452,7 +448,6 @@
     font-size: clamp(32px, 6vmin, 48px);
   }
   .message {
-    max-width: 22em;
     font-size: 18px;
   }
   .url {
@@ -468,7 +463,6 @@
   .qr-fallback {
     display: grid;
     gap: 8px;
-    max-width: 320px;
   }
   .return {
     margin-top: 12px;
@@ -477,7 +471,6 @@
     .result {
       grid-template-columns: 1fr 1fr;
       align-items: center;
-      max-width: 1100px;
       width: 100%;
       margin: 0 auto;
     }

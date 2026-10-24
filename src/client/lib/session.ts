@@ -1,5 +1,7 @@
+import type { DeviceRole } from '../../shared/types.ts';
+
 export interface DeviceSession {
-  role: 'controller' | 'display';
+  role: DeviceRole;
   screenId: string | null;
 }
 

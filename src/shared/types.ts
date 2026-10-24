@@ -10,7 +10,9 @@ export type Phase = (typeof PHASES)[number];
 export type QuestionId = string;
 
 /** 端末の役割。診断用iPadは `controller`。 */
-export type Role = 'controller' | 'display' | 'admin';
+export type ScreenRole = 'display' | 'photo';
+export type DeviceRole = 'controller' | ScreenRole;
+export type Role = DeviceRole | 'admin';
 
 /** 仕様書8章の展示状態。 */
 export interface ExhibitState {

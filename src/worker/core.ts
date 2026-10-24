@@ -20,7 +20,7 @@ import type {
   SyncReport,
 } from '../shared/protocol.ts';
 import { displayOrderOf, nextFreeScreenId } from '../shared/screens.ts';
-import type { ExhibitState, Question, ResultColor, Role } from '../shared/types.ts';
+import type { DeviceRole, ExhibitState, Question, ResultColor, Role, ScreenRole } from '../shared/types.ts';
 
 /** 認証・ペアリングセッションの有効期間（仕様書8.4節）。 */
 export const SESSION_TTL_MS = 12 * 60 * 60_000;
@@ -62,7 +62,7 @@ export interface AuthSession {
 }
 
 interface PairingCode {
-  role: 'controller' | 'display';
+  role: DeviceRole;
   issuedAt: number;
   expiresAt: number;
 }
@@ -128,7 +128,8 @@ const PREFIX_PAIRING = 'pairing:';
 const PREFIX_IDEMPOTENCY = 'idem:';
 const PREFIX_DEVICE = 'device:';
 
-const deviceKey = (role: Role, screenId: string | null) => (role === 'display' ? `display:${screenId}` : 'controller');
+const deviceKey = (role: Role, screenId: string | null) =>
+  role === 'display' || role === 'photo' ? `${role}:${screenId}` : role;
 
 /**
  * 展示状態の正本。要求を一件ずつ同期的に処理し、保存と配信を一回の処理として行う（仕様書8.1節）。
@@ -180,6 +181,7 @@ export class ExhibitCore {
       case 'controller':
         return meta.controlling ? state : null;
       case 'display':
+      case 'photo':
         return toDisplayState(state);
       case 'admin':
         return this.adminView(state);
@@ -190,13 +192,13 @@ export class ExhibitCore {
     const { answers: _answers, ...rest } = state;
     const now = this.options.now();
     const live = this.liveConnections();
-    const status = (role: 'controller' | 'display', screenId: string | null): DeviceStatus => {
+    const status = (role: DeviceRole, screenId: string | null): DeviceStatus => {
       const record = this.options.store.get<DeviceRecord>(PREFIX_DEVICE + deviceKey(role, screenId));
       const connection = live.find(
         (candidate) =>
           candidate.meta.role === role &&
           candidate.meta.helloAt !== null &&
-          (role === 'display' ? candidate.meta.screenId === screenId : candidate.meta.controlling),
+          (role === 'controller' ? candidate.meta.controlling : candidate.meta.screenId === screenId),
       );
       return {
         role,
@@ -212,6 +214,7 @@ export class ExhibitCore {
       devices: [
         status('controller', null),
         ...this.registeredScreens().map((screenId) => status('display', screenId)),
+        ...this.registeredScreens('photo').map((screenId) => status('photo', screenId)),
       ],
       controllerAssigned: this.options.store.get<ControllerHolder>(KEY_CONTROLLER) !== undefined,
       syncReport: this.options.store.get<SyncReport>(KEY_SYNC) ?? null,
@@ -265,7 +268,7 @@ export class ExhibitCore {
     const session = this.resolveSession(authKey);
     if (!session) return { ok: false, status: 401 };
     if (session.role !== role) return { ok: false, status: 403 };
-    if (session.role === 'display' && session.screenId !== screenId) return { ok: false, status: 403 };
+    if ((session.role === 'display' || session.role === 'photo') && session.screenId !== screenId) return { ok: false, status: 403 };
     return { ok: true, session };
   }
 
@@ -313,20 +316,20 @@ export class ExhibitCore {
   }
 
   /**
-   * 登録済みの展示ディスプレイの画面ID。並び順で返す。
-   * 展示ディスプレイの台数は、有効な端末セッションを持つ展示ディスプレイの数とする（仕様書7.2節）。
+   * 有効な端末セッションを持つ画面を役割別に返す。
+   * 既定の展示ディスプレイ一覧は、写真の割り当てと結果同期の対象を決める。
    */
-  registeredScreens(): string[] {
+  registeredScreens(role: ScreenRole = 'display'): string[] {
     const now = this.options.now();
     const screens = this.options.store
       .list<AuthSession>(PREFIX_SESSION)
-      .filter(([, session]) => session.role === 'display' && session.screenId !== null && now < session.expiresAt)
+      .filter(([, session]) => session.role === role && session.screenId !== null && now < session.expiresAt)
       .map(([, session]) => session.screenId as string);
-    return [...new Set(screens)].sort((a, b) => (displayOrderOf(a) ?? 0) - (displayOrderOf(b) ?? 0));
+    return [...new Set(screens)].sort((a, b) => (displayOrderOf(a, role) ?? 0) - (displayOrderOf(b, role) ?? 0));
   }
 
   /** 一回限りのペアリングコードを発行する（仕様書8.4節）。展示ディスプレイの画面IDは登録時に決める。 */
-  issuePairingCode(role: 'controller' | 'display'): { ok: true; code: string; expiresAt: number } {
+  issuePairingCode(role: DeviceRole): { ok: true; code: string; expiresAt: number } {
     const now = this.options.now();
     this.prunePairingCodes(now);
     let code = this.options.randomDigits(6);
@@ -358,8 +361,9 @@ export class ExhibitCore {
       return { ok: false };
     }
     this.options.store.delete(PREFIX_PAIRING + code);
-    // 展示ディスプレイには、使用中でない最小の番号の画面IDを振る（仕様書7.2.1節）。
-    const screenId = record.role === 'display' ? nextFreeScreenId(this.registeredScreens()) : null;
+    const screenId = record.role === 'controller'
+      ? null
+      : nextFreeScreenId(this.registeredScreens(record.role), record.role);
     const session = this.issueSession(authKey, 'device', record.role, screenId);
     this.refreshAdmins();
     return { ok: true, session };

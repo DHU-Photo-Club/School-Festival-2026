@@ -4,7 +4,7 @@ import { expect } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from '@playwright/test';
 import { PHOTOS } from '../../src/data/photos.ts';
 import { resultPhotoFor } from '../../src/shared/assignment.ts';
-import type { ColorId } from '../../src/shared/types.ts';
+import type { ColorId, DeviceRole } from '../../src/shared/types.ts';
 
 /** 開発サーバーと同じ規則で管理パスフレーズを読む（.dev.vars、なければ環境変数）。 */
 export function adminPassphrase(): string {
@@ -62,7 +62,7 @@ export class ExhibitHarness {
     if (await release.isEnabled()) await release.click();
   }
 
-  async issueCode(role: 'controller' | 'display'): Promise<string> {
+  async issueCode(role: DeviceRole): Promise<string> {
     const response = await this.admin.context.request.post('/api/admin/pairing-codes', { data: { role } });
     expect(response.status()).toBe(200);
     return ((await response.json()) as { code: string }).code;
@@ -70,13 +70,13 @@ export class ExhibitHarness {
 
   /** 新しいブラウザコンテキストを端末として登録し、登録後の画面を開く。 */
   async pair(
-    role: 'controller' | 'display',
+    role: DeviceRole,
     options: BrowserContextOptions = {},
     beforeOpen?: (context: BrowserContext) => Promise<void>,
   ): Promise<Device> {
     const code = await this.issueCode(role);
     const context = await this.browser.newContext({
-      viewport: role === 'display' ? DISPLAY_VIEWPORT : IPAD_VIEWPORT,
+      viewport: role === 'controller' ? IPAD_VIEWPORT : DISPLAY_VIEWPORT,
       ...options,
     });
     const response = await context.request.post('/api/pair', { data: { code } });
