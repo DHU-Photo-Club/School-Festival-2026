@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { RESULT_COLORS } from '../data/colors.ts';
 import { QUESTIONS } from '../data/questions.ts';
-import { ADMIN_COOKIE, DEVICE_COOKIE, authKeyFromToken, clearCookie, newToken, readCookie, sessionCookie } from './auth.ts';
+import { ADMIN_COOKIE, DEVICE_COOKIE, authKeyFromToken, newToken, readCookie, sessionCookie } from './auth.ts';
 import { ExhibitCore } from './core.ts';
 import type { Connection, ConnectionMeta, Store } from './core.ts';
 import type { ServerMessage } from '../shared/protocol.ts';
@@ -46,14 +46,6 @@ const json = (body: unknown, status = 200, headers: HeadersInit = {}) =>
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers },
   });
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const encoder = new TextEncoder();
-  const left = encoder.encode(a);
-  const right = encoder.encode(b);
-  if (left.byteLength !== right.byteLength) return false;
-  return crypto.subtle.timingSafeEqual(left, right);
-}
 
 /** 展示全体で一つのDurable Object（仕様書9.3節）。 */
 export class Exhibit extends DurableObject<Env> {
@@ -132,15 +124,9 @@ export class Exhibit extends DurableObject<Env> {
     if (path === '/api/realtime') return this.upgrade(request, url);
     if (path === '/api/pair' && method === 'POST') return this.pair(request);
     if (path === '/api/session' && method === 'GET') return this.whoami(request);
-    if (path === '/api/admin/login' && method === 'POST') return this.login(request);
+    if (path === '/api/admin/session' && method === 'POST') return this.adminSession(request);
 
     if (path.startsWith('/api/admin/')) {
-      const adminKey = await this.adminKey(request);
-      if (!adminKey) return json({ error: 'UNAUTHENTICATED' }, 401);
-      if (path === '/api/admin/logout' && method === 'POST') {
-        this.core.revokeSession(adminKey);
-        return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(ADMIN_COOKIE) });
-      }
       if (path === '/api/admin/sessions' && method === 'GET') {
         return json({ sessions: this.core.listDeviceSessions() });
       }
@@ -159,20 +145,13 @@ export class Exhibit extends DurableObject<Env> {
     return json({ error: 'NOT_FOUND' }, 404);
   }
 
-  private async adminKey(request: Request): Promise<string | null> {
-    const token = readCookie(request, ADMIN_COOKIE);
-    if (!token) return null;
-    const authKey = await authKeyFromToken(token);
-    const session = this.core.resolveSession(authKey);
-    return session?.kind === 'admin' ? authKey : null;
-  }
-
-  private async login(request: Request): Promise<Response> {
-    const body = (await request.json().catch(() => null)) as { passphrase?: unknown } | null;
-    const expected = this.env.ADMIN_PASSPHRASE;
-    if (!expected || typeof body?.passphrase !== 'string' || !timingSafeEqual(body.passphrase, expected)) {
-      return json({ error: 'UNAUTHENTICATED' }, 401);
-    }
+  /**
+   * 管理画面のWebSocket接続に使う管理セッションを用意する。管理画面は認証しない。
+   * セッションは接続の識別と冪等性の記録に使うため、有効なものがあれば使い続ける。
+   */
+  private async adminSession(request: Request): Promise<Response> {
+    const current = readCookie(request, ADMIN_COOKIE);
+    if (current && this.core.resolveSession(await authKeyFromToken(current))?.kind === 'admin') return json({ ok: true });
     const token = newToken();
     this.core.issueSession(await authKeyFromToken(token), 'admin', 'admin', null);
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(ADMIN_COOKIE, token) });

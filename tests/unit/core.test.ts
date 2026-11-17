@@ -364,6 +364,15 @@ describe('認証とペアリング', () => {
     expect(ipad.closed?.code).toBe(4001);
   });
 
+  it('新しいセッションの発行時に失効済みのセッションを削除する', () => {
+    const harness = new Harness();
+    harness.core.issueSession('old-admin', 'admin', 'admin', null);
+    harness.advance(SESSION_TTL_MS);
+    harness.core.issueSession('new-admin', 'admin', 'admin', null);
+    expect(harness.store.get('session:old-admin')).toBeUndefined();
+    expect(harness.store.get('session:new-admin')).toBeDefined();
+  });
+
   it('ペアリングコードは一回限りで、5分を超えると使えない', () => {
     const harness = new Harness();
     const issued = harness.core.issuePairingCode('controller');

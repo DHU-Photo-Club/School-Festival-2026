@@ -239,6 +239,7 @@ export class ExhibitCore {
   /** 認証セッションを発行する。`authKey` はCookieの値から作ったキー。 */
   issueSession(authKey: string, kind: AuthSession['kind'], role: Role, screenId: string | null): AuthSession {
     const now = this.options.now();
+    this.pruneSessions(now);
     const session: AuthSession = {
       id: this.options.randomId(),
       kind,
@@ -249,6 +250,16 @@ export class ExhibitCore {
     };
     this.options.store.put(PREFIX_SESSION + authKey, session);
     return session;
+  }
+
+  /**
+   * 失効済みの認証セッションを削除する。管理セッションは認証なしで発行するため、
+   * Cookieを保存しないブラウザが再接続のたびに発行しても、行数は有効期間の分に収まる。
+   */
+  private pruneSessions(now: number): void {
+    for (const [key, session] of this.options.store.list<AuthSession>(PREFIX_SESSION)) {
+      if (now >= session.expiresAt) this.options.store.delete(key);
+    }
   }
 
   /** 有効な認証セッションを返す。失効済みなら削除して `null` を返す。 */

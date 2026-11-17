@@ -1,7 +1,6 @@
 <script lang="ts">
   import { EXHIBIT } from '../data/exhibit.ts';
   import Admin from './admin/Admin.svelte';
-  import AdminLogin from './admin/AdminLogin.svelte';
   import Controller from './controller/Controller.svelte';
   import Display from './display/Display.svelte';
   import PhotoDisplay from './photo/PhotoDisplay.svelte';
@@ -20,9 +19,7 @@
         ? '診断用iPad'
         : path === '/admin'
           ? '運営管理'
-          : path === '/admin/login'
-            ? '管理画面ログイン'
-            : 'ページが見つかりません';
+          : 'ページが見つかりません';
 </script>
 
 <svelte:head>
@@ -37,8 +34,6 @@
   <Display screenId={decodeURIComponent(display[1])} />
 {:else if photo}
   <PhotoDisplay screenId={decodeURIComponent(photo[1])} />
-{:else if path === '/admin/login'}
-  <AdminLogin />
 {:else if path === '/admin'}
   <Admin />
 {:else if result}

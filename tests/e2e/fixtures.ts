@@ -1,24 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect } from '@playwright/test';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from '@playwright/test';
 import { PHOTOS } from '../../src/data/photos.ts';
 import { resultPhotoFor } from '../../src/shared/assignment.ts';
 import type { ColorId, DeviceRole } from '../../src/shared/types.ts';
-
-/** 開発サーバーと同じ規則で管理パスフレーズを読む（.dev.vars、なければ環境変数）。 */
-export function adminPassphrase(): string {
-  const file = join(import.meta.dirname, '..', '..', '.dev.vars');
-  if (existsSync(file)) {
-    const line = readFileSync(file, 'utf8')
-      .split(/\r?\n/)
-      .find((entry) => entry.startsWith('ADMIN_PASSPHRASE='));
-    const value = line?.slice('ADMIN_PASSPHRASE='.length).trim();
-    if (value) return value;
-  }
-  if (process.env.ADMIN_PASSPHRASE) return process.env.ADMIN_PASSPHRASE;
-  throw new Error('ADMIN_PASSPHRASE を .dev.vars または環境変数に設定してください（.dev.vars.example 参照）');
-}
 
 export interface Device {
   context: BrowserContext;
@@ -37,8 +21,6 @@ export class ExhibitHarness {
 
   static async open(browser: Browser): Promise<ExhibitHarness> {
     const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
-    const login = await context.request.post('/api/admin/login', { data: { passphrase: adminPassphrase() } });
-    expect(login.status()).toBe(200);
     const page = await context.newPage();
     await page.goto('/admin');
     await expect(page.getByText('サーバー接続中')).toBeVisible();

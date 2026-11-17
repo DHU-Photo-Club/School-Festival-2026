@@ -12,8 +12,6 @@
     "bindings": [{ "name": "EXHIBIT", "class_name": "Exhibit" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Exhibit"] }],
-  // 管理パスフレーズ（仕様書8.4節）。リポジトリには記載しない。
-  "secrets": { "required": ["ADMIN_PASSPHRASE"] },
   "vars": {
     // 仮: 仕様書16章「Cloudflareアカウントのsubdomainと公開終了日時」の決定前の値。
     // 初回デプロイ後、確定したworkers.devのURLを末尾スラッシュなしで設定する（仕様書10.1節）。

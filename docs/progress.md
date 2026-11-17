@@ -11,9 +11,9 @@
 - `displayManifest` を廃止し、登録した展示ディスプレイの台数で動くようにした（下記16）
 - 写真: 提供された12点（原本 `photos/originals/`）から `pnpm export-photos` で表示用のAVIFとJPEGを書き出した。生成した仮写真（`kari-*`）は削除
 - Durable Object（`src/worker/`）: 認証、ペアリング、WebSocket Hibernation、alarm、冪等性、操作端末、同期計測、運用通知
-- 画面（`src/client/`）: iPad、展示ディスプレイ、管理画面、管理ログイン、結果ページ
+- 画面（`src/client/`）: iPad、展示ディスプレイ、管理画面、結果ページ（管理画面のパスフレーズ認証は廃止した）
 - production build時の検証（`build/`）: `PUBLIC_ORIGIN`、`RESULTS_PUBLISHED_UNTIL`、色・診断・写真定義、写真ファイル
-- 単体テスト 132件、E2Eテスト（`tests/e2e/`）
+- 単体テスト 171件、E2Eテスト（`tests/e2e/`）
 
 - 展示3画面とiPadで一回の診断を通し、通常とreduced-motionの各状態のスクリーンショットを `docs/visual-language.md` と比較
   - violet の「時計回りに一周する扇形」がスライドショーのワイプに見えたため、使わない表現に加え、隅から伸びる円に変更
@@ -32,7 +32,7 @@
 ユーザーの判断が必要な点。実装はそれぞれ下記の仮の判断で進めている。
 
 1. **管理画面への先読み報告と時刻同期精度の送り方**（仕様書7.2.5節、8.6節）。仕様書は管理画面への報告を求めているが、8.5節のメッセージ表に該当する種類がない。`diagnostic` に `preloadReport` と `clockSync` を追加して送っている（`src/shared/protocol.ts`）。8.5節の表では `diagnostic` は診断用iPadから送るものになっている点も含めて決定が必要。
-2. **管理画面とペアリングのHTTP API**。仕様書9.2節は `/api/pair` と `/api/realtime` だけを挙げるが、8.4節のログイン、ログアウト、コード発行、端末セッション一覧と失効、端末の初期画面での登録確認にはHTTPの入口が要る。`/api/admin/login`、`/api/admin/logout`、`/api/admin/pairing-codes`、`/api/admin/sessions`、`/api/admin/sessions/{id}`、`/api/session` を追加した。
+2. **管理画面とペアリングのHTTP API**。仕様書9.2節は `/api/pair` と `/api/realtime` だけを挙げるが、8.4節の管理セッションの発行、コード発行、端末セッション一覧と失効、端末の初期画面での登録確認にはHTTPの入口が要る。`/api/admin/session`、`/api/admin/pairing-codes`、`/api/admin/sessions`、`/api/admin/sessions/{id}`、`/api/session` を追加した。
 3. **`releaseController` で `revision` を増やすか**。展示状態（8章）を変えないため増やしていない。15章「受理した各更新により1ずつ増え」の「更新」を展示状態の更新と解釈した。
 4. **close code が決まっていない切断**。JSONでないメッセージとバイナリフレームは1007、15秒無通信は1001で閉じている（8.5節の表に定めがない）。
 5. **`intro` 中に新しく接続した展示ディスプレイの待機巡回の基準時刻**。`cycleIndex` は `idle.phaseStartedAt` から求めるが、展示ディスプレイへ配信する状態には `idle` の開始時刻が残らない。`intro` の `phaseStartedAt` を基準にしている。

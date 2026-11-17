@@ -72,12 +72,21 @@ test('使用済みのペアリングコードでは端末セッションを発�
   await harness.close();
 });
 
-test('管理APIはログインなしで401', async ({ playwright, baseURL }) => {
-  const anonymous = await playwright.request.newContext({ baseURL });
-  expect((await anonymous.get('/api/admin/sessions')).status()).toBe(401);
-  expect((await anonymous.post('/api/admin/pairing-codes', { data: { role: 'controller' } })).status()).toBe(401);
-  expect((await anonymous.post('/api/admin/login', { data: { passphrase: 'wrong' } })).status()).toBe(401);
-  await anonymous.dispose();
+test('管理画面はパスフレーズなしで開いて接続できる', async ({ page }) => {
+  await page.goto('/admin');
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByText('サーバー接続中')).toBeVisible();
+});
+
+test('有効な管理セッションがあれば発行し直さない', async ({ playwright, baseURL }) => {
+  const admin = await playwright.request.newContext({ baseURL });
+  const adminCookie = async () => (await admin.storageState()).cookies.find((entry) => entry.name === 'dpc_admin')?.value;
+  expect((await admin.post('/api/admin/session')).status()).toBe(200);
+  const first = await adminCookie();
+  expect(first).toBeTruthy();
+  expect((await admin.post('/api/admin/session')).status()).toBe(200);
+  expect(await adminCookie()).toBe(first);
+  await admin.dispose();
 });
 
 test('URLと端末セッションの画面IDが一致しない展示画面は表示を開始せず再登録を求める', async ({ browser }) => {
@@ -93,8 +102,6 @@ test('URLと端末セッションの画面IDが一致しない展示画面は表
 test('未登録の端末は登録画面を表示する', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '端末の登録' })).toBeVisible();
-  await page.goto('/admin');
-  await expect(page).toHaveURL(/\/admin\/login$/);
 });
 
 test('端末の初期画面で6桁のコードを入力して登録できる', async ({ browser }) => {

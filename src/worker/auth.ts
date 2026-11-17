@@ -33,7 +33,3 @@ export function readCookie(request: Request, name: string): string | null {
 export function sessionCookie(name: string, token: string): string {
   return `${name}=${token}; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Strict`;
 }
-
-export function clearCookie(name: string): string {
-  return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
-}

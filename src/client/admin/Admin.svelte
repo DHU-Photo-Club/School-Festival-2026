@@ -36,11 +36,10 @@
   const time = (value: number | null) =>
     value === null ? '—' : new Date(value).toLocaleTimeString('ja-JP', { hour12: false });
 
-  async function api(path: string, init?: RequestInit) {
-    const response = await fetch(path, { cache: 'no-store', ...init });
-    if (response.status === 401) location.assign('/admin/login');
-    return response;
-  }
+  const api = (path: string, init?: RequestInit) => fetch(path, { cache: 'no-store', ...init });
+
+  /** WebSocket接続に使う管理セッションのCookieを用意する。管理画面は認証しない。 */
+  const ensureSession = async () => (await api('/api/admin/session', { method: 'POST' })).ok;
 
   async function loadSessions() {
     const response = await api('/api/admin/sessions');
@@ -87,21 +86,25 @@
     await loadSessions();
   }
 
-  async function logout() {
-    await api('/api/admin/logout', { method: 'POST' });
-    location.assign('/admin/login');
-  }
+  let destroyed = false;
 
-  onMount(() => {
+  onMount(async () => {
+    await ensureSession().catch(() => false);
+    if (destroyed) return;
     client = new RealtimeClient({
       role: 'admin',
       onState: (state) => (admin = state as AdminState),
       onStatus: (next) => {
         status = next;
-        if (next === 'unauthenticated') location.assign('/admin/login');
+        // 管理セッションが12時間で失効したら、読み込み直して新しいセッションで接続する。
+        if (next === 'unauthenticated') location.reload();
       },
       onAlert: (alert) => (alerts = [alert, ...alerts].slice(0, 20)),
-      checkAuth: async () => (await fetch('/api/admin/sessions', { cache: 'no-store' })).status !== 401,
+      // 接続できなかったときはセッションを用意し直して再接続する。発行に失敗しても再接続の間隔を空けて試す。
+      checkAuth: async () => {
+        await ensureSession().catch(() => false);
+        return true;
+      },
     });
     client.start();
     void loadSessions();
@@ -109,6 +112,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     client?.stop();
     if (refreshTimer) clearInterval(refreshTimer);
   });
@@ -118,7 +122,6 @@
   <header>
     <h1>運営管理</h1>
     <span class="badge" data-ok={status === 'open'}>{status === 'open' ? 'サーバー接続中' : 'サーバー切断'}</span>
-    <button class="link" onclick={logout}>ログアウト</button>
   </header>
 
   {#if message}<p class="message" role="alert">{message}</p>{/if}
@@ -458,13 +461,6 @@
   }
   .badge[data-ok='true'] {
     background: #1d3a2a;
-  }
-  .link {
-    margin-left: auto;
-    background: none;
-    border: 0;
-    color: var(--muted);
-    cursor: pointer;
   }
   dl {
     display: grid;
