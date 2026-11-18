@@ -154,7 +154,7 @@ export class Exhibit extends DurableObject<Env> {
     if (current && this.core.resolveSession(await authKeyFromToken(current))?.kind === 'admin') return json({ ok: true });
     const token = newToken();
     this.core.issueSession(await authKeyFromToken(token), 'admin', 'admin', null);
-    return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(ADMIN_COOKIE, token) });
+    return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, ADMIN_COOKIE, token) });
   }
 
   private async pair(request: Request): Promise<Response> {
@@ -167,7 +167,7 @@ export class Exhibit extends DurableObject<Env> {
     return json(
       { role, screenId, location: role === 'controller' ? '/' : `/${role}/${encodeURIComponent(screenId ?? '')}` },
       200,
-      { 'Set-Cookie': sessionCookie(DEVICE_COOKIE, token) },
+      { 'Set-Cookie': sessionCookie(request, DEVICE_COOKIE, token) },
     );
   }
 

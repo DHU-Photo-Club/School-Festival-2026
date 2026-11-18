@@ -1,32 +1,52 @@
 <script lang="ts">
+  import { fetchDeviceSession, type DeviceSession } from '../lib/session.ts';
+
   let { message = '' }: { message?: string } = $props();
 
   let code = $state('');
   let busy = $state(false);
-  let failed = $state(false);
+  /** サーバーがコードを消費した後は、同じ画面から再送しない。再送すると別の画面IDで登録し直すことになる。 */
+  let consumed = $state(false);
+  let failed = $state<'code' | 'cookie' | 'unverified' | null>(null);
 
-  async function submit(event: SubmitEvent) {
-    event.preventDefault();
-    if (busy) return;
-    busy = true;
-    failed = false;
+  async function pair(): Promise<(DeviceSession & { location: string }) | null> {
     try {
       const response = await fetch('/api/pair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
       });
-      if (!response.ok) {
-        failed = true;
-        return;
-      }
-      const { location: next } = (await response.json()) as { location: string };
-      location.assign(next);
+      if (!response.ok) return null;
+      consumed = true;
+      return (await response.json()) as DeviceSession & { location: string };
     } catch {
-      failed = true;
-    } finally {
-      busy = false;
+      return null;
     }
+  }
+
+  async function submit(event: SubmitEvent) {
+    event.preventDefault();
+    if (busy || consumed) return;
+    busy = true;
+    failed = null;
+    const paired = await pair();
+    busy = false;
+    if (!paired) {
+      // 応答の読み取りだけに失敗した場合は、コードが消費済みのため再登録を促さない。
+      failed = consumed ? 'unverified' : 'code';
+      return;
+    }
+    // Cookieが保存されないまま遷移すると、遷移先で再び登録画面になり、別の画面IDの登録を繰り返す。
+    const saved = await fetchDeviceSession().catch(() => undefined);
+    if (saved === undefined) {
+      failed = 'unverified';
+      return;
+    }
+    if (saved === null || saved.role !== paired.role || saved.screenId !== paired.screenId) {
+      failed = 'cookie';
+      return;
+    }
+    location.assign(paired.location);
   }
 </script>
 
@@ -44,9 +64,15 @@
       aria-label="ペアリングコード"
       placeholder="000000"
     />
-    <button class="primary-button" type="submit" disabled={busy || !/^\d{6}$/.test(code)}>登録する</button>
+    <button class="primary-button" type="submit" disabled={busy || consumed || !/^\d{6}$/.test(code)}>登録する</button>
   </form>
-  {#if failed}<p class="error" role="alert">コードを確認できませんでした。新しいコードを発行してください。</p>{/if}
+  {#if failed === 'code'}
+    <p class="error" role="alert">コードを確認できませんでした。新しいコードを発行してください。</p>
+  {:else if failed === 'cookie'}
+    <p class="error" role="alert">このブラウザに登録情報を保存できませんでした。登録を繰り返さず、運営スタッフに連絡してください。設定を直した後は、ページを再読み込みしてください。</p>
+  {:else if failed === 'unverified'}
+    <p class="error" role="alert">登録を確認できませんでした。ページを再読み込みしてください。登録画面が再び表示された場合は、運営スタッフに連絡してください。</p>
+  {/if}
 </main>
 
 <style>
