@@ -1,12 +1,12 @@
-import { expect } from '@playwright/test';
-import type { Browser, BrowserContext, BrowserContextOptions, Page } from '@playwright/test';
-import { PHOTOS } from '../../src/data/photos.ts';
-import { resultPhotoFor } from '../../src/shared/assignment.ts';
-import type { ColorId, DeviceRole } from '../../src/shared/types.ts';
+import { expect } from "@playwright/test";
+import type { Browser, BrowserContext, BrowserContextOptions, Page } from "@playwright/test";
+import { PHOTOS } from "../../src/data/photos.ts";
+import { resultPhotoFor } from "../../src/shared/assignment.ts";
+import type { ColorId, DeviceRole } from "../../src/shared/types.ts";
 
 export interface Device {
-  context: BrowserContext;
-  page: Page;
+	context: BrowserContext;
+	page: Page;
 }
 
 export const DISPLAY_VIEWPORT = { width: 1920, height: 1080 };
@@ -14,77 +14,77 @@ export const IPAD_VIEWPORT = { width: 820, height: 1180 };
 
 /** 管理画面を開き、展示を初期状態へ戻してから端末を登録する。 */
 export class ExhibitHarness {
-  private constructor(
-    readonly browser: Browser,
-    readonly admin: Device,
-  ) {}
+	private constructor(
+		readonly browser: Browser,
+		readonly admin: Device,
+	) {}
 
-  static async open(browser: Browser): Promise<ExhibitHarness> {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
-    const page = await context.newPage();
-    await page.goto('/admin');
-    await expect(page.getByText('サーバー接続中')).toBeVisible();
-    const harness = new ExhibitHarness(browser, { context, page });
-    await harness.reset();
-    return harness;
-  }
+	static async open(browser: Browser): Promise<ExhibitHarness> {
+		const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+		const page = await context.newPage();
+		await page.goto("/admin");
+		await expect(page.getByText("サーバー接続中")).toBeVisible();
+		const harness = new ExhibitHarness(browser, { context, page });
+		await harness.reset();
+		return harness;
+	}
 
-  /** 端末セッションを失効させ、受付を再開し、強制リセットする。 */
-  async reset(): Promise<void> {
-    const { page, context } = this.admin;
-    const response = await context.request.get('/api/admin/sessions');
-    const { sessions } = (await response.json()) as { sessions: { id: string }[] };
-    for (const session of sessions) await context.request.delete(`/api/admin/sessions/${session.id}`);
-    await page.getByRole('button', { name: '強制リセット' }).click();
-    await expect(page.getByTestId('phase')).toContainText('idle');
-    const resume = page.getByRole('button', { name: '受付を再開' });
-    if (await resume.isVisible()) await resume.click();
-    await expect(page.getByRole('button', { name: '受付を停止' })).toBeVisible();
-    const release = page.getByRole('button', { name: '操作端末を解放' });
-    if (await release.isEnabled()) await release.click();
-  }
+	/** 端末セッションを失効させ、受付を再開し、強制リセットする。 */
+	async reset(): Promise<void> {
+		const { page, context } = this.admin;
+		const response = await context.request.get("/api/admin/sessions");
+		const { sessions } = (await response.json()) as { sessions: { id: string }[] };
+		for (const session of sessions) await context.request.delete(`/api/admin/sessions/${session.id}`);
+		await page.getByRole("button", { name: "強制リセット" }).click();
+		await expect(page.getByTestId("phase")).toContainText("idle");
+		const resume = page.getByRole("button", { name: "受付を再開" });
+		if (await resume.isVisible()) await resume.click();
+		await expect(page.getByRole("button", { name: "受付を停止" })).toBeVisible();
+		const release = page.getByRole("button", { name: "操作端末を解放" });
+		if (await release.isEnabled()) await release.click();
+	}
 
-  async issueCode(role: DeviceRole): Promise<string> {
-    const response = await this.admin.context.request.post('/api/admin/pairing-codes', { data: { role } });
-    expect(response.status()).toBe(200);
-    return ((await response.json()) as { code: string }).code;
-  }
+	async issueCode(role: DeviceRole): Promise<string> {
+		const response = await this.admin.context.request.post("/api/admin/pairing-codes", { data: { role } });
+		expect(response.status()).toBe(200);
+		return ((await response.json()) as { code: string }).code;
+	}
 
-  /** 新しいブラウザコンテキストを端末として登録し、登録後の画面を開く。 */
-  async pair(
-    role: DeviceRole,
-    options: BrowserContextOptions = {},
-    beforeOpen?: (context: BrowserContext) => Promise<void>,
-  ): Promise<Device> {
-    const code = await this.issueCode(role);
-    const context = await this.browser.newContext({
-      viewport: role === 'controller' ? IPAD_VIEWPORT : DISPLAY_VIEWPORT,
-      ...options,
-    });
-    const response = await context.request.post('/api/pair', { data: { code } });
-    expect(response.status()).toBe(200);
-    const { location } = (await response.json()) as { location: string };
-    await beforeOpen?.(context);
-    const page = await context.newPage();
-    await page.goto(location);
-    return { context, page };
-  }
+	/** 新しいブラウザコンテキストを端末として登録し、登録後の画面を開く。 */
+	async pair(
+		role: DeviceRole,
+		options: BrowserContextOptions = {},
+		beforeOpen?: (context: BrowserContext) => Promise<void>,
+	): Promise<Device> {
+		const code = await this.issueCode(role);
+		const context = await this.browser.newContext({
+			viewport: role === "controller" ? IPAD_VIEWPORT : DISPLAY_VIEWPORT,
+			...options,
+		});
+		const response = await context.request.post("/api/pair", { data: { code } });
+		expect(response.status()).toBe(200);
+		const { location } = (await response.json()) as { location: string };
+		await beforeOpen?.(context);
+		const page = await context.newPage();
+		await page.goto(location);
+		return { context, page };
+	}
 
-  async pairDisplays(count: number, options: BrowserContextOptions = {}): Promise<Device[]> {
-    const displays: Device[] = [];
-    for (let index = 1; index <= count; index += 1) {
-      const display = await this.pair('display', options);
-      // 展示ディスプレイには登録順に display-1、display-2…が振られる。
-      await expect(display.page).toHaveURL(new RegExp(`/display/display-${index}$`));
-      await expect(display.page.locator('main.display')).toHaveAttribute('data-phase', 'idle');
-      displays.push(display);
-    }
-    return displays;
-  }
+	async pairDisplays(count: number, options: BrowserContextOptions = {}): Promise<Device[]> {
+		const displays: Device[] = [];
+		for (let index = 1; index <= count; index += 1) {
+			const display = await this.pair("display", options);
+			// 展示ディスプレイには登録順に display-1、display-2…が振られる。
+			await expect(display.page).toHaveURL(new RegExp(`/display/display-${index}$`));
+			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
+			displays.push(display);
+		}
+		return displays;
+	}
 
-  async close(): Promise<void> {
-    await this.admin.context.close();
-  }
+	async close(): Promise<void> {
+		await this.admin.context.close();
+	}
 }
 
 /**
@@ -92,66 +92,71 @@ export class ExhibitHarness {
  * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。破片のcanvasは重ねて写す。`stride` 画素ごとに一つ読む。
  */
 async function readCanvas(page: Page, x: number, y: number, w: number, h: number, stride: number): Promise<number[]> {
-  return page.evaluate(
-    ([px, py, pw, ph, step]) => {
-      const [source, ...overlays] = document.querySelectorAll<HTMLCanvasElement>('main.display canvas');
-      const copy = document.createElement('canvas');
-      copy.width = source.width;
-      copy.height = source.height;
-      const context = copy.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
-      context.drawImage(source, 0, 0);
-      for (const overlay of overlays) context.drawImage(overlay, 0, 0, copy.width, copy.height);
-      const left = Math.min(copy.width - 1, Math.floor(copy.width * px));
-      const top = Math.min(copy.height - 1, Math.floor(copy.height * py));
-      const { data } = context.getImageData(left, top, Math.max(1, Math.floor(copy.width * pw)), Math.max(1, Math.floor(copy.height * ph)));
-      const samples: number[] = [];
-      for (let i = 0; i < data.length; i += step * 4) samples.push(data[i], data[i + 1], data[i + 2]);
-      return samples;
-    },
-    [x, y, w, h, stride] as const,
-  );
+	return page.evaluate(
+		([px, py, pw, ph, step]) => {
+			const [source, ...overlays] = document.querySelectorAll<HTMLCanvasElement>("main.display canvas");
+			const copy = document.createElement("canvas");
+			copy.width = source.width;
+			copy.height = source.height;
+			const context = copy.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+			context.drawImage(source, 0, 0);
+			for (const overlay of overlays) context.drawImage(overlay, 0, 0, copy.width, copy.height);
+			const left = Math.min(copy.width - 1, Math.floor(copy.width * px));
+			const top = Math.min(copy.height - 1, Math.floor(copy.height * py));
+			const { data } = context.getImageData(
+				left,
+				top,
+				Math.max(1, Math.floor(copy.width * pw)),
+				Math.max(1, Math.floor(copy.height * ph)),
+			);
+			const samples: number[] = [];
+			for (let i = 0; i < data.length; i += step * 4) samples.push(data[i], data[i + 1], data[i + 2]);
+			return samples;
+		},
+		[x, y, w, h, stride] as const,
+	);
 }
 
 /** 展示ディスプレイのcanvasの画素を読む。座標は0〜1の比率。 */
 export async function canvasPixel(page: Page, x: number, y: number): Promise<string> {
-  const [r, g, b] = await readCanvas(page, x, y, 0, 0, 1);
-  return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+	const [r, g, b] = await readCanvas(page, x, y, 0, 0, 1);
+	return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
 }
 
 /** canvasに背景 `#0B0B0B` 以外の色が描かれているか。 */
 export async function canvasHasGraphics(page: Page): Promise<boolean> {
-  const samples = await readCanvas(page, 0, 0, 1, 1, 257);
-  for (let i = 0; i < samples.length; i += 3) {
-    if (samples[i] !== 0x0b || samples[i + 1] !== 0x0b || samples[i + 2] !== 0x0b) return true;
-  }
-  return false;
+	const samples = await readCanvas(page, 0, 0, 1, 1, 257);
+	for (let i = 0; i < samples.length; i += 3) {
+		if (samples[i] !== 0x0b || samples[i + 1] !== 0x0b || samples[i + 2] !== 0x0b) return true;
+	}
+	return false;
 }
 
 /** canvas全体の画素の要約（変化の検出に使う）。 */
 export async function canvasDigest(page: Page): Promise<string> {
-  const samples = await readCanvas(page, 0, 0, 1, 1, 1023);
-  let hash = 0;
-  for (const value of samples) hash = (hash * 31 + value) | 0;
-  return String(hash);
+	const samples = await readCanvas(page, 0, 0, 1, 1, 1023);
+	let hash = 0;
+	for (const value of samples) hash = (hash * 31 + value) | 0;
+	return String(hash);
 }
 
 /** iPadの質問画面で、スライダーの位置（0〜4）をタップする。 */
 export async function tapStop(page: Page, index: number): Promise<void> {
-  const area = page.locator('.slider .area');
-  const box = await area.boundingBox();
-  if (!box) throw new Error('slider not found');
-  const half = 22;
-  const x = box.x + half + ((box.width - half * 2) * index) / 4;
-  await page.mouse.click(x, box.y + box.height / 2);
+	const area = page.locator(".slider .area");
+	const box = await area.boundingBox();
+	if (!box) throw new Error("slider not found");
+	const half = 22;
+	const x = box.x + half + ((box.width - half * 2) * index) / 4;
+	await page.mouse.click(x, box.y + box.height / 2);
 }
 
 export async function sliderValue(page: Page): Promise<string> {
-  return page.locator('.slider input[type="range"]').inputValue();
+	return page.locator('.slider input[type="range"]').inputValue();
 }
 
 /** 写真定義から決まる結果表示の種類。写真が足りない画面はタイポグラフィ（仕様書7.2.4節）。 */
-export function expectedResultView(colorId: ColorId, displayOrder: number): 'photo' | 'typography' {
-  return resultPhotoFor(PHOTOS, colorId, displayOrder) ? 'photo' : 'typography';
+export function expectedResultView(colorId: ColorId, displayOrder: number): "photo" | "typography" {
+	return resultPhotoFor(PHOTOS, colorId, displayOrder) ? "photo" : "typography";
 }
 
 /**
@@ -160,29 +165,29 @@ export function expectedResultView(colorId: ColorId, displayOrder: number): 'pho
  * ページを開く前に呼ぶ。
  */
 export async function controllableNetwork(context: BrowserContext) {
-  let offline = false;
-  const mocked: { close: () => Promise<void> }[] = [];
-  await context.routeWebSocket(/\/api\/realtime/, (ws) => {
-    if (offline) {
-      // 通信断中の再接続は届かない。サーバーへつながず、復旧時に閉じて再接続させる。
-      mocked.push({ close: () => ws.close({ code: 1001, reason: 'network restored' }) });
-      return;
-    }
-    const server = ws.connectToServer();
-    ws.onMessage((message) => {
-      if (!offline) server.send(message);
-    });
-    server.onMessage((message) => {
-      if (!offline) ws.send(message);
-    });
-  });
-  return {
-    async down() {
-      offline = true;
-    },
-    async up() {
-      offline = false;
-      for (const socket of mocked.splice(0)) await socket.close();
-    },
-  };
+	let offline = false;
+	const mocked: { close: () => Promise<void> }[] = [];
+	await context.routeWebSocket(/\/api\/realtime/, (ws) => {
+		if (offline) {
+			// 通信断中の再接続は届かない。サーバーへつながず、復旧時に閉じて再接続させる。
+			mocked.push({ close: () => ws.close({ code: 1001, reason: "network restored" }) });
+			return;
+		}
+		const server = ws.connectToServer();
+		ws.onMessage((message) => {
+			if (!offline) server.send(message);
+		});
+		server.onMessage((message) => {
+			if (!offline) ws.send(message);
+		});
+	});
+	return {
+		async down() {
+			offline = true;
+		},
+		async up() {
+			offline = false;
+			for (const socket of mocked.splice(0)) await socket.close();
+		},
+	};
 }

@@ -55,13 +55,13 @@ MVPの本番ブラウザは、iPadを端末で更新可能な最新版Safari、�
 
 目標所要時間は一人あたり2分以内、うち質問回答は60秒以内とする。
 
-| 状態 | 段階 | iPad | 展示ディスプレイ | 終了条件 |
-| --- | --- | --- | --- | --- |
-| `idle` | 待機 | タイトルと「診断をはじめる」を表示 | 全色の写真を静かに巡回表示 | 開始ボタンを押す |
-| `intro` | 導入 | 所要時間と診断の位置づけを表示 | 待機演出を継続 | 「進む」を押す |
-| `question` | 質問 | 一問ずつ両端に対比語を置いたスライダーを表示 | 確定した回答に反応する抽象的な色・形の演出を表示 | 全問に回答する |
-| `judging` | 判定 | 2秒間の判定演出を表示 | 全画面を一度暗くし、結果演出に備える | サーバーが2秒後に`result`へ遷移する |
-| `result` | 結果発表・持ち帰り | 色名、色面、短いメッセージ、QRコード、「最初に戻る」を表示 | 結果色と対応写真を一斉に表示 | 手動終了または60秒経過で、サーバーが`idle`へ遷移する |
+| 状態       | 段階               | iPad                                                       | 展示ディスプレイ                                 | 終了条件                                             |
+| ---------- | ------------------ | ---------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
+| `idle`     | 待機               | タイトルと「診断をはじめる」を表示                         | 全色の写真を静かに巡回表示                       | 開始ボタンを押す                                     |
+| `intro`    | 導入               | 所要時間と診断の位置づけを表示                             | 待機演出を継続                                   | 「進む」を押す                                       |
+| `question` | 質問               | 一問ずつ両端に対比語を置いたスライダーを表示               | 確定した回答に反応する抽象的な色・形の演出を表示 | 全問に回答する                                       |
+| `judging`  | 判定               | 2秒間の判定演出を表示                                      | 全画面を一度暗くし、結果演出に備える             | サーバーが2秒後に`result`へ遷移する                  |
+| `result`   | 結果発表・持ち帰り | 色名、色面、短いメッセージ、QRコード、「最初に戻る」を表示 | 結果色と対応写真を一斉に表示                     | 手動終了または60秒経過で、サーバーが`idle`へ遷移する |
 
 「持ち帰り」は独立した状態ではなく、`result`画面でQRコードを読み取る行為を指す。「最初に戻る」を押した場合と`result`開始から60秒が経過した場合は、どちらもサーバーが展示状態を`idle`へ変更し、iPad、全展示ディスプレイ、照明を同時に待機状態へ戻す。
 
@@ -237,17 +237,17 @@ accepting: true
 
 ### 8.2 状態遷移と期限
 
-| 現在の状態 | 契機 | 次の状態 | 同時に行う処理 |
-| --- | --- | --- | --- |
-| `idle` | iPadの開始操作 | `intro` | 新しい`sessionId`を発行する |
-| `intro` | iPadの「進む」 | `question` | `questionIndex`を0にする |
-| `question` | 最終問以外の回答 | `question` | 回答を更新し、`questionIndex`を1進める |
-| `question` | 「戻る」 | `question` | `questionIndex`を1戻し、既存回答は保持する |
-| `question` | 最終問の回答 | `judging` | 結果を確定し、`resultColorId`を設定して`questionIndex`を`null`へ戻し、`answers`を消去する |
-| `judging` | 2秒経過 | `result` | 全端末で結果演出を開始し、60秒後を`phaseEndsAt`にする |
-| `result` | 「最初に戻る」または60秒経過 | `idle` | セッション状態を初期化する |
-| `intro`または`question` | 最終操作から5分経過 | `idle` | 放置された回答とセッションを消去する |
-| 任意 | 管理画面の強制リセット | `idle` | 現在の処理を中止してセッション状態を初期化する |
+| 現在の状態              | 契機                         | 次の状態   | 同時に行う処理                                                                            |
+| ----------------------- | ---------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| `idle`                  | iPadの開始操作               | `intro`    | 新しい`sessionId`を発行する                                                               |
+| `intro`                 | iPadの「進む」               | `question` | `questionIndex`を0にする                                                                  |
+| `question`              | 最終問以外の回答             | `question` | 回答を更新し、`questionIndex`を1進める                                                    |
+| `question`              | 「戻る」                     | `question` | `questionIndex`を1戻し、既存回答は保持する                                                |
+| `question`              | 最終問の回答                 | `judging`  | 結果を確定し、`resultColorId`を設定して`questionIndex`を`null`へ戻し、`answers`を消去する |
+| `judging`               | 2秒経過                      | `result`   | 全端末で結果演出を開始し、60秒後を`phaseEndsAt`にする                                     |
+| `result`                | 「最初に戻る」または60秒経過 | `idle`     | セッション状態を初期化する                                                                |
+| `intro`または`question` | 最終操作から5分経過          | `idle`     | 放置された回答とセッションを消去する                                                      |
+| 任意                    | 管理画面の強制リセット       | `idle`     | 現在の処理を中止してセッション状態を初期化する                                            |
 
 `phaseStartedAt`は状態へ入った時刻とする。`phaseEndsAt`は`judging`では2秒後、`result`では60秒後、`intro`と`question`では最後に受理したiPad操作から5分後、`idle`では`null`とする。期限到達時はDurable Objectのalarmが遷移を実行する。alarmの実行が遅れた場合は、次の接続または要求を処理する前にも期限を確認し、期限切れ状態を配信しない。
 
@@ -291,23 +291,23 @@ WebSocketのUpgrade要求ではCookieを検証し、未認証または失効済�
 
 WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイナリフレームは使用しない。すべてのメッセージに`version: 1`と`type`を含め、不明なフィールドは無視し、必須フィールドの不足や型違いは拒否する。
 
-| 方向 | `type` | 用途 | 応答 |
-| --- | --- | --- | --- |
-| クライアントからサーバー | `hello` | 接続開始 | `welcome`または`error` |
-| クライアントからサーバー | `command` | 状態変更 | `ack`または`error` |
-| クライアントからサーバー | `ping` | 生存確認と時刻計測 | `pong` |
-| 展示ディスプレイからサーバー | `resultStarted` | 実表示開始時刻の報告 | `ack`または`error` |
-| 診断用iPadからサーバー | `diagnostic` | QRコード生成失敗などの運用通知 | `ack`または`error` |
-| サーバーからクライアント | `state` | 他端末による状態変更のpush配信 | 応答不要 |
-| サーバーから管理画面 | `alert` | 端末から受けた運用通知のpush配信 | 応答不要 |
+| 方向                         | `type`          | 用途                             | 応答                   |
+| ---------------------------- | --------------- | -------------------------------- | ---------------------- |
+| クライアントからサーバー     | `hello`         | 接続開始                         | `welcome`または`error` |
+| クライアントからサーバー     | `command`       | 状態変更                         | `ack`または`error`     |
+| クライアントからサーバー     | `ping`          | 生存確認と時刻計測               | `pong`                 |
+| 展示ディスプレイからサーバー | `resultStarted` | 実表示開始時刻の報告             | `ack`または`error`     |
+| 診断用iPadからサーバー       | `diagnostic`    | QRコード生成失敗などの運用通知   | `ack`または`error`     |
+| サーバーからクライアント     | `state`         | 他端末による状態変更のpush配信   | 応答不要               |
+| サーバーから管理画面         | `alert`         | 端末から受けた運用通知のpush配信 | 応答不要               |
 
 接続後5秒以内に、クライアントは最初のメッセージとして次の`hello`を送る。
 
 ```json
 {
-  "version": 1,
-  "type": "hello",
-  "clientId": "ブラウザごとに生成したUUID"
+	"version": 1,
+	"type": "hello",
+	"clientId": "ブラウザごとに生成したUUID"
 }
 ```
 
@@ -315,29 +315,29 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 ```json
 {
-  "version": 1,
-  "type": "welcome",
-  "serverTime": 1789400000000,
-  "state": {}
+	"version": 1,
+	"type": "welcome",
+	"serverTime": 1789400000000,
+	"state": {}
 }
 ```
 
 状態の配信範囲は次のとおりとする。
 
-| 接続種別 | 受信する状態 |
-| --- | --- |
-| 診断用iPad | 8章の全状態 |
+| 接続種別         | 受信する状態                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| 診断用iPad       | 8章の全状態                                                                                          |
 | 展示ディスプレイ | `sessionId`、`phase`、`resultColorId`、`previewColorId`、`phaseStartedAt`、`phaseEndsAt`、`revision` |
-| 管理画面 | `answers`を除く状態と、接続端末一覧 |
+| 管理画面         | `answers`を除く状態と、接続端末一覧                                                                  |
 
 他端末の操作またはサーバータイマーで状態が変わった場合は、次の形式で`state`を配信する。
 
 ```json
 {
-  "version": 1,
-  "type": "state",
-  "revision": 13,
-  "state": {}
+	"version": 1,
+	"type": "state",
+	"revision": 13,
+	"state": {}
 }
 ```
 
@@ -345,39 +345,39 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 ```json
 {
-  "version": 1,
-  "type": "command",
-  "requestId": "要求ごとに生成したUUID",
-  "expectedRevision": 12,
-  "command": {
-    "name": "answer",
-    "questionId": "light",
-    "stopId": "left"
-  }
+	"version": 1,
+	"type": "command",
+	"requestId": "要求ごとに生成したUUID",
+	"expectedRevision": 12,
+	"command": {
+		"name": "answer",
+		"questionId": "light",
+		"stopId": "left"
+	}
 }
 ```
 
 `command.name`は次だけを許可する。
 
-| 役割 | コマンド |
-| --- | --- |
-| 診断用iPad | `start`、`continue`、`answer`、`back`、`returnToIdle` |
-| 管理画面 | `setAccepting`、`forceReset`、`releaseController`、`previewColor`、`clearPreview` |
+| 役割       | コマンド                                                                          |
+| ---------- | --------------------------------------------------------------------------------- |
+| 診断用iPad | `start`、`continue`、`answer`、`back`、`returnToIdle`                             |
+| 管理画面   | `setAccepting`、`forceReset`、`releaseController`、`previewColor`、`clearPreview` |
 
 各コマンドの`command`オブジェクトは次の形とする。
 
-| `name` | 追加フィールド | 受理条件 |
-| --- | --- | --- |
-| `start` | なし | `phase`が`idle`かつ`accepting`が`true` |
-| `continue` | なし | `phase`が`intro` |
-| `answer` | `questionId: string`、`stopId: SliderStopId` | `phase`が`question`で、表示中の質問と5回答位置のいずれかに一致する |
-| `back` | なし | `phase`が`question`かつ`questionIndex`が1以上 |
-| `returnToIdle` | なし | `phase`が`result` |
-| `setAccepting` | `accepting: boolean` | 管理画面からの要求 |
-| `forceReset` | なし | 管理画面からの要求 |
-| `releaseController` | なし | 管理画面からの要求 |
-| `previewColor` | `colorId: ColorId` | 管理画面からの要求かつ`phase`が`idle` |
-| `clearPreview` | なし | 管理画面からの要求かつ`previewColorId`が`null`ではない |
+| `name`              | 追加フィールド                               | 受理条件                                                           |
+| ------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| `start`             | なし                                         | `phase`が`idle`かつ`accepting`が`true`                             |
+| `continue`          | なし                                         | `phase`が`intro`                                                   |
+| `answer`            | `questionId: string`、`stopId: SliderStopId` | `phase`が`question`で、表示中の質問と5回答位置のいずれかに一致する |
+| `back`              | なし                                         | `phase`が`question`かつ`questionIndex`が1以上                      |
+| `returnToIdle`      | なし                                         | `phase`が`result`                                                  |
+| `setAccepting`      | `accepting: boolean`                         | 管理画面からの要求                                                 |
+| `forceReset`        | なし                                         | 管理画面からの要求                                                 |
+| `releaseController` | なし                                         | 管理画面からの要求                                                 |
+| `previewColor`      | `colorId: ColorId`                           | 管理画面からの要求かつ`phase`が`idle`                              |
+| `clearPreview`      | なし                                         | 管理画面からの要求かつ`previewColorId`が`null`ではない             |
 
 `previewColor`は`idle`でのみ受理し、`previewColorId`を設定して展示ディスプレイに確認用の色を表示する。`clearPreview`、`start`、`forceReset`では`previewColorId`を`null`へ戻す。
 
@@ -389,11 +389,11 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 ```json
 {
-  "version": 1,
-  "type": "ack",
-  "requestId": "要求のUUID",
-  "revision": 13,
-  "state": {}
+	"version": 1,
+	"type": "ack",
+	"requestId": "要求のUUID",
+	"revision": 13,
+	"state": {}
 }
 ```
 
@@ -407,37 +407,37 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 ```json
 {
-  "version": 1,
-  "type": "error",
-  "requestId": "要求のUUIDまたはnull",
-  "code": "STALE_REVISION",
-  "message": "表示状態を更新しました。もう一度操作してください。",
-  "retryable": false,
-  "state": {}
+	"version": 1,
+	"type": "error",
+	"requestId": "要求のUUIDまたはnull",
+	"code": "STALE_REVISION",
+	"message": "表示状態を更新しました。もう一度操作してください。",
+	"retryable": false,
+	"state": {}
 }
 ```
 
-| コード | 条件 | 処理 |
-| --- | --- | --- |
-| `INVALID_MESSAGE` | JSON、必須フィールド、型が不正 | 要求を破棄する |
-| `PROTOCOL_MISMATCH` | `version`が1ではない | エラー送信後に接続を閉じる |
-| `UNAUTHENTICATED` | 接続後にセッションが失効した | エラー送信後に接続を閉じ、端末はペアリング画面へ戻り、管理画面は新しいセッションで接続し直す |
-| `FORBIDDEN` | 役割に許可されていないコマンド | 要求を破棄する |
-| `STALE_REVISION` | `expectedRevision`が現在値と不一致 | 最新の役割別状態を返す |
-| `INVALID_PHASE` | 現在状態では実行できないコマンド | 最新の役割別状態を返す |
-| `CONTROLLER_IN_USE` | 別のiPadが操作端末を占有中 | 操作不可画面を表示する |
-| `NOT_ACCEPTING` | 受付停止中に`start`した | 受付停止画面を表示する |
-| `INTERNAL_ERROR` | サーバー内部の失敗 | 状態を変更せず、管理画面に障害を表示する |
+| コード              | 条件                               | 処理                                                                                         |
+| ------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| `INVALID_MESSAGE`   | JSON、必須フィールド、型が不正     | 要求を破棄する                                                                               |
+| `PROTOCOL_MISMATCH` | `version`が1ではない               | エラー送信後に接続を閉じる                                                                   |
+| `UNAUTHENTICATED`   | 接続後にセッションが失効した       | エラー送信後に接続を閉じ、端末はペアリング画面へ戻り、管理画面は新しいセッションで接続し直す |
+| `FORBIDDEN`         | 役割に許可されていないコマンド     | 要求を破棄する                                                                               |
+| `STALE_REVISION`    | `expectedRevision`が現在値と不一致 | 最新の役割別状態を返す                                                                       |
+| `INVALID_PHASE`     | 現在状態では実行できないコマンド   | 最新の役割別状態を返す                                                                       |
+| `CONTROLLER_IN_USE` | 別のiPadが操作端末を占有中         | 操作不可画面を表示する                                                                       |
+| `NOT_ACCEPTING`     | 受付停止中に`start`した            | 受付停止画面を表示する                                                                       |
+| `INTERNAL_ERROR`    | サーバー内部の失敗                 | 状態を変更せず、管理画面に障害を表示する                                                     |
 
 エラー応答では`revision`を増やさない。`message`は利用者向けの固定文言とし、例外メッセージ、スタックトレース、認証情報を含めない。JSONとして解釈できないメッセージ、`hello`の5秒タイムアウト、または連続3回の`INVALID_MESSAGE`では接続を閉じる。
 
-| Close code | 条件 |
-| --- | --- |
-| `4000` | 不正メッセージが連続3回に達した |
-| `4001` | 接続中に認証セッションが失効した |
-| `4002` | プロトコルバージョンが一致しない |
-| `4008` | 接続から5秒以内に`hello`を受信しなかった |
-| `4009` | 同じiPadの新しい接続へ操作権限を移した |
+| Close code | 条件                                     |
+| ---------- | ---------------------------------------- |
+| `4000`     | 不正メッセージが連続3回に達した          |
+| `4001`     | 接続中に認証セッションが失効した         |
+| `4002`     | プロトコルバージョンが一致しない         |
+| `4008`     | 接続から5秒以内に`hello`を受信しなかった |
+| `4009`     | 同じiPadの新しい接続へ操作権限を移した   |
 
 ### 8.6 接続監視と時刻補正
 
@@ -445,20 +445,20 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 ```json
 {
-  "version": 1,
-  "type": "ping",
-  "pingId": "計測ごとに生成したUUID",
-  "clientSentAt": 1789400000000
+	"version": 1,
+	"type": "ping",
+	"pingId": "計測ごとに生成したUUID",
+	"clientSentAt": 1789400000000
 }
 ```
 
 ```json
 {
-  "version": 1,
-  "type": "pong",
-  "pingId": "受信したUUID",
-  "clientSentAt": 1789400000000,
-  "serverTime": 1789400000030
+	"version": 1,
+	"type": "pong",
+	"pingId": "受信したUUID",
+	"clientSentAt": 1789400000000,
+	"serverTime": 1789400000030
 }
 ```
 
@@ -486,12 +486,12 @@ clockOffset = serverTime - ((clientSentAt + clientReceivedAt) / 2)
 
 ```json
 {
-  "version": 1,
-  "type": "resultStarted",
-  "requestId": "報告ごとに生成したUUID",
-  "sessionId": "現在のセッションUUID",
-  "screenId": "display-1",
-  "actualStartedAt": 1789400002008
+	"version": 1,
+	"type": "resultStarted",
+	"requestId": "報告ごとに生成したUUID",
+	"sessionId": "現在のセッションUUID",
+	"screenId": "display-1",
+	"actualStartedAt": 1789400002008
 }
 ```
 
@@ -636,13 +636,13 @@ iPadは二回目の失敗後、次の`diagnostic`を送る。
 
 ```json
 {
-  "version": 1,
-  "type": "diagnostic",
-  "requestId": "報告ごとに生成したUUID",
-  "name": "qrGenerationFailed",
-  "sessionId": "現在のセッションUUID",
-  "colorId": "red",
-  "occurredAt": 1789400002500
+	"version": 1,
+	"type": "diagnostic",
+	"requestId": "報告ごとに生成したUUID",
+	"name": "qrGenerationFailed",
+	"sessionId": "現在のセッションUUID",
+	"colorId": "red",
+	"occurredAt": 1789400002500
 }
 ```
 
@@ -785,16 +785,16 @@ iPadは二回目の失敗後、次の`diagnostic`を送る。
 
 以下は実装または素材制作へ入る前に担当者が決定する。
 
-| 優先度 | 決定事項                                 | 決定に必要な情報                 | 期限の目安     |
-| ------ | ---------------------------------------- | -------------------------------- | -------------- |
+| 優先度 | 決定事項                                                   | 決定に必要な情報                 | 期限の目安           |
+| ------ | ---------------------------------------------------------- | -------------------------------- | -------------------- |
 | 高     | 設置するディスプレイの台数、解像度、向き、来場者から見た順 | 教室の間取りと利用可能機材       | 会場でのペアリング前 |
-| 高     | 7問の本文、左右端の語、各位置の補助文、配点 | 企画担当と写真担当のレビュー     | 診断実装前     |
-| 高     | 8色の正式名称、基準色、背景色、文字色、メッセージ | 写真作品と実機の色確認 | 素材組み込み前 |
-| 高     | Cloudflareアカウントのsubdomainと公開終了日時 | 学校の公開規定、学園祭日程 | production deploy前 |
-| 高     | 8色の代表画像と作者クレジット | 配布許可済み写真、作者情報 | production build前 |
-| 中     | 写真点数、縦横比、配布許可               | 写真担当の素材一覧               | 展示画面実装前 |
-| 中     | 照明機材と制御方法                       | 会場機材、電源、ネットワーク     | 照明連携着手前 |
-| 低     | 印刷を追加するか                         | 予算、消耗品、印刷速度、保守担当 | MVP完成後      |
+| 高     | 7問の本文、左右端の語、各位置の補助文、配点                | 企画担当と写真担当のレビュー     | 診断実装前           |
+| 高     | 8色の正式名称、基準色、背景色、文字色、メッセージ          | 写真作品と実機の色確認           | 素材組み込み前       |
+| 高     | Cloudflareアカウントのsubdomainと公開終了日時              | 学校の公開規定、学園祭日程       | production deploy前  |
+| 高     | 8色の代表画像と作者クレジット                              | 配布許可済み写真、作者情報       | production build前   |
+| 中     | 写真点数、縦横比、配布許可                                 | 写真担当の素材一覧               | 展示画面実装前       |
+| 中     | 照明機材と制御方法                                         | 会場機材、電源、ネットワーク     | 照明連携着手前       |
+| 低     | 印刷を追加するか                                           | 予算、消耗品、印刷速度、保守担当 | MVP完成後            |
 
 ## 17. 将来拡張
 

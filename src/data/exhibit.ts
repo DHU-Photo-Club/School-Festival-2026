@@ -4,6 +4,6 @@
  * 仮データ: 開催情報は学園祭日程の決定前の仮の値である。
  */
 export const EXHIBIT = {
-  title: 'あなた色写真展',
-  eventInfo: '学園祭 2026（開催情報は仮）',
+	title: "あなた色写真展",
+	eventInfo: "学園祭 2026（開催情報は仮）",
 } as const;
