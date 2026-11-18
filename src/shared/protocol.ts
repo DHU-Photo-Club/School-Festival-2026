@@ -1,6 +1,6 @@
 import type { Command } from "./machine.ts";
-import { COLOR_IDS, SLIDER_STOP_IDS } from "./types.ts";
 import type { ColorId, DeviceRole, DisplayState, ExhibitState, SliderStopId } from "./types.ts";
+import { COLOR_IDS, SLIDER_STOP_IDS } from "./types.ts";
 
 export const PROTOCOL_VERSION = 1;
 

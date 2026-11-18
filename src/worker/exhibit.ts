@@ -1,10 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { RESULT_COLORS } from "../data/colors.ts";
 import { QUESTIONS } from "../data/questions.ts";
-import { ADMIN_COOKIE, DEVICE_COOKIE, authKeyFromToken, newToken, readCookie, sessionCookie } from "./auth.ts";
-import { ExhibitCore } from "./core.ts";
-import type { Connection, ConnectionMeta, Store } from "./core.ts";
 import type { ServerMessage } from "../shared/protocol.ts";
+import { ADMIN_COOKIE, authKeyFromToken, DEVICE_COOKIE, newToken, readCookie, sessionCookie } from "./auth.ts";
+import type { Connection, ConnectionMeta, Store } from "./core.ts";
+import { ExhibitCore } from "./core.ts";
 
 /** Durable ObjectのSQLiteストレージを使うキー・値ストア。 */
 class SqlStore implements Store {

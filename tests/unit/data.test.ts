@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validatePhotoFiles } from "../../scripts/validate-assets.ts";
+import { createQrModel, generateQrWithRetry, QR_RETRY_DELAY_MS } from "../../src/client/lib/qr.ts";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
@@ -13,7 +14,6 @@ import {
 } from "../../src/shared/data-validation.ts";
 import { resultUrl } from "../../src/shared/result-url.ts";
 import { COLOR_IDS } from "../../src/shared/types.ts";
-import { createQrModel, generateQrWithRetry, QR_RETRY_DELAY_MS } from "../../src/client/lib/qr.ts";
 import { resultAvailability } from "../../src/worker/result-page.ts";
 
 const data = { colors: RESULT_COLORS, questions: QUESTIONS, photos: PHOTOS };

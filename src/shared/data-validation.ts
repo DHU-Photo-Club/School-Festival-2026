@@ -1,5 +1,5 @@
-import { COLOR_IDS } from "./types.ts";
 import type { ColorId, Photo, Question, ResultColor } from "./types.ts";
+import { COLOR_IDS } from "./types.ts";
 
 /** 写真IDの形式（仕様書12.1節）。 */
 export const PHOTO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

@@ -1,4 +1,4 @@
-import { readCookie, ADMIN_COOKIE, DEVICE_COOKIE } from "./auth.ts";
+import { ADMIN_COOKIE, DEVICE_COOKIE, readCookie } from "./auth.ts";
 import { goneResponse, notFoundResponse, resultAvailability } from "./result-page.ts";
 
 export { Exhibit } from "./exhibit.ts";
@@ -23,9 +23,10 @@ export default {
 		if (url.pathname === "/api/realtime") {
 			const role = url.searchParams.get("role");
 			const token = readCookie(request, role === "admin" ? ADMIN_COOKIE : DEVICE_COOKIE);
-			const status = await exhibit(env).authorizeRealtime(token, role, url.searchParams.get("screenId"));
+			const stub = exhibit(env);
+			const status = await stub.authorizeRealtime(token, role, url.searchParams.get("screenId"));
 			if (status !== 200) return new Response(null, { status });
-			return exhibit(env).fetch(request);
+			return stub.fetch(request);
 		}
 
 		if (url.pathname.startsWith("/api/")) return exhibit(env).fetch(request);

@@ -1,9 +1,9 @@
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
-import type { ServerMessage } from "../../src/shared/protocol.ts";
+import type { AdminState, ServerMessage } from "../../src/shared/protocol.ts";
 import type { Role } from "../../src/shared/types.ts";
-import { ExhibitCore } from "../../src/worker/core.ts";
 import type { Connection, ConnectionMeta, Store } from "../../src/worker/core.ts";
+import { ExhibitCore } from "../../src/worker/core.ts";
 
 export class MemoryStore implements Store {
 	readonly data = new Map<string, string>();
@@ -57,6 +57,13 @@ export class FakeConnection implements Connection {
 	}
 }
 
+/** 接続が受け取った最後の `state` メッセージの管理状態。 `state` メッセージが無ければエラーを投げる。 */
+export function lastAdminState(connection: FakeConnection): AdminState {
+	const last = connection.ofType("state").at(-1);
+	if (!last) throw new Error("`state` メッセージがまだ届いていない");
+	return last.state as AdminState;
+}
+
 /** Durable Objectの外側を模したテスト用の環境。時刻は手動で進める。 */
 export class Harness {
 	time = 1_800_000_000_000;
@@ -69,9 +76,9 @@ export class Harness {
 		this.core = new ExhibitCore({
 			store: this.store,
 			now: () => this.time,
-			randomId: () => `id-${(this.counter += 1)}`,
+			randomId: () => `id-${this.nextCount()}`,
 			randomDigits: (length) =>
-				String((this.counter += 1) * 7919)
+				String(this.nextCount() * 7919)
 					.padStart(length, "0")
 					.slice(-length),
 			connections: () => this.connections.filter((connection) => !connection.closed),
@@ -84,9 +91,15 @@ export class Harness {
 		this.time += ms;
 	}
 
+	/** カウンター値を1つ進め、その値を返す。テスト用の一意なIDの生成に使う。 */
+	private nextCount(): number {
+		this.counter += 1;
+		return this.counter;
+	}
+
 	/** 認証セッションを発行して接続し、`hello` まで済ませる。 */
 	connect(role: Role, options: { screenId?: string; clientId?: string; hello?: boolean } = {}): FakeConnection {
-		const authKey = `key-${(this.counter += 1)}`;
+		const authKey = `key-${this.nextCount()}`;
 		const session = this.core.issueSession(
 			authKey,
 			role === "admin" ? "admin" : "device",
@@ -101,7 +114,7 @@ export class Harness {
 		session: ReturnType<ExhibitCore["issueSession"]>,
 		options: { clientId?: string; hello?: boolean } = {},
 	): FakeConnection {
-		const meta = this.core.createConnectionMeta(authKey, session, `conn-${(this.counter += 1)}`);
+		const meta = this.core.createConnectionMeta(authKey, session, `conn-${this.nextCount()}`);
 		const connection = new FakeConnection(meta, (closed) => this.core.handleClose(closed));
 		this.connections.push(connection);
 		if (options.hello !== false)
@@ -118,7 +131,7 @@ export class Harness {
 		command: Record<string, unknown>,
 		options: { requestId?: string; expectedRevision?: number | null } = {},
 	) {
-		const requestId = options.requestId ?? `req-${(this.counter += 1)}`;
+		const requestId = options.requestId ?? `req-${this.nextCount()}`;
 		const expectedRevision =
 			options.expectedRevision === null ? undefined : (options.expectedRevision ?? this.core.current().revision);
 		this.send(connection, { type: "command", requestId, expectedRevision, command });

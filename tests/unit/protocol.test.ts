@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseClientMessage, toDisplayState } from "../../src/shared/protocol.ts";
 import { initialState } from "../../src/shared/machine.ts";
+import { parseClientMessage, toDisplayState } from "../../src/shared/protocol.ts";
 
 const parse = (value: unknown) => parseClientMessage(JSON.stringify(value));
 

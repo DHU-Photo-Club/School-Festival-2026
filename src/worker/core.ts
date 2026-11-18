@@ -1,6 +1,5 @@
-import { advanceDeadlines, applyCommand, initialState, ROLE_COMMANDS } from "../shared/machine.ts";
 import type { Command } from "../shared/machine.ts";
-import { CLOSE_CODES, ERROR_MESSAGES, parseClientMessage, RETRYABLE, toDisplayState } from "../shared/protocol.ts";
+import { advanceDeadlines, applyCommand, initialState, ROLE_COMMANDS } from "../shared/machine.ts";
 import type {
 	AdminState,
 	ClientMessage,
@@ -13,6 +12,7 @@ import type {
 	ServerMessage,
 	SyncReport,
 } from "../shared/protocol.ts";
+import { CLOSE_CODES, ERROR_MESSAGES, parseClientMessage, RETRYABLE, toDisplayState } from "../shared/protocol.ts";
 import { displayOrderOf, nextFreeScreenId } from "../shared/screens.ts";
 import type { DeviceRole, ExhibitState, Question, ResultColor, Role, ScreenRole } from "../shared/types.ts";
 

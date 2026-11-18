@@ -1,5 +1,5 @@
-import { expect } from "@playwright/test";
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import type { ColorId, DeviceRole } from "../../src/shared/types.ts";

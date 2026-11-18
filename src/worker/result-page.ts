@@ -1,6 +1,6 @@
 import { EXHIBIT } from "../data/exhibit.ts";
-import { COLOR_IDS } from "../shared/types.ts";
 import type { ColorId } from "../shared/types.ts";
+import { COLOR_IDS } from "../shared/types.ts";
 
 export type ResultAvailability = { status: 200; colorId: ColorId } | { status: 404 } | { status: 410 };
 

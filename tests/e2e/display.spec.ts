@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import type { Device } from "./fixtures.ts";
 import {
 	canvasDigest,
 	canvasHasGraphics,
@@ -9,7 +10,6 @@ import {
 	expectedResultView,
 	tapStop,
 } from "./fixtures.ts";
-import type { Device } from "./fixtures.ts";
 
 /** 現在枠の待機写真のIDと不透明度。 */
 async function currentIdle(device: Device) {

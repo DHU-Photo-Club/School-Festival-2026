@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
+import { QUESTIONS } from "../../src/data/questions.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import { COLOR_IDS } from "../../src/shared/types.ts";
-import { QUESTIONS } from "../../src/data/questions.ts";
-import { controllableNetwork, ExhibitHarness, expectedResultView, tapStop } from "./fixtures.ts";
 import type { Device } from "./fixtures.ts";
+import { controllableNetwork, ExhibitHarness, expectedResultView, tapStop } from "./fixtures.ts";
 
 async function startQuestions(ipad: Device) {
 	await ipad.page.getByRole("button", { name: "診断をはじめる" }).click();

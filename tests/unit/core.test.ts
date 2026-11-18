@@ -4,8 +4,8 @@ import { INACTIVITY_MS, JUDGING_MS, RESULT_MS } from "../../src/shared/machine.t
 import type { AdminState } from "../../src/shared/protocol.ts";
 import type { DisplayState, ExhibitState } from "../../src/shared/types.ts";
 import { HELLO_TIMEOUT_MS, PAIRING_TTL_MS, SESSION_TTL_MS, STALE_AFTER_MS } from "../../src/worker/core.ts";
-import { Harness } from "./helpers.ts";
 import type { FakeConnection } from "./helpers.ts";
+import { Harness, lastAdminState } from "./helpers.ts";
 
 function answerAll(harness: Harness, ipad: FakeConnection) {
 	harness.command(ipad, { name: "start" });
@@ -372,9 +372,7 @@ describe("期限", () => {
 		const session = harness.core.issueSession(authKey, "device", "display", "display-1");
 		const display = harness.open(authKey, session);
 		const connectedOf = () =>
-			(admin.ofType("state").at(-1)?.state as AdminState).devices.find(
-				(device) => device.screenId === "display-1",
-			)?.connected;
+			lastAdminState(admin).devices.find((device) => device.screenId === "display-1")?.connected;
 		harness.advance(5_000);
 		harness.send(admin, { type: "ping", pingId: "a1", clientSentAt: 1 });
 		harness.alarm();
@@ -460,7 +458,7 @@ describe("認証とペアリング", () => {
 		const admin = harness.connect("admin");
 		for (const key of ["a", "b", "c", "d", "e"])
 			harness.core.pair(harness.core.issuePairingCode("display").code, key);
-		const devices = (admin.ofType("state").at(-1)?.state as AdminState).devices;
+		const devices = lastAdminState(admin).devices;
 		expect(devices.filter((device) => device.role === "display").map((device) => device.screenId)).toEqual([
 			"display-1",
 			"display-2",
@@ -507,7 +505,7 @@ describe("結果同期の計測", () => {
 		report(d2, "display-2", startAt + 20);
 		report(d3, "display-3", startAt + 500);
 		expect(d1.last()).toMatchObject({ type: "ack" });
-		const sync = (admin.ofType("state").at(-1)?.state as AdminState).syncReport;
+		const sync = lastAdminState(admin).syncReport;
 		expect(sync).toMatchObject({
 			sessionId: judging.sessionId,
 			resultStartAt: startAt,
@@ -579,9 +577,7 @@ describe("運用通知", () => {
 			succeeded: 9,
 			failedPhotoIds: ["kari-red-02"],
 		});
-		const device = (admin.ofType("state").at(-1)?.state as AdminState).devices.find(
-			(entry) => entry.screenId === "display-2",
-		);
+		const device = lastAdminState(admin).devices.find((entry) => entry.screenId === "display-2");
 		expect(device?.preload).toEqual({ succeeded: 9, failedPhotoIds: ["kari-red-02"] });
 	});
 });
@@ -634,9 +630,7 @@ describe("レビュー指摘への対応", () => {
 			failedPhotoIds: [],
 		});
 		harness.send(display, { type: "hello", clientId: "again" });
-		const device = (admin.ofType("state").at(-1)?.state as AdminState).devices.find(
-			(entry) => entry.screenId === "display-1",
-		);
+		const device = lastAdminState(admin).devices.find((entry) => entry.screenId === "display-1");
 		expect(device?.preload).toBeNull();
 	});
 
@@ -658,7 +652,7 @@ describe("レビュー指摘への対応", () => {
 		expect(d1.last()).toMatchObject({ type: "ack", requestId: "early" });
 		harness.advance(5);
 		harness.alarm();
-		const sync = (admin.ofType("state").at(-1)?.state as AdminState).syncReport;
+		const sync = lastAdminState(admin).syncReport;
 		expect(sync?.entries.find((entry) => entry.screenId === "display-1")?.actualStartedAt).toBe(
 			(phaseEndsAt as number) + 2,
 		);
@@ -677,6 +671,6 @@ describe("レビュー指摘への対応", () => {
 		harness.store.put = put;
 		expect(response).toMatchObject({ type: "error", code: "INTERNAL_ERROR", retryable: true });
 		expect(harness.core.current()).toMatchObject({ phase: "idle", revision: 0 });
-		expect((admin.ofType("state").at(-1)?.state as AdminState).lastInternalErrorAt).not.toBeNull();
+		expect(lastAdminState(admin).lastInternalErrorAt).not.toBeNull();
 	});
 });

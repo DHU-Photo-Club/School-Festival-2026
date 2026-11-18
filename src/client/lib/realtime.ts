@@ -1,8 +1,8 @@
-import { estimateClock } from "../../shared/clock.ts";
 import type { ClockSample } from "../../shared/clock.ts";
-import { CLOSE_CODES } from "../../shared/protocol.ts";
-import type { ClientMessage, Diagnostic, RoleState, ServerMessage } from "../../shared/protocol.ts";
+import { estimateClock } from "../../shared/clock.ts";
 import type { Command } from "../../shared/machine.ts";
+import type { ClientMessage, Diagnostic, RoleState, ServerMessage } from "../../shared/protocol.ts";
+import { CLOSE_CODES } from "../../shared/protocol.ts";
 import type { Role } from "../../shared/types.ts";
 
 /** 応答待ちの再送タイマー（仕様書8.5節）。 */
@@ -157,7 +157,14 @@ export class RealtimeClient {
 		});
 		socket.addEventListener("message", (event) => {
 			if (socket !== this.socket || typeof event.data !== "string") return;
-			this.handle(JSON.parse(event.data) as ServerMessage);
+			let message: ServerMessage;
+			try {
+				message = JSON.parse(event.data) as ServerMessage;
+			} catch {
+				// 破損したフレームは破棄する。pong の途絶は生存確認が検出し、再接続する。
+				return;
+			}
+			this.handle(message);
 		});
 		socket.addEventListener("close", (event) => {
 			if (socket !== this.socket) return;

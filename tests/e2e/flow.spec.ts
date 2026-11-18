@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
-import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
-import { canvasDigest, canvasPixel, ExhibitHarness, sliderValue, tapStop } from "./fixtures.ts";
+import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import type { Device } from "./fixtures.ts";
+import { canvasDigest, canvasPixel, ExhibitHarness, sliderValue, tapStop } from "./fixtures.ts";
 
 const revisionOf = async (device: Device) =>
 	Number(await device.page.locator("main.display").getAttribute("data-revision"));

@@ -1,5 +1,5 @@
-import { COLOR_IDS, SLIDER_STOP_IDS } from "./types.ts";
 import type { ColorId, Question, QuestionId, ResultColor, SliderStopId } from "./types.ts";
+import { COLOR_IDS, SLIDER_STOP_IDS } from "./types.ts";
 
 /** 同点時に優先する後半の問数（仕様書6.3節）。 */
 const LATE_QUESTION_COUNT = 3;

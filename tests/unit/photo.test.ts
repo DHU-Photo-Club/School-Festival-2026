@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { JUDGING_MS } from "../../src/shared/machine.ts";
-import type { AdminState } from "../../src/shared/protocol.ts";
 import { displayOrderOf, nextFreeScreenId, screenIdFor } from "../../src/shared/screens.ts";
 import { PAIRING_TTL_MS, SESSION_TTL_MS } from "../../src/worker/core.ts";
-import { Harness } from "./helpers.ts";
+import { Harness, lastAdminState } from "./helpers.ts";
 
 describe("写真用の画面ID", () => {
 	it("展示ディスプレイとは別に番号と並び順を扱う", () => {
@@ -96,7 +95,7 @@ describe("写真用の登録と権限", () => {
 			minRoundTripTime: 20,
 			offsetSpread: 10,
 		});
-		const devices = (admin.ofType("state").at(-1)?.state as AdminState).devices;
+		const devices = lastAdminState(admin).devices;
 		expect(devices.find((device) => device.screenId === "photo-1")).toMatchObject({
 			role: "photo",
 			connected: true,
@@ -123,7 +122,7 @@ describe("写真用の登録と権限", () => {
 			harness.command(controller, { name: "answer", questionId: question.id, stopId: "center" });
 		harness.advance(JUDGING_MS);
 		harness.alarm();
-		const state = admin.ofType("state").at(-1)?.state as AdminState;
+		const state = lastAdminState(admin);
 		expect(state.syncReport?.entries.map((entry) => entry.screenId)).toEqual(["display-1"]);
 	});
 });

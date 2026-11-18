@@ -51,7 +51,9 @@ describe("破片の色", () => {
 
 	it("8区画で一巡する", () => {
 		const [a, b] = [spectrumColor(1.3, COLORS, 0.9), spectrumColor(9.3, COLORS, 0.9)];
-		a.forEach((value, index) => expect(value).toBeCloseTo(b[index]));
+		a.forEach((value, index) => {
+			expect(value).toBeCloseTo(b[index]);
+		});
 		expect(spectrumColor(-0.5, COLORS, 0.9)).toEqual([255, 255, 255]);
 	});
 

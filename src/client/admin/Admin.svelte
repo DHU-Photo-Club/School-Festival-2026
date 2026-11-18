@@ -2,10 +2,10 @@
 import { onDestroy, onMount } from "svelte";
 import { RESULT_COLORS } from "../../data/colors.ts";
 import type { Command } from "../../shared/machine.ts";
-import type { DeviceRole } from "../../shared/types.ts";
 import type { AdminState } from "../../shared/protocol.ts";
-import { RealtimeClient } from "../lib/realtime.ts";
+import type { DeviceRole } from "../../shared/types.ts";
 import type { AlertMessage, ConnectionStatus } from "../lib/realtime.ts";
+import { RealtimeClient } from "../lib/realtime.ts";
 
 interface SessionRow {
 	id: string;
@@ -156,15 +156,22 @@ onDestroy(() => {
 				</dl>
 				<div class="actions">
 					<button
+						type="button"
 						onclick={() => command({ name: "setAccepting", accepting: !admin?.accepting })}
 						disabled={busy}
 					>
 						{admin.accepting ? "受付を停止" : "受付を再開"}
 					</button>
-					<button class="danger" onclick={() => command({ name: "forceReset" })} disabled={busy}>
+					<button
+						type="button"
+						class="danger"
+						onclick={() => command({ name: "forceReset" })}
+						disabled={busy}
+					>
 						強制リセット
 					</button>
 					<button
+						type="button"
 						onclick={() => command({ name: "releaseController" })}
 						disabled={busy || !admin.controllerAssigned}
 					>
@@ -281,6 +288,7 @@ onDestroy(() => {
 				<div class="colors">
 					{#each RESULT_COLORS as color (color.id)}
 						<button
+							type="button"
 							class="swatch"
 							style:background={color.backgroundColor}
 							style:color={color.foregroundColor}
@@ -292,6 +300,7 @@ onDestroy(() => {
 						</button>
 					{/each}
 					<button
+						type="button"
 						disabled={busy || admin.previewColorId === null}
 						onclick={() => command({ name: "clearPreview" })}
 					>
@@ -370,7 +379,7 @@ onDestroy(() => {
 							<td>{time(session.issuedAt)}</td>
 							<td>{time(session.lastReceivedAt)}</td>
 							<td>{session.connected ? "接続中" : "切断"}</td>
-							<td><button onclick={() => revoke(session.id)}>失効</button></td>
+							<td><button type="button" onclick={() => revoke(session.id)}>失効</button></td>
 						</tr>
 					{/each}
 				</tbody>

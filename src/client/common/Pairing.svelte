@@ -1,5 +1,5 @@
 <script lang="ts">
-import { fetchDeviceSession, type DeviceSession } from "../lib/session.ts";
+import { type DeviceSession, fetchDeviceSession } from "../lib/session.ts";
 
 let { message = "" }: { message?: string } = $props();
 

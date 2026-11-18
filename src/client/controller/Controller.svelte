@@ -6,19 +6,19 @@ import { QUESTIONS } from "../../data/questions.ts";
 import type { Command } from "../../shared/machine.ts";
 import { easeInSine, easeOutCubic, ringAngle, ringSteps } from "../../shared/motion.ts";
 import { resultUrl } from "../../shared/result-url.ts";
-import { SLIDER_STOP_IDS } from "../../shared/types.ts";
 import type { ColorId, ExhibitState } from "../../shared/types.ts";
+import { SLIDER_STOP_IDS } from "../../shared/types.ts";
 import Pairing from "../common/Pairing.svelte";
-import { createQrModel, generateQrWithRetry } from "../lib/qr.ts";
 import type { QrModel } from "../lib/qr.ts";
-import { RealtimeClient } from "../lib/realtime.ts";
+import { createQrModel, generateQrWithRetry } from "../lib/qr.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
+import { RealtimeClient } from "../lib/realtime.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
 import QrCode from "./QrCode.svelte";
 import Ring from "./Ring.svelte";
 import ShardField from "./ShardField.svelte";
-import Slider from "./Slider.svelte";
 import type { SliderMode } from "./Slider.svelte";
+import Slider from "./Slider.svelte";
 
 /** iPadの輪の動き（docs/visual-language.md 4.2節）。 */
 const IDLE_TURN_MS = 240_000;
@@ -228,6 +228,7 @@ const discScale = $derived(
 				<h1>{EXHIBIT.title}</h1>
 				<p class="muted">いくつかの質問に答えると、今のあなたを表す色がひとつ選ばれます。</p>
 				<button
+					type="button"
 					class="primary-button"
 					disabled={!online || pending !== null}
 					onclick={() => send({ name: "start" })}
@@ -247,6 +248,7 @@ const discScale = $derived(
 					<p class="muted">名前などの個人情報は入力しません。</p>
 				</div>
 				<button
+					type="button"
 					class="primary-button"
 					disabled={!online || pending !== null}
 					onclick={() => send({ name: "continue" })}
@@ -275,6 +277,7 @@ const discScale = $derived(
 				<footer>
 					{#if exhibit.questionIndex > 0}
 						<button
+							type="button"
 							class="secondary-button"
 							disabled={!online || pending !== null}
 							onclick={() => send({ name: "back" })}
@@ -285,6 +288,7 @@ const discScale = $derived(
 						<span></span>
 					{/if}
 					<button
+						type="button"
 						class="primary-button"
 						disabled={!online || pending !== null || draft === null}
 						onclick={next}
@@ -326,6 +330,7 @@ const discScale = $derived(
 						</div>
 					{/if}
 					<button
+						type="button"
 						class="primary-button return"
 						style:background={color.foregroundColor}
 						style:color={color.backgroundColor}
@@ -364,7 +369,6 @@ const discScale = $derived(
 <style>
 .screen {
 	position: relative;
-	min-height: 100vh;
 	min-height: 100dvh;
 	padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
 	display: grid;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import type { Command } from "../../src/shared/machine.ts";
 import {
 	advanceDeadlines,
 	applyCommand,
@@ -9,15 +10,18 @@ import {
 	JUDGING_MS,
 	RESULT_MS,
 } from "../../src/shared/machine.ts";
-import type { Command } from "../../src/shared/machine.ts";
 import type { ExhibitState } from "../../src/shared/types.ts";
 
 let ids = 0;
+const newSessionId = () => {
+	ids += 1;
+	return `session-${ids}`;
+};
 const context = (now: number) => ({
 	now,
 	questions: QUESTIONS,
 	colors: RESULT_COLORS,
-	newSessionId: () => `session-${(ids += 1)}`,
+	newSessionId,
 });
 
 function apply(state: ExhibitState, command: Command, now = state.phaseStartedAt): ExhibitState {

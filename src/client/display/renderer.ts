@@ -1,5 +1,5 @@
-import { BLOOM_WARP } from "../../shared/motion.ts";
 import type { Primitive } from "../../shared/motion.ts";
+import { BLOOM_WARP } from "../../shared/motion.ts";
 
 /** `computeScene` の描画内容をcanvasへ描く。座標はcanvasの画素単位。 */
 export interface SceneRenderer {
@@ -291,7 +291,10 @@ function drawBloom2d(context: CanvasRenderingContext2D, primitive: Extract<Primi
 		for (const [ox, oy, nx, ny, corners] of edges) {
 			context.save();
 			context.beginPath();
-			corners.forEach(([cx, cy], index) => (index === 0 ? context.moveTo(cx, cy) : context.lineTo(cx, cy)));
+			corners.forEach(([cx, cy], index) => {
+				if (index === 0) context.moveTo(cx, cy);
+				else context.lineTo(cx, cy);
+			});
 			context.closePath();
 			context.clip();
 			context.fillStyle = fade(ox, oy, nx, ny);

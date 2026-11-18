@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { judge, resultDistribution } from "../../src/shared/diagnosis.ts";
-import { COLOR_IDS, SLIDER_STOP_IDS } from "../../src/shared/types.ts";
 import type { Question, ResultColor, SliderStopId } from "../../src/shared/types.ts";
+import { COLOR_IDS, SLIDER_STOP_IDS } from "../../src/shared/types.ts";
 
 const stops = (scores: Question["stops"][number]["scores"][]): Question["stops"] =>
 	SLIDER_STOP_IDS.map((id, index) => ({ id, caption: id, scores: scores[index] })) as unknown as Question["stops"];

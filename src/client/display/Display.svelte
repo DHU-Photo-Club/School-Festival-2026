@@ -4,19 +4,19 @@ import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PHOTOS } from "../../data/photos.ts";
 import { idlePhotoFor, idlePlaylist, resultPhotoFor } from "../../shared/assignment.ts";
-import { displayOrderOf } from "../../shared/screens.ts";
-import { computeScene, idleCrossfade, idleCycleIndex, IDLE_RETURN_MS } from "../../shared/motion.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
+import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex } from "../../shared/motion.ts";
+import { displayOrderOf } from "../../shared/screens.ts";
 import { shardPoses, spectrumColor } from "../../shared/shards.ts";
-import { COLOR_IDS } from "../../shared/types.ts";
 import type { ColorId, DisplayState, Photo } from "../../shared/types.ts";
+import { COLOR_IDS } from "../../shared/types.ts";
 import Pairing from "../common/Pairing.svelte";
 import PhotoImage from "../common/PhotoImage.svelte";
 import { drawShards, hexToRgb } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
-import { createRenderer } from "./renderer.ts";
 import type { SceneRenderer } from "./renderer.ts";
+import { createRenderer } from "./renderer.ts";
 
 let { screenId }: { screenId: string } = $props();
 

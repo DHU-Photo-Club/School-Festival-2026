@@ -36,7 +36,10 @@ export function drawShards(
 			rgb = [gray, gray, gray];
 		}
 		context.beginPath();
-		item.vertices.forEach(([x, y], index) => (index === 0 ? context.moveTo(x, y) : context.lineTo(x, y)));
+		item.vertices.forEach(([x, y], index) => {
+			if (index === 0) context.moveTo(x, y);
+			else context.lineTo(x, y);
+		});
 		context.closePath();
 		context.fillStyle = `rgba(${Math.round(rgb[0])}, ${Math.round(rgb[1])}, ${Math.round(rgb[2])}, ${(item.alpha * opacity).toFixed(3)})`;
 		context.fill();

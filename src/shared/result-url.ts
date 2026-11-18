@@ -1,5 +1,5 @@
-import { COLOR_IDS } from "./types.ts";
 import type { ColorId } from "./types.ts";
+import { COLOR_IDS } from "./types.ts";
 
 /**
  * QRコードへ格納する結果URL（仕様書10.3節）。`PUBLIC_ORIGIN` と `colorId` を検証してから組み立てる。

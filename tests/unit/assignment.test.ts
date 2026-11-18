@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { idlePhotoFor, idlePlaylist, resultPhotoFor, resultPhotos } from "../../src/shared/assignment.ts";
-import { COLOR_IDS } from "../../src/shared/types.ts";
 import type { Photo } from "../../src/shared/types.ts";
+import { COLOR_IDS } from "../../src/shared/types.ts";
 
 /** 三画面構成（仕様書9.5節）。 */
 const DISPLAY_ORDERS = [0, 1, 2];

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { INACTIVITY_MS, JUDGING_MS } from "../../src/shared/machine.ts";
+import type { Primitive, Scene, SceneInput } from "../../src/shared/motion.ts";
 import {
 	BLOOM_WARP,
 	COLORS,
@@ -15,9 +16,8 @@ import {
 	ringSteps,
 	spectrumOffset,
 } from "../../src/shared/motion.ts";
-import type { Primitive, Scene, SceneInput } from "../../src/shared/motion.ts";
-import { COLOR_IDS } from "../../src/shared/types.ts";
 import type { ColorId, DisplayState } from "../../src/shared/types.ts";
+import { COLOR_IDS } from "../../src/shared/types.ts";
 
 const T0 = 1_800_000_000_000;
 const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): SceneInput => ({
