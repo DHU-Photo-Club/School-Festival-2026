@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { validatePhotoFiles } from '../../build/validate-assets.ts';
+import { validatePhotoFiles } from '../../scripts/validate-assets.ts';
 import { RESULT_COLORS } from '../../src/data/colors.ts';
 import { PHOTOS } from '../../src/data/photos.ts';
 import { QUESTIONS } from '../../src/data/questions.ts';

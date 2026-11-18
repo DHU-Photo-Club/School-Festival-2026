@@ -1,7 +1,7 @@
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
-import { exhibitChecks, readWranglerConfig } from './build/exhibit-checks.ts';
+import { exhibitChecks, readWranglerConfig } from './scripts/exhibit-checks.ts';
 
 const wrangler = readWranglerConfig();
 

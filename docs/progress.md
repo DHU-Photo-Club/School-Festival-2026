@@ -12,7 +12,7 @@
 - 写真: 提供された12点（原本 `photos/originals/`）から `pnpm export-photos` で表示用のAVIFとJPEGを書き出した。生成した仮写真（`kari-*`）は削除
 - Durable Object（`src/worker/`）: 認証、ペアリング、WebSocket Hibernation、alarm、冪等性、操作端末、同期計測、運用通知
 - 画面（`src/client/`）: iPad、展示ディスプレイ、管理画面、結果ページ（管理画面のパスフレーズ認証は廃止した）
-- production build時の検証（`build/`）: `PUBLIC_ORIGIN`、`RESULTS_PUBLISHED_UNTIL`、色・診断・写真定義、写真ファイル
+- production build時の検証（`scripts/`）: `PUBLIC_ORIGIN`、`RESULTS_PUBLISHED_UNTIL`、色・診断・写真定義、写真ファイル
 - 単体テスト 171件、E2Eテスト（`tests/e2e/`）
 
 - 展示3画面とiPadで一回の診断を通し、通常とreduced-motionの各状態のスクリーンショットを `docs/visual-language.md` と比較

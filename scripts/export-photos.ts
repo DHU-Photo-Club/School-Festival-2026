@@ -5,7 +5,7 @@ import { mkdirSync, readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import sharp from 'sharp';
 import { PHOTOS } from '../src/data/photos.ts';
-import { LONG_SIDE_MAX } from '../build/validate-assets.ts';
+import { LONG_SIDE_MAX } from './validate-assets.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const SOURCE = join(ROOT, 'photos', 'originals');
