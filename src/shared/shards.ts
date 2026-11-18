@@ -1,5 +1,5 @@
 // 三角形の破片の輪と床の配置と動き（docs/visual-language.md 3.2節、4.4節）。
-// iPadの待機画面と展示ディスプレイの質問中で同じ配置を使う。配置は固定の種から作り、位置は経過時間だけから決まる。
+// 展示ディスプレイの質問中は輪と床を、iPadの待機画面は床だけを描く。配置は固定の種から作り、位置は経過時間だけから決まる。
 
 /** 輪の半径（画面短辺に対する比）。 */
 export const SHARD_RING_RADIUS = 0.38;
@@ -119,36 +119,40 @@ function pose(item: Shard, x: number, y: number, rotation: number, unit: number)
 	};
 }
 
-/**
- * 経過時間 `elapsed`（ミリ秒）での全破片の位置。輪は画面中央を中心に時計回りに公転し、破片は輪の接線方向を
- * 向いたまま自転する。床は輪の下端と同じ向き（左）へ流れ、画面の端で反対側へ回り込む。
- * `swell` は輪の半径の倍率。
- */
-export function shardPoses(width: number, height: number, elapsed: number, swell = 1): ShardPose[] {
-	const unit = Math.min(width, height);
-	const radius = unit * SHARD_RING_RADIUS;
+/** 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転する。`swell` は輪の半径の倍率。 */
+function ringPoses(width: number, height: number, elapsed: number, swell: number): ShardPose[] {
+	const radius = Math.min(width, height) * SHARD_RING_RADIUS;
 	const cx = width / 2;
 	const cy = height / 2;
-	const poses: ShardPose[] = [];
-
-	for (const item of RING) {
+	return RING.map((item) => {
 		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
 		const r = radius * swell * (item.b + 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2))));
 		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
-		poses.push(pose(item, cx + Math.cos(theta) * r, cy + Math.sin(theta) * r, rotation, radius));
-	}
+		return pose(item, cx + Math.cos(theta) * r, cy + Math.sin(theta) * r, rotation, radius);
+	});
+}
 
+/**
+ * 経過時間 `elapsed`（ミリ秒）での床の破片の位置。輪の下端と同じ向き（左）へ流れ、画面の端で反対側へ回り込む。
+ * iPadの待機画面は床だけを描く（docs/visual-language.md 4.4節）。
+ */
+export function floorShardPoses(width: number, height: number, elapsed: number): ShardPose[] {
+	const unit = Math.min(width, height);
 	const margin = unit * 0.2;
 	const span = width + margin * 2;
-	for (const item of FLOOR) {
+	return FLOOR.map((item) => {
 		const travel = (((elapsed * item.speed) % FLOOR_DRIFT_MS) / FLOOR_DRIFT_MS) * span;
 		const x = ((((item.a * span - travel) % span) + span) % span) - margin;
 		const y = height * item.b + unit * 0.012 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2)));
 		const rotation =
 			item.spin * 0.35 + 0.25 * Math.sin(item.sway * 0.5 + ((elapsed * item.spinSpeed) % (Math.PI * 2)));
-		poses.push(pose(item, x, y, rotation, unit));
-	}
-	return poses;
+		return pose(item, x, y, rotation, unit);
+	});
+}
+
+/** 経過時間 `elapsed`（ミリ秒）での輪と床の全破片の位置。`swell` は輪の半径の倍率。 */
+export function shardPoses(width: number, height: number, elapsed: number, swell = 1): ShardPose[] {
+	return [...ringPoses(width, height, elapsed, swell), ...floorShardPoses(width, height, elapsed)];
 }
 
 const smoothstep = (edge0: number, edge1: number, x: number) => {

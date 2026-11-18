@@ -153,7 +153,7 @@ export function ringAngle(sessionId: string | null, steps: number, displayOrder:
 }
 
 /**
- * 質問中の破片の色のずれ（区画数）。iPadの輪の回転角を区画数で表した値で、画面の左端に
+ * 質問中の破片の色のずれ（区画数）。輪の回転角を区画数で表した値で、画面の左端に
  * `-offset` 番目の区画の位置が来る。画面が右へ一つ進むごとに一区画戻し、一問確定すると一区画進む。
  */
 export function spectrumOffset(sessionId: string | null, steps: number, displayOrder: number): number {

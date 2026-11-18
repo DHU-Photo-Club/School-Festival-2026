@@ -4,7 +4,7 @@ import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { QUESTIONS } from "../../data/questions.ts";
 import type { Command } from "../../shared/machine.ts";
-import { easeInSine, easeOutCubic, ringAngle, ringSteps } from "../../shared/motion.ts";
+import { easeOutCubic } from "../../shared/motion.ts";
 import { resultUrl } from "../../shared/result-url.ts";
 import type { ColorId, ExhibitState } from "../../shared/types.ts";
 import { SLIDER_STOP_IDS } from "../../shared/types.ts";
@@ -15,15 +15,11 @@ import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
 import QrCode from "./QrCode.svelte";
-import Ring from "./Ring.svelte";
 import ShardField from "./ShardField.svelte";
 import type { SliderMode } from "./Slider.svelte";
 import Slider from "./Slider.svelte";
 
-/** iPadの輪の動き（docs/visual-language.md 4.2節）。 */
-const IDLE_TURN_MS = 240_000;
-const QUESTION_TURN_MS = 1_400;
-const JUDGING_SHRINK_MS = 1_600;
+/** 結果の色面が広がる時間（docs/visual-language.md 4.2節）。 */
 const RESULT_GROW_MS = 1_400;
 const NOTICE_MS = 4_000;
 
@@ -40,7 +36,6 @@ let interacting = $state(false);
 let qr = $state<{ sessionId: string; url: string; model: QrModel | null; failed: boolean } | null>(null);
 
 let client: RealtimeClient | null = null;
-let frame = 0;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let questionKey = "";
 let stopWatching = () => {};
@@ -118,11 +113,6 @@ async function prepareQr(sessionId: string, colorId: ColorId) {
 	});
 }
 
-function tick() {
-	frame = requestAnimationFrame(tick);
-	if (client && !reducedMotion) now = client.serverNow();
-}
-
 onMount(async () => {
 	stopWatching = watchReducedMotion((reduced) => (reducedMotion = reduced));
 	const session = await fetchDeviceSession().catch(() => null);
@@ -148,11 +138,9 @@ onMount(async () => {
 		checkAuth: async () => (await fetchDeviceSession()) !== null,
 	});
 	client.start();
-	frame = requestAnimationFrame(tick);
 });
 
 onDestroy(() => {
-	cancelAnimationFrame(frame);
 	client?.stop();
 	stopWatching();
 	if (noticeTimer) clearTimeout(noticeTimer);
@@ -166,29 +154,19 @@ const sliderMode = $derived.by((): SliderMode => {
 	return "active";
 });
 
-const ring = $derived.by(() => {
-	if (!exhibit) return { angle: 0, radius: 1, thickness: 1 };
-	const t = reducedMotion ? exhibit.phaseStartedAt : now;
-	switch (exhibit.phase) {
-		case "intro":
-			return { angle: reducedMotion ? 0 : ((t % IDLE_TURN_MS) / IDLE_TURN_MS) * 360, radius: 1, thickness: 1 };
-		case "question":
-			return {
-				angle: ringAngle(exhibit.sessionId, ringSteps(exhibit, t, QUESTION_TURN_MS, reducedMotion), 0),
-				radius: 1,
-				thickness: 1,
-			};
-		case "judging": {
-			const shrink = reducedMotion ? 0.3 : 1 - easeInSine((t - exhibit.phaseStartedAt) / JUDGING_SHRINK_MS);
-			return {
-				angle: ringAngle(exhibit.sessionId, exhibit.revision, 0),
-				radius: reducedMotion ? 1 : shrink,
-				thickness: reducedMotion ? 0.3 : shrink,
-			};
-		}
-		default:
-			return { angle: 0, radius: 1, thickness: 1 };
-	}
+/** `result` の色面が広がる間だけ、補正済みサーバー時刻を毎フレーム更新する。 */
+$effect(() => {
+	if (exhibit?.phase !== "result" || reducedMotion || !client) return;
+	const startedAt = exhibit.phaseStartedAt;
+	const sync = client;
+	let frame = 0;
+	const tick = () => {
+		const t = sync.serverNow();
+		now = t;
+		if (t - startedAt < RESULT_GROW_MS) frame = requestAnimationFrame(tick);
+	};
+	tick();
+	return () => cancelAnimationFrame(frame);
 });
 
 const discScale = $derived(
@@ -238,7 +216,6 @@ const discScale = $derived(
 			</section>
 		{:else if exhibit.phase === "intro"}
 			<section class="center stack">
-				<Ring sessionId={null} angle={ring.angle} size="min(28vmin, 200px)" />
 				<h1>はじめる前に</h1>
 				<div class="intro">
 					<p>所要時間はおよそ2分です。7つの質問に、直感で答えてください。</p>
@@ -259,7 +236,6 @@ const discScale = $derived(
 		{:else if exhibit.phase === "question" && question && exhibit.questionIndex !== null}
 			<section class="question">
 				<header>
-					<Ring sessionId={exhibit.sessionId} angle={ring.angle} size="64px" />
 					<p class="progress">{exhibit.questionIndex + 1} / {QUESTIONS.length}</p>
 				</header>
 				<div class="body">
@@ -299,13 +275,6 @@ const discScale = $derived(
 			</section>
 		{:else if exhibit.phase === "judging"}
 			<section class="center stack">
-				<Ring
-					sessionId={exhibit.sessionId}
-					angle={ring.angle}
-					radius={ring.radius}
-					thickness={ring.thickness}
-					size="min(40vmin, 300px)"
-				/>
 				<p class="lead">あなたの色を選んでいます</p>
 			</section>
 		{:else if exhibit.phase === "result" && color}
@@ -424,9 +393,6 @@ p {
 	margin: 0 auto;
 }
 .question header {
-	display: flex;
-	align-items: center;
-	gap: 16px;
 	justify-self: stretch;
 }
 .progress {

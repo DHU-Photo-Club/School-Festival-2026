@@ -1,15 +1,15 @@
 <script lang="ts">
 import { onDestroy, onMount } from "svelte";
 import { easeInOutSine } from "../../shared/motion.ts";
-import { shardPoses } from "../../shared/shards.ts";
+import { floorShardPoses } from "../../shared/shards.ts";
 import { drawShards } from "../common/shards.ts";
 
-/** iPadの待機画面に置く三角形の破片の輪と床（docs/visual-language.md 4.4節）。 */
+/** iPadの待機画面に置く三角形の破片の床（docs/visual-language.md 4.4節）。 */
 let {
 	still = false,
 	dim = false,
 }: {
-	/** true のとき動かさず、静止した一枚だけを描く。 */
+	/** true のとき動かさず、初期配置の床だけを描く。 */
 	still?: boolean;
 	/** true のとき破片の不透明度を下げる（受付停止）。 */
 	dim?: boolean;
@@ -30,7 +30,7 @@ function draw(elapsed: number) {
 	const context = canvas?.getContext("2d");
 	if (!context) return;
 	const fade = still ? 1 : easeInOutSine(elapsed / FADE_IN_MS);
-	drawShards(context, shardPoses(width, height, elapsed), pixelRatio(), fade * (dim ? DIM_ALPHA : 1));
+	drawShards(context, floorShardPoses(width, height, elapsed), pixelRatio(), fade * (dim ? DIM_ALPHA : 1));
 }
 
 function resize() {
