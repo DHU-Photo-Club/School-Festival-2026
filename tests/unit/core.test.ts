@@ -48,7 +48,8 @@ describe("接続と配信", () => {
 		display.clear();
 		admin.clear();
 		const [response] = harness.command(ipad, { name: "start" });
-		expect(response).toMatchObject({ type: "ack", revision: 1 });
+		// この要求では commit が送信元を除外するため、iPad は ack の state でしか新しい状態を受け取らない。
+		expect(response).toMatchObject({ type: "ack", revision: 1, state: { revision: 1, phase: "intro" } });
 		expect(ipad.ofType("state")).toHaveLength(0);
 		expect(display.ofType("state")[0]).toMatchObject({ revision: 1, state: { phase: "intro" } });
 		expect(admin.ofType("state").at(-1)?.state).not.toHaveProperty("answers");
@@ -133,14 +134,21 @@ describe("検証と権限", () => {
 	it("JSONでないメッセージでは接続を閉じる", () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
-		harness.core.handleMessage(ipad, "{not json");
-		expect(ipad.closed).not.toBeNull();
+		harness.sendRaw(ipad, "{not json");
+		expect(ipad.closed).toMatchObject({ code: 1007, reason: "message is not JSON" });
+	});
+
+	it("バイナリフレームでは接続を閉じる", () => {
+		const harness = new Harness();
+		const ipad = harness.connect("controller");
+		harness.sendRaw(ipad, new ArrayBuffer(8));
+		expect(ipad.closed).toMatchObject({ code: 1007, reason: "binary frames are not supported" });
 	});
 
 	it("version が1でなければ PROTOCOL_MISMATCH を送って 4002 で閉じる", () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
-		harness.core.handleMessage(ipad, JSON.stringify({ version: 2, type: "ping", pingId: "p", clientSentAt: 1 }));
+		harness.sendRaw(ipad, JSON.stringify({ version: 2, type: "ping", pingId: "p", clientSentAt: 1 }));
 		expect(ipad.last()).toMatchObject({ type: "error", code: "PROTOCOL_MISMATCH" });
 		expect(ipad.closed?.code).toBe(4002);
 	});
@@ -261,7 +269,8 @@ describe("強制リセットと操作端末", () => {
 		const harness = new Harness();
 		const admin = harness.connect("admin");
 		const [response] = harness.command(admin, { name: "forceReset" }, { expectedRevision: 42 });
-		expect(response).toMatchObject({ type: "ack", revision: 1 });
+		// commit は送信元へ state を送らない。管理画面の状態は ack で返る。
+		expect(response).toMatchObject({ type: "ack", revision: 1, state: { revision: 1, controllerAssigned: false } });
 	});
 
 	it("強制リセット後に回答と結果が残らない", () => {
@@ -297,6 +306,65 @@ describe("強制リセットと操作端末", () => {
 		harness.send(second, { type: "hello", clientId: "ipad-b" });
 		expect(second.last()).toMatchObject({ type: "welcome" });
 		expect(harness.command(second, { name: "start" })[0]).toMatchObject({ type: "ack" });
+	});
+
+	it("操作端末が切断済みなら、別IDのiPadへ操作権限を移す", () => {
+		const harness = new Harness();
+		const first = harness.connect("controller", { clientId: "ipad-a" });
+		first.close(1006, "gone");
+		const second = harness.connect("controller", { clientId: "ipad-b" });
+		expect(second.last()).toMatchObject({ type: "welcome" });
+		expect(harness.command(second, { name: "start" })[0]).toMatchObject({ type: "ack" });
+
+		// 元のiPadが戻っても、接続中の操作端末からは権限を奪わない。
+		const back = harness.connect("controller", { clientId: "ipad-a" });
+		expect(back.last()).toMatchObject({ type: "error", code: "CONTROLLER_IN_USE" });
+	});
+
+	it("操作端末の認証セッションが失効していれば、受信が15秒以内でも別IDのiPadへ操作権限を移す", () => {
+		const harness = new Harness();
+		const first = harness.connect("controller", { clientId: "ipad-a" });
+		harness.advance(SESSION_TTL_MS - 5_000);
+		harness.send(first, { type: "ping", pingId: "p", clientSentAt: 1 });
+		harness.advance(5_000);
+		const second = harness.connect("controller", { clientId: "ipad-b" });
+		expect(second.last()).toMatchObject({ type: "welcome" });
+	});
+
+	it("最後の受信から15秒未満の操作端末からは、別IDのiPadへ操作権限を移さない", () => {
+		const harness = new Harness();
+		harness.connect("controller", { clientId: "ipad-a" });
+		harness.advance(STALE_AFTER_MS - 1);
+		const second = harness.connect("controller", { clientId: "ipad-b" });
+		expect(second.last()).toMatchObject({ type: "error", code: "CONTROLLER_IN_USE", requestId: null });
+		expect(harness.store.get("controller")).toMatchObject({ clientId: "ipad-a" });
+	});
+
+	it("15秒以上受信のない操作端末から別IDのiPadへ操作権限を移し、旧端末へ通知して閉じる", () => {
+		const harness = new Harness();
+		const first = harness.connect("controller", { clientId: "ipad-a" });
+		harness.advance(STALE_AFTER_MS);
+		const second = harness.connect("controller", { clientId: "ipad-b" });
+		expect(second.last()).toMatchObject({ type: "welcome" });
+		expect(first.last()).toMatchObject({ type: "error", code: "CONTROLLER_IN_USE", requestId: null });
+		expect(first.closed?.code).toBe(1000);
+		expect(harness.store.get("controller")).toMatchObject({ clientId: "ipad-b" });
+	});
+
+	it("操作端末が切断しても割り当ては残り、端末セッションを失効させると消える", () => {
+		const harness = new Harness();
+		const ipad = harness.connect("controller", { clientId: "ipad-a" });
+		const admin = harness.connect("admin");
+		ipad.close(1006, "gone");
+		const afterClose = lastAdminState(admin);
+		expect(afterClose.controllerAssigned).toBe(true);
+		expect(afterClose.devices.find((device) => device.role === "controller")?.connected).toBe(false);
+
+		// 管理画面の端末セッション一覧から失効させる経路を通す。
+		const session = harness.core.listDeviceSessions().find((entry) => entry.role === "controller");
+		if (!session) throw new Error("操作端末の端末セッションが一覧にない");
+		expect(harness.core.revokeDeviceSessionById(session.id)).toBe(true);
+		expect(lastAdminState(admin).controllerAssigned).toBe(false);
 	});
 
 	it("同じiPadの再接続へ操作権限を移し、古い接続を 4009 で閉じる", () => {
@@ -380,7 +448,7 @@ describe("期限", () => {
 		harness.advance(STALE_AFTER_MS);
 		harness.send(admin, { type: "ping", pingId: "a2", clientSentAt: 1 });
 		harness.alarm();
-		expect(display.closed).not.toBeNull();
+		expect(display.closed).toMatchObject({ code: 1001, reason: "no message for 15 seconds" });
 		expect(connectedOf()).toBe(false);
 		harness.open(authKey, session);
 		expect(connectedOf()).toBe(true);

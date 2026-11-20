@@ -9,12 +9,21 @@ describe("parseClientMessage", () => {
 		expect(parseClientMessage("{oops")).toMatchObject({ ok: false, code: "INVALID_MESSAGE", notJson: true });
 	});
 
-	it("version が1でなければ PROTOCOL_MISMATCH", () => {
-		expect(parse({ version: 2, type: "hello", clientId: "a" })).toMatchObject({
-			ok: false,
-			code: "PROTOCOL_MISMATCH",
-		});
-		expect(parse({ type: "hello", clientId: "a" })).toMatchObject({ ok: false, code: "PROTOCOL_MISMATCH" });
+	// オブジェクトの version が数値の1でなければ、type にかかわらず PROTOCOL_MISMATCH（仕様書8.5節）。
+	// オブジェクトでない値（null、配列など）は version を確かめる前に INVALID_MESSAGE になる。
+	it.each([
+		["数値の2", { version: 2, type: "hello", clientId: "a" }],
+		["欠落", { type: "hello", clientId: "a" }],
+		["文字列の1", { version: "1", type: "hello", clientId: "a" }],
+		["真偽値のtrue", { version: true, type: "hello", clientId: "a" }],
+		["小数の1.5", { version: 1.5, type: "hello", clientId: "a" }],
+		["0", { version: 0, type: "hello", clientId: "a" }],
+		["false", { version: false, type: "hello", clientId: "a" }],
+		["null", { version: null, type: "hello", clientId: "a" }],
+		["欠落で type が未知", { type: "nope" }],
+		["数値の2で type が未知", { version: 2, type: "nope" }],
+	])("version が%sなら PROTOCOL_MISMATCH", (_label, message) => {
+		expect(parse(message)).toMatchObject({ ok: false, code: "PROTOCOL_MISMATCH" });
 	});
 
 	it.each([
@@ -79,6 +88,18 @@ describe("parseClientMessage", () => {
 		["配列", [1, 2]],
 	])("%s は INVALID_MESSAGE", (_label, value) => {
 		expect(parse(value)).toMatchObject({ ok: false, code: "INVALID_MESSAGE" });
+	});
+
+	// 構文として正しいJSONは、オブジェクトでなくても notJson にしない。接続は 1007 では閉じず
+	// INVALID_MESSAGE を返し、連続3回で 4000 で閉じる（仕様書8.5節）。
+	it.each([
+		["文字列", "str"],
+		["数値", 42],
+		["null", null],
+		["真偽値", true],
+		["空の配列", []],
+	])("オブジェクトでないJSON（%s）は notJson にしない", (_label, value) => {
+		expect(parse(value)).toMatchObject({ ok: false, code: "INVALID_MESSAGE", notJson: false });
 	});
 
 	it("forceReset だけは expectedRevision を省略できる", () => {

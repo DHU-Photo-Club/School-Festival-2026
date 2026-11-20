@@ -25,6 +25,10 @@ export class MemoryStore implements Store {
 	}
 }
 
+/**
+ * テスト用のソケット。Harness は wrap() で包んで ExhibitCore へ渡す。
+ * 接続オブジェクトの作り直しと meta の複製は wrap() が担う。
+ */
 export class FakeConnection implements Connection {
 	meta: ConnectionMeta;
 	readonly sent: ServerMessage[] = [];
@@ -64,6 +68,21 @@ export function lastAdminState(connection: FakeConnection): AdminState {
 	return last.state as AdminState;
 }
 
+/**
+ * Durable Objectの `wrap(socket)` と同じく、呼び出しごとに新しい接続オブジェクトを返す。
+ * meta も deserializeAttachment() と同じく複製を返し、直接の書き換えを反映しない。
+ */
+function wrap(connection: FakeConnection): Connection {
+	return {
+		get meta() {
+			return structuredClone(connection.meta);
+		},
+		setMeta: (meta) => connection.setMeta(meta),
+		send: (message) => connection.send(message),
+		close: (code, reason) => connection.close(code, reason),
+	};
+}
+
 /** Durable Objectの外側を模したテスト用の環境。時刻は手動で進める。 */
 export class Harness {
 	time = 1_800_000_000_000;
@@ -81,7 +100,9 @@ export class Harness {
 				String(this.nextCount() * 7919)
 					.padStart(length, "0")
 					.slice(-length),
-			connections: () => this.connections.filter((connection) => !connection.closed),
+			// 本番は readyState が OPEN の接続に絞る。テストでは閉じていない接続がそれに当たる。
+			connections: () =>
+				this.connections.filter((connection) => !connection.closed).map((connection) => wrap(connection)),
 			questions: QUESTIONS,
 			colors: RESULT_COLORS,
 		});
@@ -115,7 +136,7 @@ export class Harness {
 		options: { clientId?: string; hello?: boolean } = {},
 	): FakeConnection {
 		const meta = this.core.createConnectionMeta(authKey, session, `conn-${this.nextCount()}`);
-		const connection = new FakeConnection(meta, (closed) => this.core.handleClose(closed));
+		const connection = new FakeConnection(meta, (closed) => this.core.handleClose(wrap(closed)));
 		this.connections.push(connection);
 		if (options.hello !== false)
 			this.send(connection, { type: "hello", clientId: options.clientId ?? `client-${authKey}` });
@@ -123,7 +144,12 @@ export class Harness {
 	}
 
 	send(connection: FakeConnection, message: Record<string, unknown>): void {
-		this.core.handleMessage(connection, JSON.stringify({ version: 1, ...message }));
+		this.sendRaw(connection, JSON.stringify({ version: 1, ...message }));
+	}
+
+	/** 生のフレームをそのまま送る。JSONでないメッセージ、バイナリフレーム、異なる `version` の検証に使う。 */
+	sendRaw(connection: FakeConnection, raw: string | ArrayBuffer): void {
+		this.core.handleMessage(wrap(connection), raw);
 	}
 
 	command(

@@ -19,6 +19,8 @@ const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
 /** 別のiPadが操作中のときに再確認する間隔。 */
 const CONTROLLER_RETRY_MS = 3_000;
+/** 認証確認を待つ上限。超えた場合は認証が有効とみなして再接続を続ける。 */
+const AUTH_CHECK_TIMEOUT_MS = 5_000;
 
 export type ConnectionStatus =
 	| "connecting"
@@ -55,7 +57,11 @@ export interface RealtimeOptions {
 	/** 再送しても応答がない要求があるとき `true`（仕様書8.5節）。 */
 	onStalled?: (stalled: boolean) => void;
 	onAlert?: (alert: AlertMessage) => void;
-	/** Upgradeが成立しなかったときに認証が有効かを確かめる。 */
+	/**
+	 * 端末セッションが有効かを確かめる。welcome 前に接続が閉じたとき（セッション失効・プロトコル不一致・
+	 * 操作権限の移動を通知するclose codeを除く）と、`CONTROLLER_IN_USE` を受けて接続が閉じたときに呼ぶ。
+	 * 停止済みの場合は呼ばない。
+	 */
 	checkAuth: () => Promise<boolean>;
 }
 
@@ -93,6 +99,13 @@ export class RealtimeClient {
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private stalled = false;
 	private measured = false;
+	/**
+	 * stop() のたびに進める番号。start() は先に stop() を呼ぶため、再起動でも進む。
+	 * 認証確認や再接続を待つ間に停止または再起動されたかの判定に使う。
+	 */
+	private generation = 0;
+	/** 時刻同期の計測ごと、および stop() のたびに進める番号。前の計測の ping を送らないために使う。 */
+	private syncRound = 0;
 
 	constructor(private readonly options: RealtimeOptions) {
 		this.clientId = storedClientId(options.role);
@@ -113,7 +126,11 @@ export class RealtimeClient {
 	}
 
 	start(): void {
+		// 続けて呼ばれても、前回の定期実行・再接続の予約・接続を残さない。
+		this.stop();
 		this.stopped = false;
+		this.attempt = 0;
+		this.setStatus("connecting");
 		this.timers.push(
 			setInterval(() => this.ping(), PING_INTERVAL_MS),
 			setInterval(() => this.checkLiveness(), 1_000),
@@ -124,9 +141,11 @@ export class RealtimeClient {
 
 	stop(): void {
 		this.stopped = true;
+		this.generation += 1;
+		this.syncRound += 1;
 		for (const timer of this.timers) clearInterval(timer);
 		this.timers = [];
-		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+		this.clearReconnect();
 		this.socket?.close(1000, "stopped");
 		this.socket = null;
 	}
@@ -152,6 +171,7 @@ export class RealtimeClient {
 		this.socket = socket;
 		this.welcomed = false;
 		socket.addEventListener("open", () => {
+			if (socket !== this.socket) return;
 			this.lastPongAt = clientNow();
 			this.sendRaw({ version: 1, type: "hello", clientId: this.clientId });
 		});
@@ -182,18 +202,63 @@ export class RealtimeClient {
 			this.stopped = true;
 			return this.setStatus("closed");
 		}
-		if (this.status === "controllerInUse") {
-			this.reconnectTimer = setTimeout(() => this.connect(), CONTROLLER_RETRY_MS);
-			return;
-		}
-		if (!wasWelcomed && !(await this.options.checkAuth().catch(() => true))) {
+		const closedAt = clientNow();
+		const generation = this.generation;
+		const verify = !wasWelcomed || this.status === "controllerInUse";
+		const authValid = !verify || (await this.checkAuthWithin(AUTH_CHECK_TIMEOUT_MS));
+		// 認証確認を待つ間に stop() または start() が呼ばれた場合は、古い切断の結果で再接続しない。
+		if (this.stopped || generation !== this.generation) return;
+		if (!authValid) {
 			this.stopped = true;
 			return this.setStatus("unauthenticated");
+		}
+		if (this.status === "controllerInUse") {
+			// 切断から3秒後に再確認する。認証確認に3秒以上かかった場合は待たずに再接続するため、
+			// 切断から次の接続までの時間は、最長で認証確認の打ち切り（5秒）になる。
+			return this.scheduleReconnect(Math.max(0, CONTROLLER_RETRY_MS - (clientNow() - closedAt)));
 		}
 		this.setStatus("reconnecting");
 		const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** this.attempt);
 		this.attempt += 1;
-		this.reconnectTimer = setTimeout(() => this.connect(), delay);
+		this.scheduleReconnect(delay);
+	}
+
+	/** `delayMs` 後に接続し直す。予約した後に stop() または start() が呼ばれた場合は接続しない。 */
+	private scheduleReconnect(delayMs: number): void {
+		this.clearReconnect();
+		const generation = this.generation;
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			if (generation === this.generation) this.connect();
+		}, delayMs);
+	}
+
+	private clearReconnect(): void {
+		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+		this.reconnectTimer = null;
+	}
+
+	/**
+	 * 認証が有効かを確かめる。失敗した場合と `timeoutMs` 以内に応答がない場合は `true` を返し、
+	 * 再接続を止めない。失効している場合はサーバーが接続を拒否するため、再接続のたびに確認を繰り返す。
+	 */
+	private checkAuthWithin(timeoutMs: number): Promise<boolean> {
+		return new Promise((resolve) => {
+			const timer = setTimeout(() => resolve(true), timeoutMs);
+			// checkAuth が同期的に例外を投げた場合も、確認できなかったものとして有効とみなす。
+			Promise.resolve()
+				.then(() => this.options.checkAuth())
+				.then(
+					(valid) => {
+						clearTimeout(timer);
+						resolve(valid);
+					},
+					() => {
+						clearTimeout(timer);
+						resolve(true);
+					},
+				);
+		});
 	}
 
 	private handle(message: ServerMessage): void {
@@ -280,8 +345,12 @@ export class RealtimeClient {
 		if (!this.welcomed) return;
 		this.samples = [];
 		this.burst.clear();
+		// 新しい計測を始めた場合、または stop() が呼ばれた場合は、前の計測の残りの ping を送らない。
+		this.syncRound += 1;
+		const round = this.syncRound;
 		for (let i = 0; i < SYNC_BURST_COUNT; i += 1) {
 			setTimeout(() => {
+				if (round !== this.syncRound) return;
 				const id = crypto.randomUUID();
 				this.burst.set(id, i);
 				this.ping(id);

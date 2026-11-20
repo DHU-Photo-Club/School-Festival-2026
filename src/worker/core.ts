@@ -32,10 +32,12 @@ export const SYNC_MAX_MIN_RTT_MS = 400;
 export const SYNC_MAX_SPREAD_MS = 100;
 /** 端末の最終受信時刻だけが変わったときに管理画面へ送る間隔。 */
 const ADMIN_REFRESH_MS = 5_000;
-/** `hello` 前のメッセージや非JSONを閉じるときのclose code（仕様書に定めがないためRFC 6455の値を使う）。 */
+/** JSONとして解釈できないメッセージやバイナリフレームを受けた接続を閉じるときのclose code（仕様書8.5節）。 */
 const CLOSE_INVALID_PAYLOAD = 1007;
-/** 15秒間メッセージがない接続を閉じるときのclose code（同上）。 */
+/** 最後の有効メッセージから15秒経過した接続を閉じるときのclose code（仕様書8.5節・8.6節）。 */
 const CLOSE_STALE = 1001;
+/** 操作権限を別IDのiPadへ移した旧接続を閉じるときのclose code（仕様書9.3節）。 */
+const CLOSE_NORMAL = 1000;
 
 /** 同期処理のキー・値ストア。Durable ObjectではSQLiteで実装する。 */
 export interface Store {
@@ -158,9 +160,12 @@ export class ExhibitCore {
 		if (previous.phase === "judging" && next.phase !== "judging" && previous.sessionId) {
 			this.openSyncReport(previous, next);
 		}
+		const senderId = sender ? sender.meta.connId : null;
 		for (const connection of this.liveConnections()) {
-			if (connection === sender) continue;
-			const view = this.viewFor(connection.meta, next);
+			const meta = connection.meta;
+			// 接続オブジェクトは取得ごとに作り直すため、送信元は connId で判定する。
+			if (senderId !== null && meta.connId === senderId) continue;
+			const view = this.viewFor(meta, next);
 			if (view) connection.send({ version: 1, type: "state", revision: next.revision, state: view });
 		}
 	}
@@ -476,19 +481,27 @@ export class ExhibitCore {
 		let meta: ConnectionMeta = { ...connection.meta, clientId, helloAt: now };
 		if (meta.role === "controller") {
 			const holder = this.options.store.get<ControllerHolder>(KEY_CONTROLLER);
-			if (holder && holder.clientId !== clientId) {
+			if (holder && holder.clientId !== clientId && this.holderConnected(holder, connection, now)) {
 				connection.setMeta({ ...meta, controlling: false });
 				this.sendError(connection, null, "CONTROLLER_IN_USE");
 				return;
 			}
 			this.options.store.put(KEY_CONTROLLER, { clientId, authKey: meta.authKey } satisfies ControllerHolder);
 			meta = { ...meta, controlling: true };
-			// 同じiPadの新しい接続へ操作権限を移す（仕様書9.3節）。
 			for (const other of this.liveConnections()) {
-				if (other === connection || other.meta.role !== "controller" || other.meta.clientId !== clientId)
+				// Durable Objectの接続オブジェクトは取得ごとに作り直すため、同一性は connId で判定する。
+				const otherMeta = other.meta;
+				if (otherMeta.connId === meta.connId || otherMeta.role !== "controller" || !otherMeta.controlling)
 					continue;
-				other.setMeta({ ...other.meta, controlling: false });
-				other.close(CLOSE_CODES.controllerMoved, "controller moved to a new connection");
+				other.setMeta({ ...otherMeta, controlling: false });
+				if (otherMeta.clientId === clientId) {
+					// 同じiPadの新しい接続へ操作権限を移す（仕様書9.3節）。
+					other.close(CLOSE_CODES.controllerMoved, "controller moved to a new connection");
+				} else {
+					// 操作権限を失った別IDの接続。CONTROLLER_IN_USE を送って閉じ、クライアントは3秒ごとに再確認する。
+					this.sendError(other, null, "CONTROLLER_IN_USE");
+					other.close(CLOSE_NORMAL, "controller taken over");
+				}
 			}
 		}
 		connection.setMeta(meta);
@@ -498,6 +511,24 @@ export class ExhibitCore {
 		const view = this.viewFor(meta, state);
 		if (view) connection.send({ version: 1, type: "welcome", serverTime: this.options.now(), state: view });
 		this.refreshAdmins(state);
+	}
+
+	/**
+	 * 操作権限を持つiPadが接続中か。認証セッションが有効で、15秒以内に受信した接続がある場合に限る。
+	 * 該当しない場合、操作権限は別の `clientId` のiPadへ移せる（仕様書9.3節）。
+	 */
+	private holderConnected(holder: ControllerHolder, except: Connection, now: number): boolean {
+		if (!this.resolveSession(holder.authKey)) return false;
+		const exceptId = except.meta.connId;
+		return this.liveConnections().some(({ meta }) => {
+			return (
+				meta.connId !== exceptId &&
+				meta.role === "controller" &&
+				meta.controlling &&
+				meta.clientId === holder.clientId &&
+				now - meta.lastReceivedAt < STALE_AFTER_MS
+			);
+		});
 	}
 
 	private handleCommand(connection: Connection, message: CommandMessage, state: ExhibitState): ServerMessage {
