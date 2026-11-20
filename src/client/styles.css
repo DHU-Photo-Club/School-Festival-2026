@@ -7,13 +7,11 @@
 }
 
 :root {
-	--idle: #0b0b0b;
-	--text: #e8e6e3;
+	--idle: #ffffff;
+	--text: #000000;
 	--muted: #8a8784;
 	--line: #3a3836;
-	--font:
-		"MOBO-Regular", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo",
-		system-ui, sans-serif;
+	--font: "MOBO-Regular", "Noto Sans JP", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 	color-scheme: dark;
 }
 
@@ -55,7 +53,6 @@ button {
 	min-width: 200px;
 	padding: 0 32px;
 	border: 0;
-	border-radius: 28px;
 	background: var(--text);
 	color: var(--idle);
 	font-size: 20px;

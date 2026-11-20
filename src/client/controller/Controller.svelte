@@ -16,7 +16,6 @@ import { RealtimeClient } from "../lib/realtime.ts";
 import type { DeviceAuthStatus } from "../lib/session.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
 import QrCode from "./QrCode.svelte";
-import ShardField from "./ShardField.svelte";
 import type { SliderMode } from "./Slider.svelte";
 import Slider from "./Slider.svelte";
 
@@ -194,9 +193,6 @@ const discScale = $derived(
 		style:background={exhibit.phase === "result" && color ? color.backgroundColor : undefined}
 		style:color={exhibit.phase === "result" && color ? color.foregroundColor : undefined}
 	>
-		{#if exhibit.phase === "idle"}
-			<ShardField still={reducedMotion || !exhibit.accepting} dim={!exhibit.accepting} />
-		{/if}
 		{#if exhibit.phase === "idle" && !exhibit.accepting}
 			<section class="center stack top">
 				<h1>{EXHIBIT.title}</h1>
@@ -205,15 +201,14 @@ const discScale = $derived(
 			</section>
 		{:else if exhibit.phase === "idle"}
 			<section class="center stack top">
-				<h1>{EXHIBIT.title}</h1>
-				<p class="muted">いくつかの質問に答えると、今のあなたを表す色がひとつ選ばれます。</p>
+				<h1>{EXHIBIT.welcomeMessage}</h1>
 				<button
 					type="button"
 					class="primary-button"
 					disabled={!online || pending !== null}
 					onclick={() => send({ name: "start" })}
 				>
-					{pending === "start" ? "準備しています" : "診断をはじめる"}
+					{pending === "start" ? "準備しています" : "はじめる"}
 				</button>
 			</section>
 		{:else if exhibit.phase === "intro"}

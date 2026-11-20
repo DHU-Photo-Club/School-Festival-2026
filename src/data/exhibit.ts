@@ -5,5 +5,6 @@
  */
 export const EXHIBIT = {
 	title: "あなた色写真展",
-	eventInfo: "学園祭 2026（開催情報は仮）",
+	welcomeMessage: "ようこそ、あなた色写真展へ",
+	eventInfo: "デジタルハリウッド大学 学園祭 2026",
 } as const;

@@ -110,7 +110,7 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	const displays = await harness.pairDisplays(3, { reducedMotion: "reduce" });
 	const ipad = await harness.pair("controller", { reducedMotion: "reduce" });
 	const { page } = ipad;
-	await page.getByRole("button", { name: "診断をはじめる" }).click();
+	await page.getByRole("button", { name: "はじめる" }).click();
 	await page.getByRole("button", { name: "進む" }).click();
 
 	// 質問: 破片は静止して表示される。
@@ -165,7 +165,7 @@ test("「次へ」のタップから確定待ちの表示まで", async ({ brows
 	const harness = await ExhibitHarness.open(browser);
 	const ipad = await harness.pair("controller");
 	const { page } = ipad;
-	await page.getByRole("button", { name: "診断をはじめる" }).click();
+	await page.getByRole("button", { name: "はじめる" }).click();
 	await page.getByRole("button", { name: "進む" }).click();
 	const timings: number[] = [];
 	let current = 0;

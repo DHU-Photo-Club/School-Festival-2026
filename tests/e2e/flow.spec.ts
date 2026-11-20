@@ -17,7 +17,7 @@ for (const displayCount of [1, 3]) {
 		const ipad = await harness.pair("controller");
 		const { page } = ipad;
 
-		await page.getByRole("button", { name: "診断をはじめる" }).click();
+		await page.getByRole("button", { name: "はじめる" }).click();
 		await page.getByRole("button", { name: "進む" }).click();
 		await expect(page.getByText(`1 / ${QUESTIONS.length}`)).toBeVisible();
 		for (const display of displays)
@@ -110,7 +110,7 @@ for (const displayCount of [1, 3]) {
 		expect(await canvasPixel(displays[0].page, 0.01, 0.01)).toBe(color?.backgroundColor);
 
 		await page.getByRole("button", { name: "最初に戻る" }).click();
-		await expect(page.getByRole("button", { name: "診断をはじめる" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();
 		for (const display of displays)
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
 		await expect(page.locator(".qr")).toHaveCount(0);

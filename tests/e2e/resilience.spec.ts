@@ -8,7 +8,7 @@ import type { Device } from "./fixtures.ts";
 import { controllableNetwork, ExhibitHarness, expectedResultView, tapStop } from "./fixtures.ts";
 
 async function startQuestions(ipad: Device) {
-	await ipad.page.getByRole("button", { name: "診断をはじめる" }).click();
+	await ipad.page.getByRole("button", { name: "はじめる" }).click();
 	await ipad.page.getByRole("button", { name: "進む" }).click();
 	await expect(ipad.page.getByText(`1 / ${QUESTIONS.length}`)).toBeVisible();
 }
@@ -42,7 +42,7 @@ test("強制リセットで全端末が待機へ戻り、回答と結果とQRコ
 		ipad.page.getByRole("button", { name: "次へ" }).click(),
 		harness.admin.page.getByRole("button", { name: "強制リセット" }).click(),
 	]);
-	await expect(ipad.page.getByRole("button", { name: "診断をはじめる" })).toBeVisible();
+	await expect(ipad.page.getByRole("button", { name: "はじめる" })).toBeVisible();
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
 	await expect(harness.admin.page.getByTestId("phase")).toContainText("idle");
 
@@ -52,7 +52,7 @@ test("強制リセットで全端末が待機へ戻り、回答と結果とQRコ
 
 	await answerQuestions(ipad);
 	await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
-	await expect(ipad.page.getByRole("button", { name: "診断をはじめる" })).toBeVisible();
+	await expect(ipad.page.getByRole("button", { name: "はじめる" })).toBeVisible();
 	await expect(ipad.page.locator(".qr")).toHaveCount(0);
 	await expect(ipad.page.getByText("あなたの色は")).toHaveCount(0);
 	await expect(harness.admin.page.getByTestId("result-color")).toHaveText("—");
@@ -65,13 +65,13 @@ test("強制リセットで全端末が待機へ戻り、回答と結果とQRコ
 test("二台目のiPadは操作中の案内を表示し、管理画面で解放すると操作端末にできる", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const first = await harness.pair("controller");
-	await expect(first.page.getByRole("button", { name: "診断をはじめる" })).toBeVisible();
+	await expect(first.page.getByRole("button", { name: "はじめる" })).toBeVisible();
 	const second = await harness.pair("controller");
 	await expect(second.page.getByText("別の端末で診断を操作しています。")).toBeVisible();
 	await harness.admin.page.getByRole("button", { name: "操作端末を解放" }).click();
 	await expect(first.page.getByRole("heading", { name: "端末の登録" })).toBeVisible();
 	await expect(second.page.getByText("別の端末で診断を操作しています。")).toHaveCount(0, { timeout: 15_000 });
-	await second.page.getByRole("button", { name: "診断をはじめる" }).click();
+	await second.page.getByRole("button", { name: "はじめる" }).click();
 	await expect(second.page.getByRole("button", { name: "進む" })).toBeVisible();
 	await first.context.close();
 	await second.context.close();
@@ -98,7 +98,7 @@ test("通信断中のiPadは操作できず、復旧後は welcome のサーバ�
 
 	await network?.up();
 	await expect(ipad.page.getByText("再接続しています")).toHaveCount(0, { timeout: 30_000 });
-	await expect(ipad.page.getByRole("button", { name: "診断をはじめる" })).toBeVisible();
+	await expect(ipad.page.getByRole("button", { name: "はじめる" })).toBeVisible();
 	await expect(harness.admin.page.getByTestId("device-controller")).toContainText("接続中");
 
 	await display.context.close();
@@ -134,7 +134,7 @@ test("result 開始から60秒後に操作がなくても待機表示へ戻る",
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "result");
 	await ipad.page.waitForTimeout(55_000);
 	await expect(ipad.page.getByText("あなたの色は")).toBeVisible();
-	await expect(ipad.page.getByRole("button", { name: "診断をはじめる" })).toBeVisible({ timeout: 10_000 });
+	await expect(ipad.page.getByRole("button", { name: "はじめる" })).toBeVisible({ timeout: 10_000 });
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
 	await display.context.close();
 	await ipad.context.close();

@@ -6,7 +6,7 @@ test("診断の文章は画面の余白を除いた幅を使い、収まる文�
 	const controller = await harness.pair("controller");
 	const { page } = controller;
 	try {
-		const start = page.getByRole("button", { name: "診断をはじめる" });
+		const start = page.getByRole("button", { name: "はじめる" });
 		await expect(start).toBeVisible();
 		for (const viewport of [
 			{ width: 820, height: 1180 },

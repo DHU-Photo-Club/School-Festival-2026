@@ -37,7 +37,7 @@ test("管理画面から写真用を登録し、診断中も8秒周期で写真�
 		await expect(main).toHaveAttribute("data-photo-id", playlist[0].id);
 		const controller = await harness.pair("controller");
 		try {
-			await controller.page.getByRole("button", { name: "診断をはじめる" }).click();
+			await controller.page.getByRole("button", { name: "はじめる" }).click();
 			await controller.page.getByRole("button", { name: "進む" }).click();
 			for (const [index, question] of QUESTIONS.entries()) {
 				await expect(controller.page.getByRole("heading", { name: question.prompt })).toBeVisible();
