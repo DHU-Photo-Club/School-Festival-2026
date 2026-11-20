@@ -5,7 +5,10 @@ export interface DeviceSession {
 	screenId: string | null;
 }
 
-/** 端末に共通する認証状態。端末セッションの照会結果と realtime 接続の `unauthenticated` 通知に基づく。 */
+/**
+ * 端末に共通する認証状態。端末セッションの照会結果と realtime 接続の `unauthenticated` 通知に基づく。
+ * `unpaired` は、未登録・失効に加えて、コントローラー画面で端末セッションの役割が `controller` 以外の場合を含む。
+ */
 export type DeviceAuthStatus = "checking" | "unpaired" | "ok";
 
 /**

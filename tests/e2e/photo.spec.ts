@@ -65,7 +65,7 @@ test("管理画面から写真用を登録し、診断中も8秒周期で写真�
 	}
 });
 
-test("写真用は個別の画面IDを持ち、トップから戻れ、失効すると登録画面に戻る", async ({ browser }) => {
+test("写真用は個別の画面IDを持ち、トップでは自動移動せず、失効すると登録画面に戻る", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const first = await harness.pair("photo");
 	const second = await harness.pair("photo");
@@ -74,7 +74,8 @@ test("写真用は個別の画面IDを持ち、トップから戻れ、失効す
 		await expect(second.page).toHaveURL(/\/photo\/photo-2$/);
 		await expect(second.page.locator("main.photo-display")).toHaveAttribute("data-photo-id", playlist[1].id);
 		await first.page.goto("/");
-		await expect(first.page).toHaveURL(/\/photo\/photo-1$/);
+		await expect(first.page.getByRole("heading", { name: "端末の登録" })).toBeVisible();
+		await first.page.goto("/photo/photo-1");
 		await expect(first.page.locator(".photo.visible img")).toBeVisible();
 		await expect(harness.admin.page.getByTestId("device-photo-1")).toContainText("接続中");
 		const response = await harness.admin.context.request.get("/api/admin/sessions");
@@ -90,6 +91,21 @@ test("写真用は個別の画面IDを持ち、トップから戻れ、失効す
 	} finally {
 		await first.context.close();
 		await second.context.close();
+		await harness.close();
+	}
+});
+
+test("写真用の登録済み端末も診断用iPad用コードで登録し直せば操作できる", async ({ browser }) => {
+	const harness = await ExhibitHarness.open(browser);
+	const photo = await harness.pair("photo");
+	try {
+		const code = await harness.issueCode("controller");
+		await photo.page.goto("/");
+		await photo.page.getByLabel("ペアリングコード").fill(code);
+		await photo.page.getByRole("button", { name: "登録する" }).click();
+		await expect(photo.page.getByRole("button", { name: "はじめる" })).toBeVisible();
+	} finally {
+		await photo.context.close();
 		await harness.close();
 	}
 });

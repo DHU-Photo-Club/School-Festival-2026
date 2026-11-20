@@ -105,6 +105,20 @@ test("未登録の端末は登録画面を表示する", async ({ page }) => {
 	await expect(page.getByRole("heading", { name: "端末の登録" })).toBeVisible();
 });
 
+test("展示ディスプレイとして登録済みの端末は、トップで自動移動せず登録画面を表示する", async ({ browser }) => {
+	const harness = await ExhibitHarness.open(browser);
+	const display = await harness.pair("display");
+	try {
+		await display.page.goto("/");
+		await expect(display.page.getByRole("heading", { name: "端末の登録" })).toBeVisible();
+		await expect(display.page).toHaveURL(/\/$/);
+		await expect(display.page.locator("main.display")).toHaveCount(0);
+	} finally {
+		await display.context.close();
+		await harness.close();
+	}
+});
+
 test("端末の初期画面で6桁のコードを入力して登録できる", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const code = await harness.issueCode("display");

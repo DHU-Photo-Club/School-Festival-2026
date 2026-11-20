@@ -127,8 +127,8 @@ onMount(async () => {
 		return;
 	}
 	if (session.role !== "controller") {
-		// 役割が一致しない端末に `mismatch` 状態を表示せず、該当する画面へ移動させる。
-		location.replace(`/${session.role}/${encodeURIComponent(session.screenId ?? "")}`);
+		// 展示ディスプレイなどとして登録済みのPCでもコントローラーを使えるよう、`/` では自動で移動せず、登録し直せる状態にする。
+		auth = "unpaired";
 		return;
 	}
 	auth = "ok";
