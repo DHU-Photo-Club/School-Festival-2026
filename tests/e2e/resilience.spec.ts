@@ -37,9 +37,14 @@ test("強制リセットで全端末が待機へ戻り、回答と結果とQRコ
 	await ipad.page.getByRole("button", { name: "次へ" }).click();
 	await expect(ipad.page.getByText(`2 / ${QUESTIONS.length}`)).toBeVisible();
 	// iPad操作と強制リセットをほぼ同時に送っても最終状態は idle。
+	// 強制リセットが先に反映されると「次へ」が画面から消えるため、iPad側のクリックは失敗を許容する。
+	// 上限の2秒は、押せるボタンのクリックが送信を終えるのに十分な長さで、待機を打ち切るのに十分短い値。
 	await tapStop(ipad.page, 1);
+	const next = ipad.page.getByRole("button", { name: "次へ" });
+	// クリック前に押せる状態を確かめ、iPad側の送信が最初から成立しないまま通過することを防ぐ。
+	await expect(next).toBeEnabled();
 	await Promise.all([
-		ipad.page.getByRole("button", { name: "次へ" }).click(),
+		next.click({ timeout: 2_000 }).catch(() => {}),
 		harness.admin.page.getByRole("button", { name: "強制リセット" }).click(),
 	]);
 	await expect(ipad.page.getByRole("button", { name: "はじめる" })).toBeVisible();
