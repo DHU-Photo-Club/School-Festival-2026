@@ -1,5 +1,15 @@
 import { judge } from "./diagnosis.ts";
-import type { ColorId, ExhibitState, Question, ResultColor, Role, SliderStopId } from "./types.ts";
+import { findSequence, sequenceBefore } from "./sequence.ts";
+import type {
+	ColorId,
+	ExhibitState,
+	Question,
+	ResultColor,
+	Role,
+	Sequence,
+	SequenceTarget,
+	SliderStopId,
+} from "./types.ts";
 
 /** `judging` の長さ（仕様書8.7節）。 */
 export const JUDGING_MS = 2_000;
@@ -34,6 +44,7 @@ export interface MachineContext {
 	now: number;
 	questions: readonly Question[];
 	colors: readonly ResultColor[];
+	sequences: readonly Sequence[];
 	newSessionId: () => string;
 }
 
@@ -44,6 +55,7 @@ export function initialState(now: number): ExhibitState {
 	return {
 		sessionId: null,
 		phase: "idle",
+		sequenceId: null,
 		questionIndex: null,
 		answers: {},
 		resultColorId: null,
@@ -61,6 +73,7 @@ function toIdle(state: ExhibitState, at: number): ExhibitState {
 		...state,
 		sessionId: null,
 		phase: "idle",
+		sequenceId: null,
 		questionIndex: null,
 		answers: {},
 		resultColorId: null,
@@ -68,6 +81,30 @@ function toIdle(state: ExhibitState, at: number): ExhibitState {
 		phaseStartedAt: at,
 		phaseEndsAt: null,
 		revision: state.revision + 1,
+	};
+}
+
+/** 段階 `target` へ時刻 `at` に入るときの差分。 */
+function enterTarget(target: SequenceTarget, at: number): Partial<ExhibitState> {
+	return {
+		phase: target,
+		sequenceId: null,
+		questionIndex: target === "question" ? 0 : null,
+		phaseStartedAt: at,
+		phaseEndsAt: at + INACTIVITY_MS,
+	};
+}
+
+/** 段階 `target` へ入る差分。直前に再生するシーケンスがあれば、先に `sequence` へ入る。 */
+function enterWithSequence(target: SequenceTarget, at: number, sequences: readonly Sequence[]): Partial<ExhibitState> {
+	const sequence = sequenceBefore(sequences, target);
+	if (!sequence) return enterTarget(target, at);
+	return {
+		phase: "sequence",
+		sequenceId: sequence.id,
+		questionIndex: null,
+		phaseStartedAt: at,
+		phaseEndsAt: at + sequence.durationMs,
 	};
 }
 
@@ -89,19 +126,12 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			if (!state.accepting) return reject("NOT_ACCEPTING");
 			return accept({
 				sessionId: context.newSessionId(),
-				phase: "intro",
 				previewColorId: null,
-				phaseStartedAt: now,
-				phaseEndsAt: now + INACTIVITY_MS,
+				...enterWithSequence("intro", now, context.sequences),
 			});
 		case "continue":
 			if (state.phase !== "intro") return reject("INVALID_PHASE");
-			return accept({
-				phase: "question",
-				questionIndex: 0,
-				phaseStartedAt: now,
-				phaseEndsAt: now + INACTIVITY_MS,
-			});
+			return accept(enterWithSequence("question", now, context.sequences));
 		case "answer": {
 			if (state.phase !== "question" || state.questionIndex === null) return reject("INVALID_PHASE");
 			const question = context.questions[state.questionIndex];
@@ -145,9 +175,10 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 
 /**
  * 期限を過ぎた状態を順に進める（仕様書8.2節）。遷移先の開始時刻は実行時刻ではなく期限の時刻とする。
+ * `sequence` は再生を終えたら `before` の段階へ進む。シーケンスの定義が見つからなければ `idle` へ戻す。
  * 期限内なら同じ状態オブジェクトを返す。
  */
-export function advanceDeadlines(state: ExhibitState, now: number): ExhibitState {
+export function advanceDeadlines(state: ExhibitState, now: number, sequences: readonly Sequence[]): ExhibitState {
 	let current = state;
 	while (current.phaseEndsAt !== null && now >= current.phaseEndsAt) {
 		const deadline = current.phaseEndsAt;
@@ -159,6 +190,11 @@ export function advanceDeadlines(state: ExhibitState, now: number): ExhibitState
 				phaseEndsAt: deadline + RESULT_MS,
 				revision: current.revision + 1,
 			};
+		} else if (current.phase === "sequence") {
+			const sequence = findSequence(sequences, current.sequenceId);
+			current = sequence
+				? { ...current, ...enterTarget(sequence.before, deadline), revision: current.revision + 1 }
+				: toIdle(current, deadline);
 		} else {
 			current = toIdle(current, deadline);
 		}

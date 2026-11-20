@@ -24,6 +24,7 @@ const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): Sc
 	state: {
 		sessionId: "session-a",
 		phase: "idle",
+		sequenceId: null,
 		resultColorId: null,
 		previewColorId: null,
 		phaseStartedAt: T0,
@@ -309,5 +310,17 @@ describe("待機写真の巡回", () => {
 		expect(
 			computeScene(base(idle, { now: T0, previousBackground: "#4A1420", reducedMotion: true })).veil,
 		).toBeNull();
+	});
+});
+
+describe("シーケンス", () => {
+	it("待機写真の巡回を続け、演出はシーケンスのコンポーネントに任せる", () => {
+		const scene = computeScene(base({ phase: "sequence", sequenceId: "opening" }, { now: T0 + 500 }));
+		expect(scene).toMatchObject({
+			primitives: [{ type: "fill", color: COLORS.idle }],
+			shards: null,
+			idleLayer: 1,
+			resultLayer: 0,
+		});
 	});
 });

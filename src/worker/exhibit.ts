@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { RESULT_COLORS } from "../data/colors.ts";
 import { QUESTIONS } from "../data/questions.ts";
+import { SEQUENCES } from "../data/sequences.ts";
 import type { ServerMessage } from "../shared/protocol.ts";
 import { ADMIN_COOKIE, authKeyFromToken, DEVICE_COOKIE, newToken, readCookie, sessionCookie } from "./auth.ts";
 import type { Connection, ConnectionMeta, Store } from "./core.ts";
@@ -68,6 +69,7 @@ export class Exhibit extends DurableObject<Env> {
 					.map((socket) => this.wrap(socket)),
 			questions: QUESTIONS,
 			colors: RESULT_COLORS,
+			sequences: SEQUENCES,
 		});
 	}
 

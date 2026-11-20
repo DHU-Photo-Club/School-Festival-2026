@@ -1,5 +1,5 @@
-import type { ColorId, Photo, Question, ResultColor } from "./types.ts";
-import { COLOR_IDS } from "./types.ts";
+import type { ColorId, Photo, Question, ResultColor, Sequence } from "./types.ts";
+import { COLOR_IDS, SEQUENCE_TARGETS } from "./types.ts";
 
 /** 写真IDの形式（仕様書12.1節）。 */
 export const PHOTO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -130,4 +130,23 @@ export function validatePublishedUntil(value: string): string[] {
 		return ["RESULTS_PUBLISHED_UNTIL はISO 8601形式のUTC時刻にします"];
 	}
 	return [];
+}
+
+/** シーケンス定義の整合性を確認し、問題の一覧を返す。 */
+export function validateSequences(sequences: readonly Sequence[]): string[] {
+	const errors: string[] = [];
+	const ids = new Set<string>();
+	const targets = new Set<string>();
+	for (const sequence of sequences) {
+		const label = `シーケンス ${sequence.id}`;
+		if (!PHOTO_ID_PATTERN.test(sequence.id)) errors.push(`${label} のIDは英小文字、数字、ハイフンで書きます`);
+		if (ids.has(sequence.id)) errors.push(`${label} のIDが重複しています`);
+		ids.add(sequence.id);
+		if (!SEQUENCE_TARGETS.includes(sequence.before)) errors.push(`${label} の before が不正です`);
+		else if (targets.has(sequence.before)) errors.push(`${sequence.before} の前に再生するシーケンスが複数あります`);
+		else targets.add(sequence.before);
+		if (!Number.isSafeInteger(sequence.durationMs) || sequence.durationMs <= 0)
+			errors.push(`${label} の durationMs は正の整数にします`);
+	}
+	return errors;
 }

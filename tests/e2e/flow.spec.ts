@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import { SEQUENCES } from "../../src/data/sequences.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import type { Device } from "./fixtures.ts";
 import { canvasDigest, canvasPixel, ExhibitHarness, sliderValue, tapStop } from "./fixtures.ts";
@@ -119,3 +120,28 @@ for (const displayCount of [1, 3]) {
 		await harness.close();
 	});
 }
+
+test("「はじめる」の後、iPadと展示ディスプレイがシーケンスを再生して intro へ入る", async ({ browser }) => {
+	const sequence = SEQUENCES.find((candidate) => candidate.before === "intro");
+	test.skip(!sequence, "intro の前のシーケンスが定義されていない");
+	if (!sequence) return;
+	const harness = await ExhibitHarness.open(browser);
+	const [display] = await harness.pairDisplays(1);
+	const ipad = await harness.pair("controller");
+	const { page } = ipad;
+	const main = display.page.locator("main.display");
+	try {
+		await page.getByRole("button", { name: "はじめる" }).click();
+		// iPadと展示ディスプレイのどちらにも、シーケンスのコンポーネントを表示する。
+		await expect(page.locator(`main[data-phase="sequence"] [data-sequence="${sequence.id}"]`)).toBeVisible();
+		await expect(main).toHaveAttribute("data-phase", "sequence");
+		await expect(main.locator(`.sequence[data-sequence="${sequence.id}"]`)).toHaveCount(1);
+		// 再生時間が過ぎるとサーバーが intro へ進め、展示ディスプレイの重ねた層を外す。
+		await expect(page.getByRole("button", { name: "進む" })).toBeVisible({ timeout: sequence.durationMs + 10_000 });
+		await expect(main).toHaveAttribute("data-phase", "intro");
+		await expect(main.locator(".sequence")).toHaveCount(0);
+	} finally {
+		for (const device of [display, ipad]) await device.context.close();
+		await harness.close();
+	}
+});

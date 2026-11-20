@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { INACTIVITY_MS, JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
 import type { AdminState } from "../../src/shared/protocol.ts";
-import type { DisplayState, ExhibitState } from "../../src/shared/types.ts";
+import type { DisplayState, ExhibitState, Sequence } from "../../src/shared/types.ts";
 import { HELLO_TIMEOUT_MS, PAIRING_TTL_MS, SESSION_TTL_MS, STALE_AFTER_MS } from "../../src/worker/core.ts";
 import type { FakeConnection } from "./helpers.ts";
 import { Harness, lastAdminState } from "./helpers.ts";
@@ -32,6 +32,7 @@ describe("接続と配信", () => {
 				"previewColorId",
 				"resultColorId",
 				"revision",
+				"sequenceId",
 				"sessionId",
 			].sort(),
 		);
@@ -740,5 +741,30 @@ describe("レビュー指摘への対応", () => {
 		expect(response).toMatchObject({ type: "error", code: "INTERNAL_ERROR", retryable: true });
 		expect(harness.core.current()).toMatchObject({ phase: "idle", revision: 0 });
 		expect(lastAdminState(admin).lastInternalErrorAt).not.toBeNull();
+	});
+});
+
+describe("シーケンス", () => {
+	const opening: Sequence = { id: "opening", before: "intro", durationMs: 1_500 };
+
+	it("start でシーケンスを全端末へ配信し、alarm で intro へ進める", () => {
+		const harness = new Harness({ sequences: [opening] });
+		const ipad = harness.connect("controller");
+		const display = harness.connect("display", { screenId: "display-1" });
+		const [ack] = harness.command(ipad, { name: "start" });
+		expect(ack).toMatchObject({ type: "ack", state: { phase: "sequence", sequenceId: "opening" } });
+		expect(display.ofType("state").at(-1)?.state).toMatchObject({ phase: "sequence", sequenceId: "opening" });
+		expect(harness.core.nextWakeAt()).toBeLessThanOrEqual(harness.time + 1_500);
+		harness.advance(1_500);
+		harness.alarm();
+		expect(display.ofType("state").at(-1)?.state).toMatchObject({ phase: "intro", sequenceId: null });
+		expect(ipad.ofType("state").at(-1)?.state).toMatchObject({ phase: "intro" });
+	});
+
+	it("sequenceId のない保存済み状態を null として読み込む", () => {
+		const harness = new Harness({ sequences: [opening] });
+		const { sequenceId: _sequenceId, ...legacy } = harness.core.current();
+		harness.store.put("state", legacy);
+		expect(harness.core.current().sequenceId).toBeNull();
 	});
 });

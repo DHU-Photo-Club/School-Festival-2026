@@ -137,11 +137,12 @@ describe("parseClientMessage", () => {
 });
 
 describe("toDisplayState", () => {
-	it("展示ディスプレイへは8.5節の7項目だけを渡す", () => {
+	it("展示ディスプレイへは8.5節の7項目とシーケンスIDだけを渡す", () => {
 		const state = { ...initialState(1), answers: { light: "left" as const }, questionIndex: 2, accepting: false };
 		expect(toDisplayState(state)).toEqual({
 			sessionId: null,
 			phase: "idle",
+			sequenceId: null,
 			resultColorId: null,
 			previewColorId: null,
 			phaseStartedAt: 1,

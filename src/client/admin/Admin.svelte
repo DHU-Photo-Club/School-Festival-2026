@@ -19,7 +19,14 @@ interface SessionRow {
 
 const DEVICE_ROLES = ["controller", "display", "photo"] as const;
 const DEVICE_LABELS = { controller: "診断用iPad", display: "展示ディスプレイ", photo: "写真用" } as const;
-const PHASE_LABELS = { idle: "待機", intro: "導入", question: "質問", judging: "判定", result: "結果" } as const;
+const PHASE_LABELS = {
+	idle: "待機",
+	sequence: "演出",
+	intro: "導入",
+	question: "質問",
+	judging: "判定",
+	result: "結果",
+} as const;
 
 let admin = $state<AdminState | null>(null);
 let status = $state<ConnectionStatus>("connecting");
@@ -136,7 +143,9 @@ onDestroy(() => {
 				<h2>展示状態</h2>
 				<dl>
 					<dt>段階</dt>
-					<dd data-testid="phase">{PHASE_LABELS[admin.phase]}（{admin.phase}）</dd>
+					<dd data-testid="phase">
+						{PHASE_LABELS[admin.phase]}（{admin.phase}{admin.sequenceId ? `: ${admin.sequenceId}` : ""}）
+					</dd>
 					<dt>結果色</dt>
 					<dd data-testid="result-color">{colorName(admin.resultColorId)}</dd>
 					<dt>受付</dt>

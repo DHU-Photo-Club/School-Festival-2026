@@ -227,6 +227,7 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 	return {
 		sessionId: state.sessionId,
 		phase: state.phase,
+		sequenceId: state.sequenceId,
 		resultColorId: state.resultColorId,
 		previewColorId: state.previewColorId,
 		phaseStartedAt: state.phaseStartedAt,

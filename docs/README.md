@@ -58,10 +58,13 @@ MVPの本番ブラウザは、iPadを端末で更新可能な最新版Safari、�
 | 状態         | 段階                 | iPad                                                       | 展示ディスプレイ                                         | 終了条件                                                 |
 | ---------- | ------------------ | ---------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
 | `idle`     | 待機                 | 歓迎文言と「はじめる」を表示                                             | 全色の写真を静かに巡回表示                                    | 開始ボタンを押す                                             |
+| `sequence` | 演出                 | シーケンスのコンポーネントを表示                                         | 待機写真の上にシーケンスのコンポーネントを重ねて表示               | 再生時間が過ぎると、サーバーが次の段階へ遷移する                          |
 | `intro`    | 導入                 | 所要時間と診断の位置づけを表示                                            | 待機演出を継続                                          | 「進む」を押す                                              |
 | `question` | 質問                 | 一問ずつ両端に対比語を置いたスライダーを表示                                     | 確定した回答に反応する抽象的な色・形の演出を表示                         | 全問に回答する                                              |
 | `judging`  | 判定                 | 2秒間の判定演出を表示                                                | 全画面を一度暗くし、結果演出に備える                               | サーバーが2秒後に`result`へ遷移する                               |
 | `result`   | 結果発表・持ち帰り          | 色名、色面、短いメッセージ、QRコード、「最初に戻る」を表示                             | 結果色と対応写真を一斉に表示                                   | 手動終了または60秒経過で、サーバーが`idle`へ遷移する                       |
+
+`sequence`は、iPadと展示ディスプレイの演出を時間経過で自動で進める段階である。`src/data/sequences.ts`にはID、再生後に入る段階（`before`）、再生時間（`durationMs`）だけを定義し、見た目は`src/client/sequences/<id>/`のSvelteコンポーネント（iPad用の`Controller.svelte`と展示ディスプレイ用の`Display.svelte`）で自由に書く。`intro`と`question`のそれぞれについて、その段階へ入る直前に一つまで再生できる。シーケンスが定義されていない段階の前では再生しない。仮データでは「はじめる」の後、`intro`の前に再生する。
 
 「持ち帰り」は独立した状態ではなく、`result`画面でQRコードを読み取る行為を指す。「最初に戻る」を押した場合と`result`開始から60秒が経過した場合は、どちらもサーバーが展示状態を`idle`へ変更し、iPad、全展示ディスプレイ、照明を同時に待機状態へ戻す。
 
@@ -199,7 +202,8 @@ displayOrder: 0、1、...、N - 1（screenId の番号 - 1）
 
 ```text
 sessionId: string | null
-phase: idle | intro | question | judging | result
+phase: idle | sequence | intro | question | judging | result
+sequenceId: string | null
 questionIndex: number | null
 answers: Record<QuestionId, SliderStopId>
 resultColorId: ColorId | null
@@ -219,6 +223,7 @@ Durable Objectを初めて作成したときの状態は次のとおりとする
 ```text
 sessionId: null
 phase: idle
+sequenceId: null
 questionIndex: null
 answers: {}
 resultColorId: null
@@ -229,7 +234,7 @@ revision: 0
 accepting: true
 ```
 
-- `idle`から`intro`へ遷移するときに`crypto.randomUUID()`で新しい`sessionId`を発行し、結果終了まで変更しない。
+- `idle`から`sequence`または`intro`へ遷移するときに`crypto.randomUUID()`で新しい`sessionId`を発行し、結果終了まで変更しない。
 - `idle`へ戻るときに`sessionId`を`null`へ戻す。過去のIDを再利用しない。
 - `revision`は受理した状態変更ごとに1加算し、リセット後も0へ戻さない。
 - 接続、切断、拒否した要求は展示状態を変えないため、`revision`を増やさない。
@@ -239,8 +244,9 @@ accepting: true
 
 | 現在の状態              | 契機                         | 次の状態   | 同時に行う処理                                                                            |
 | ----------------------- | ---------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| `idle`                  | iPadの開始操作               | `intro`    | 新しい`sessionId`を発行する                                                               |
-| `intro`                 | iPadの「進む」               | `question` | `questionIndex`を0にする                                                                  |
+| `idle`                  | iPadの開始操作               | `intro`または`sequence` | 新しい`sessionId`を発行する。`intro`の前のシーケンスがあれば`sequenceId`を設定して`sequence`へ入り、なければ`intro`へ入る |
+| `intro`                 | iPadの「進む」               | `question`または`sequence` | `question`の前のシーケンスがあれば`sequenceId`を設定して`sequence`へ入り、なければ`question`へ入って`questionIndex`を0にする |
+| `sequence`              | 再生時間が経過               | `intro`、`question`、または`idle` | シーケンスの`before`の段階へ入り（`question`なら`questionIndex`を0にする）、`sequenceId`を`null`へ戻す。定義が見つからなければ`idle`へ戻す |
 | `question`              | 最終問以外の回答             | `question` | 回答を更新し、`questionIndex`を1進める                                                    |
 | `question`              | 「戻る」                     | `question` | `questionIndex`を1戻し、既存回答は保持する                                                |
 | `question`              | 最終問の回答                 | `judging`  | 結果を確定し、`resultColorId`を設定して`questionIndex`を`null`へ戻し、`answers`を消去する |
@@ -249,9 +255,9 @@ accepting: true
 | `intro`または`question` | 最終操作から5分経過          | `idle`     | 放置された回答とセッションを消去する                                                      |
 | 任意                    | 管理画面の強制リセット       | `idle`     | 現在の処理を中止してセッション状態を初期化する                                            |
 
-`phaseStartedAt`は状態へ入った時刻とする。`phaseEndsAt`は`judging`では2秒後、`result`では60秒後、`intro`と`question`では最後に受理したiPad操作から5分後、`idle`では`null`とする。期限到達時はDurable Objectのalarmが遷移を実行する。alarmの実行が遅れた場合は、次の接続または要求を処理する前にも期限を確認し、期限切れ状態を配信しない。
+`phaseStartedAt`は状態へ入った時刻とする。`sequenceId`は`sequence`で再生中のシーケンスIDとし、ほかの状態では`null`とする。`phaseEndsAt`は`sequence`では開始から再生時間（`durationMs`）後、`judging`では2秒後、`result`では60秒後、`intro`と`question`では最後に受理したiPad操作から5分後（`sequence`から入った場合は`sequence`の終了時刻から5分後）、`idle`では`null`とする。期限到達時はDurable Objectのalarmが遷移を実行する。alarmの実行が遅れた場合は、次の接続または要求を処理する前にも期限を確認し、期限切れ状態を配信しない。
 
-`idle`へ戻すときは、`questionIndex`、`answers`、`resultColorId`、`previewColorId`、`phaseEndsAt`をそれぞれ初期値へ戻す。`accepting`はスタッフが設定した受付状態なので、セッションのリセットでは変更しない。`accepting`が`false`の間、iPadは待機画面の代わりに受付停止を表示し、新しいセッションを開始できない。進行中に`accepting`を`false`へ変更した場合は現在の診断を中断せず、`idle`へ戻った後から受付停止を適用する。
+`idle`へ戻すときは、`sequenceId`、`questionIndex`、`answers`、`resultColorId`、`previewColorId`、`phaseEndsAt`をそれぞれ初期値へ戻す。`accepting`はスタッフが設定した受付状態なので、セッションのリセットでは変更しない。`accepting`が`false`の間、iPadは待機画面の代わりに受付停止を表示し、新しいセッションを開始できない。進行中に`accepting`を`false`へ変更した場合は現在の診断を中断せず、`idle`へ戻った後から受付停止を適用する。
 
 ### 8.3 更新競合
 
@@ -324,11 +330,11 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 状態の配信範囲は次のとおりとする。
 
-| 接続種別         | 受信する状態                                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------------------------- |
-| 診断用iPad       | 8章の全状態                                                                                          |
-| 展示ディスプレイ | `sessionId`、`phase`、`resultColorId`、`previewColorId`、`phaseStartedAt`、`phaseEndsAt`、`revision` |
-| 管理画面         | `answers`を除く状態と、接続端末一覧                                                                  |
+| 接続種別         | 受信する状態                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 診断用iPad       | 8章の全状態                                                                                                        |
+| 展示ディスプレイ | `sessionId`、`phase`、`sequenceId`、`resultColorId`、`previewColorId`、`phaseStartedAt`、`phaseEndsAt`、`revision` |
+| 管理画面         | `answers`を除く状態と、接続端末一覧                                                                                |
 
 他端末の操作またはサーバータイマーで状態が変わった場合は、次の形式で`state`を配信する。
 

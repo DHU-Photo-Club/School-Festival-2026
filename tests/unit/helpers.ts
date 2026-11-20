@@ -1,7 +1,7 @@
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import type { AdminState, ServerMessage } from "../../src/shared/protocol.ts";
-import type { Role } from "../../src/shared/types.ts";
+import type { Role, Sequence } from "../../src/shared/types.ts";
 import type { Connection, ConnectionMeta, Store } from "../../src/worker/core.ts";
 import { ExhibitCore } from "../../src/worker/core.ts";
 
@@ -91,7 +91,8 @@ export class Harness {
 	private counter = 0;
 	readonly core: ExhibitCore;
 
-	constructor() {
+	/** `sequences` を省略すると、シーケンスを再生しない展示として動かす。 */
+	constructor(options: { sequences?: readonly Sequence[] } = {}) {
 		this.core = new ExhibitCore({
 			store: this.store,
 			now: () => this.time,
@@ -105,6 +106,7 @@ export class Harness {
 				this.connections.filter((connection) => !connection.closed).map((connection) => wrap(connection)),
 			questions: QUESTIONS,
 			colors: RESULT_COLORS,
+			sequences: options.sequences ?? [],
 		});
 	}
 

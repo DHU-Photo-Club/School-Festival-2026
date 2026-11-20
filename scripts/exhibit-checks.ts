@@ -6,8 +6,14 @@ import type { Plugin } from "vite";
 import { RESULT_COLORS } from "../src/data/colors.ts";
 import { PHOTOS } from "../src/data/photos.ts";
 import { QUESTIONS } from "../src/data/questions.ts";
-import { validateExhibitData, validatePublicOrigin, validatePublishedUntil } from "../src/shared/data-validation.ts";
-import { validatePhotoFiles } from "./validate-assets.ts";
+import { SEQUENCES } from "../src/data/sequences.ts";
+import {
+	validateExhibitData,
+	validatePublicOrigin,
+	validatePublishedUntil,
+	validateSequences,
+} from "../src/shared/data-validation.ts";
+import { validatePhotoFiles, validateSequenceComponents } from "./validate-assets.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -40,6 +46,8 @@ export function exhibitChecks(): Plugin {
 					questions: QUESTIONS,
 					photos: PHOTOS,
 				}),
+				...validateSequences(SEQUENCES),
+				...validateSequenceComponents(SEQUENCES, join(ROOT, "src", "client", "sequences")),
 				...(await validatePhotoFiles(PHOTOS, join(ROOT, "public", "photos"))),
 			];
 			if (errors.length > 0) {

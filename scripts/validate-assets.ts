@@ -1,8 +1,8 @@
 // production build前の写真ファイル検証（仕様書12.1節）。
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
-import type { Photo } from "../src/shared/types.ts";
+import type { Photo, Sequence } from "../src/shared/types.ts";
 
 const MIB = 1024 * 1024;
 export const AVIF_MAX_BYTES = 2 * MIB;
@@ -65,6 +65,22 @@ export async function validatePhotoFiles(photos: readonly Photo[], photosDir: st
 			// 長辺は3,840px以下（仕様書12.1節）。
 			if (Math.max(decoded.width, decoded.height) > LONG_SIDE_MAX) {
 				errors.push(`${photo.id}: 長辺が上限 ${LONG_SIDE_MAX}px を超えています`);
+			}
+		}
+	}
+	return errors;
+}
+
+/** 各シーケンスの iPad 用と展示ディスプレイ用のコンポーネントがあるかを確認し、問題の一覧を返す。 */
+export function validateSequenceComponents(sequences: readonly Sequence[], dir: string): string[] {
+	const errors: string[] = [];
+	for (const sequence of sequences) {
+		const folder = join(dir, sequence.id);
+		// 実行時の `import.meta.glob` は大文字と小文字を区別するため、ファイル名を一覧と完全一致で比べる。
+		const files = existsSync(folder) ? readdirSync(folder) : [];
+		for (const file of ["Controller.svelte", "Display.svelte"]) {
+			if (!files.includes(file)) {
+				errors.push(`シーケンス ${sequence.id} の ${sequence.id}/${file} がありません`);
 			}
 		}
 	}

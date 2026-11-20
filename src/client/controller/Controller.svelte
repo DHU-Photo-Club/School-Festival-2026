@@ -3,9 +3,11 @@ import { onDestroy, onMount } from "svelte";
 import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { QUESTIONS } from "../../data/questions.ts";
+import { SEQUENCES } from "../../data/sequences.ts";
 import type { Command } from "../../shared/machine.ts";
 import { easeOutCubic } from "../../shared/motion.ts";
 import { resultUrl } from "../../shared/result-url.ts";
+import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import type { ColorId, ExhibitState } from "../../shared/types.ts";
 import { SLIDER_STOP_IDS } from "../../shared/types.ts";
 import Pairing from "../common/Pairing.svelte";
@@ -15,6 +17,7 @@ import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import type { DeviceAuthStatus } from "../lib/session.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
+import { controllerSequence } from "../sequences/controllers.ts";
 import QrCode from "./QrCode.svelte";
 import type { SliderMode } from "./Slider.svelte";
 import Slider from "./Slider.svelte";
@@ -50,6 +53,9 @@ const answeredIndex = $derived.by(() => {
 	return stopId ? SLIDER_STOP_IDS.indexOf(stopId) : null;
 });
 const color = $derived(RESULT_COLORS.find((candidate) => candidate.id === exhibit?.resultColorId) ?? null);
+const sequence = $derived(exhibit?.phase === "sequence" ? findSequence(SEQUENCES, exhibit.sequenceId) : null);
+const SequenceView = $derived(sequence ? controllerSequence(sequence.id) : null);
+const sequenceMs = $derived(sequence && exhibit ? sequenceDuration(sequence, exhibit) : 0);
 
 function onState(next: ExhibitState) {
 	exhibit = next;
@@ -170,6 +176,21 @@ $effect(() => {
 	return () => cancelAnimationFrame(frame);
 });
 
+/** `sequence` の間は、シーケンスのコンポーネントへ渡す補正済みサーバー時刻を毎フレーム更新する。 */
+$effect(() => {
+	if (exhibit?.phase !== "sequence" || !client) return;
+	const endsAt = exhibit.phaseEndsAt;
+	const sync = client;
+	let frame = 0;
+	const tick = () => {
+		const t = sync.serverNow();
+		now = t;
+		if (endsAt === null || t < endsAt) frame = requestAnimationFrame(tick);
+	};
+	tick();
+	return () => cancelAnimationFrame(frame);
+});
+
 const discScale = $derived(
 	exhibit?.phase === "result" && !reducedMotion
 		? 0.2 + 0.8 * easeOutCubic((now - exhibit.phaseStartedAt) / RESULT_GROW_MS)
@@ -210,6 +231,17 @@ const discScale = $derived(
 				>
 					{pending === "start" ? "準備しています" : "はじめる"}
 				</button>
+			</section>
+		{:else if exhibit.phase === "sequence"}
+			<section class="center" data-sequence={exhibit.sequenceId}>
+				{#if sequence && SequenceView}
+					<SequenceView
+						t={sequenceTime(sequenceMs, exhibit.phaseStartedAt, now)}
+						durationMs={sequenceMs}
+						sessionId={exhibit.sessionId}
+						{reducedMotion}
+					/>
+				{/if}
 			</section>
 		{:else if exhibit.phase === "intro"}
 			<section class="center stack">

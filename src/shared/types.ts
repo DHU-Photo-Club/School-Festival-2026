@@ -4,7 +4,7 @@ export type ColorId = (typeof COLOR_IDS)[number];
 export const SLIDER_STOP_IDS = ["far-left", "left", "center", "right", "far-right"] as const;
 export type SliderStopId = (typeof SLIDER_STOP_IDS)[number];
 
-export const PHASES = ["idle", "intro", "question", "judging", "result"] as const;
+export const PHASES = ["idle", "sequence", "intro", "question", "judging", "result"] as const;
 export type Phase = (typeof PHASES)[number];
 
 export type QuestionId = string;
@@ -18,6 +18,8 @@ export type Role = DeviceRole | "admin";
 export interface ExhibitState {
 	sessionId: string | null;
 	phase: Phase;
+	/** `sequence` で再生中のシーケンスID。それ以外の段階では `null`。 */
+	sequenceId: string | null;
 	questionIndex: number | null;
 	answers: Record<QuestionId, SliderStopId>;
 	resultColorId: ColorId | null;
@@ -31,7 +33,14 @@ export interface ExhibitState {
 /** 展示ディスプレイへ配信する状態（仕様書8.5節）。 */
 export type DisplayState = Pick<
 	ExhibitState,
-	"sessionId" | "phase" | "resultColorId" | "previewColorId" | "phaseStartedAt" | "phaseEndsAt" | "revision"
+	| "sessionId"
+	| "phase"
+	| "sequenceId"
+	| "resultColorId"
+	| "previewColorId"
+	| "phaseStartedAt"
+	| "phaseEndsAt"
+	| "revision"
 >;
 
 export interface ResultColor {
@@ -71,4 +80,19 @@ export interface Photo {
 	shareAllowed: boolean;
 	creditName: string | null;
 	creditUrl?: string;
+}
+
+/** シーケンスを差し込める段階。その段階へ入る直前に再生する。 */
+export const SEQUENCE_TARGETS = ["intro", "question"] as const;
+export type SequenceTarget = (typeof SEQUENCE_TARGETS)[number];
+
+/**
+ * 時間経過で自動で進む、iPadと展示ディスプレイの連動演出。サーバーは再生時間だけを扱い、
+ * 見た目は `src/client/sequences/<id>/` のコンポーネントが決める。
+ */
+export interface Sequence {
+	id: string;
+	/** 再生後に入る段階。 */
+	before: SequenceTarget;
+	durationMs: number;
 }

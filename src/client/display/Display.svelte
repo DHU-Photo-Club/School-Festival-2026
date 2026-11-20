@@ -3,10 +3,12 @@ import { onDestroy, onMount } from "svelte";
 import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PHOTOS } from "../../data/photos.ts";
+import { SEQUENCES } from "../../data/sequences.ts";
 import { idlePhotoFor, idlePlaylist, resultPhotoFor } from "../../shared/assignment.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex } from "../../shared/motion.ts";
 import { displayOrderOf } from "../../shared/screens.ts";
+import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses, spectrumColor } from "../../shared/shards.ts";
 import type { ColorId, DisplayState, Photo } from "../../shared/types.ts";
 import { COLOR_IDS } from "../../shared/types.ts";
@@ -16,6 +18,7 @@ import { drawShards, hexToRgb } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import type { ScreenAuthStatus } from "../lib/session.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
+import { displaySequence } from "../sequences/displays.ts";
 import type { SceneRenderer } from "./renderer.ts";
 import { createRenderer } from "./renderer.ts";
 
@@ -40,6 +43,8 @@ let resultStatus = $state<Record<string, LoadStatus>>({});
 let idleStatus = $state<Record<string, LoadStatus>>({});
 let retryRound = $state(0);
 let cycle = $state(0);
+/** `sequence` の再生位置。再生中だけ毎フレーム更新する。 */
+let sequenceT = $state(0);
 /** 結果表示でこの画面が見せるもの。結果開始のフレームで決め、そのセッション中は変えない。 */
 let resultChoice = $state<{ sessionId: string | null; colorId: ColorId; photo: Photo | null } | null>(null);
 
@@ -81,6 +86,19 @@ function onState(next: DisplayState) {
 		idleReference = next.phaseStartedAt;
 	}
 	if (next.phase === "judging") animateSessionId = next.sessionId;
+	// 前のシーケンスの再生位置を、新しいシーケンスの最初のフレームへ持ち込まない。再生途中に接続した画面でも
+	// 0を経由しないよう、受信した時点の再生位置から始める。
+	if (next.phase === "sequence" && previous?.phase !== "sequence") {
+		const sequence = findSequence(SEQUENCES, next.sequenceId);
+		sequenceT =
+			sequence && client
+				? sequenceTime(
+						sequenceDuration(sequence, next),
+						next.phaseStartedAt,
+						client.toServerTime(performance.now()),
+					)
+				: 0;
+	}
 	displayState = next;
 }
 
@@ -212,6 +230,10 @@ function tick(timestamp: number) {
 			setStyle(element, "opacity", opacity(id === currentId ? fade : id === previousId ? 1 - fade : 0));
 		}
 	}
+	if (sequence && state.phase === "sequence") {
+		const t = sequenceTime(sequenceMs, state.phaseStartedAt, now);
+		if (t !== sequenceT) sequenceT = t;
+	}
 	if (state.phase === "idle" && previousBackground && now - state.phaseStartedAt > IDLE_RETURN_MS) {
 		previousBackground = null;
 	}
@@ -319,6 +341,9 @@ const idleSlots = $derived.by(() => {
 });
 
 const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
+const sequence = $derived(displayState?.phase === "sequence" ? findSequence(SEQUENCES, displayState.sequenceId) : null);
+const SequenceView = $derived(sequence ? displaySequence(sequence.id) : null);
+const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence, displayState) : 0);
 </script>
 
 {#if auth === "unpaired"}
@@ -372,6 +397,18 @@ const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null)
 		</div>
 
 		<div class="veil" bind:this={veil} style="opacity: 0"></div>
+
+		{#if sequence && SequenceView}
+			<div class="sequence" data-sequence={sequence.id}>
+				<SequenceView
+					t={sequenceT}
+					durationMs={sequenceMs}
+					sessionId={displayState?.sessionId ?? null}
+					{displayOrder}
+					{reducedMotion}
+				/>
+			</div>
+		{/if}
 	</main>
 {/if}
 
@@ -385,11 +422,16 @@ const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null)
 }
 canvas,
 .layer,
-.veil {
+.veil,
+.sequence {
 	position: absolute;
 	inset: 0;
 	width: 100%;
 	height: 100%;
+}
+.sequence {
+	overflow: hidden;
+	pointer-events: none;
 }
 .layer,
 .veil {

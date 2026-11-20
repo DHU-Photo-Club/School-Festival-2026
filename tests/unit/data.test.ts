@@ -1,18 +1,21 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { validatePhotoFiles } from "../../scripts/validate-assets.ts";
+import { validatePhotoFiles, validateSequenceComponents } from "../../scripts/validate-assets.ts";
 import { createQrModel, generateQrWithRetry, QR_RETRY_DELAY_MS } from "../../src/client/lib/qr.ts";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import { SEQUENCES } from "../../src/data/sequences.ts";
 import { estimateClock } from "../../src/shared/clock.ts";
 import {
 	contrastRatio,
 	validateExhibitData,
 	validatePublicOrigin,
 	validatePublishedUntil,
+	validateSequences,
 } from "../../src/shared/data-validation.ts";
 import { resultUrl } from "../../src/shared/result-url.ts";
+import type { Sequence } from "../../src/shared/types.ts";
 import { COLOR_IDS } from "../../src/shared/types.ts";
 import { resultAvailability } from "../../src/worker/result-page.ts";
 
@@ -186,5 +189,36 @@ describe("時刻補正", () => {
 			sample(800, 300, -50),
 		]);
 		expect(estimate).toEqual({ offset: 100, minRoundTripTime: 8, offsetSpread: 6 });
+	});
+});
+
+describe("シーケンス定義", () => {
+	it("仮データは検証を通り、各シーケンスのコンポーネントがある", () => {
+		expect(validateSequences(SEQUENCES)).toEqual([]);
+		expect(validateSequenceComponents(SEQUENCES, join(import.meta.dirname, "../../src/client/sequences"))).toEqual(
+			[],
+		);
+	});
+
+	it("IDと before の重複、不正な再生時間を検出する", () => {
+		const sequences: Sequence[] = [
+			{ id: "a", before: "intro", durationMs: 1_000 },
+			{ id: "a", before: "intro", durationMs: 0 },
+			{ id: "b", before: "question", durationMs: 1.5 },
+		];
+		expect(validateSequences(sequences)).toEqual([
+			"シーケンス a のIDが重複しています",
+			"intro の前に再生するシーケンスが複数あります",
+			"シーケンス a の durationMs は正の整数にします",
+			"シーケンス b の durationMs は正の整数にします",
+		]);
+	});
+
+	it("コンポーネントのないシーケンスを検出する", () => {
+		const missing: Sequence = { id: "missing", before: "intro", durationMs: 1_000 };
+		expect(validateSequenceComponents([missing], join(import.meta.dirname, "../../src/client/sequences"))).toEqual([
+			"シーケンス missing の missing/Controller.svelte がありません",
+			"シーケンス missing の missing/Display.svelte がありません",
+		]);
 	});
 });

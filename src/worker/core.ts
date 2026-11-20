@@ -14,7 +14,7 @@ import type {
 } from "../shared/protocol.ts";
 import { CLOSE_CODES, ERROR_MESSAGES, parseClientMessage, RETRYABLE, toDisplayState } from "../shared/protocol.ts";
 import { displayOrderOf, nextFreeScreenId } from "../shared/screens.ts";
-import type { DeviceRole, ExhibitState, Question, ResultColor, Role, ScreenRole } from "../shared/types.ts";
+import type { DeviceRole, ExhibitState, Question, ResultColor, Role, ScreenRole, Sequence } from "../shared/types.ts";
 
 /** 認証・ペアリングセッションの有効期間（仕様書8.4節）。 */
 export const SESSION_TTL_MS = 12 * 60 * 60_000;
@@ -109,6 +109,7 @@ export interface CoreOptions {
 	connections: () => Connection[];
 	questions: readonly Question[];
 	colors: readonly ResultColor[];
+	sequences: readonly Sequence[];
 }
 
 export type AuthCheck = { ok: true; session: AuthSession } | { ok: false; status: 401 | 403 };
@@ -138,7 +139,8 @@ export class ExhibitCore {
 
 	private load(): ExhibitState {
 		const stored = this.options.store.get<ExhibitState>(KEY_STATE);
-		if (stored) return stored;
+		// `sequenceId` を追加する前に保存した状態には値がない。
+		if (stored) return { ...stored, sequenceId: stored.sequenceId ?? null };
 		const created = initialState(this.options.now());
 		this.options.store.put(KEY_STATE, created);
 		return created;
@@ -147,7 +149,7 @@ export class ExhibitCore {
 	/** 期限切れの状態を進めてから現在状態を返す。進んだ場合は保存して配信する。 */
 	current(): ExhibitState {
 		const state = this.load();
-		const advanced = advanceDeadlines(state, this.options.now());
+		const advanced = advanceDeadlines(state, this.options.now(), this.options.sequences);
 		if (advanced !== state) this.commit(state, advanced, null);
 		return advanced;
 	}
@@ -561,6 +563,7 @@ export class ExhibitCore {
 			now: this.options.now(),
 			questions: this.options.questions,
 			colors: this.options.colors,
+			sequences: this.options.sequences,
 			newSessionId: this.options.randomId,
 		});
 		if (!outcome.ok) return this.errorMessage(message.requestId, outcome.code, this.viewFor(meta, state));

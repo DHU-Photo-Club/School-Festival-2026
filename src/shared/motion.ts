@@ -410,7 +410,8 @@ function resultScene(input: SceneInput): Scene {
 export function computeScene(input: SceneInput): Scene {
 	const { state, now, reducedMotion, colors } = input;
 
-	if (state.phase === "idle" || state.phase === "intro") {
+	// `sequence` の演出はシーケンスのコンポーネントが上に重ねて描く。下には待機写真の巡回を続ける。
+	if (state.phase === "idle" || state.phase === "sequence" || state.phase === "intro") {
 		const preview = state.phase === "idle" ? colorOf(colors, state.previewColorId) : null;
 		if (preview) {
 			return {
