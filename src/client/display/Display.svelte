@@ -14,6 +14,7 @@ import Pairing from "../common/Pairing.svelte";
 import PhotoImage from "../common/PhotoImage.svelte";
 import { drawShards, hexToRgb } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
+import type { ScreenAuthStatus } from "../lib/session.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
 import type { SceneRenderer } from "./renderer.ts";
 import { createRenderer } from "./renderer.ts";
@@ -32,7 +33,7 @@ const resultAssignments = COLOR_IDS.map((colorId) => ({
 	photo: resultPhotoFor(PHOTOS, colorId, displayOrder),
 }));
 
-let auth = $state<"checking" | "unpaired" | "mismatch" | "ok">("checking");
+let auth = $state<ScreenAuthStatus>("checking");
 let displayState = $state<DisplayState | null>(null);
 let reducedMotion = $state(false);
 let resultStatus = $state<Record<string, LoadStatus>>({});

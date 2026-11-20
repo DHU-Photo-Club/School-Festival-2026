@@ -5,6 +5,15 @@ export interface DeviceSession {
 	screenId: string | null;
 }
 
+/** 端末に共通する認証状態。端末セッションの照会結果と realtime 接続の `unauthenticated` 通知に基づく。 */
+export type DeviceAuthStatus = "checking" | "unpaired" | "ok";
+
+/**
+ * ScreenRole 画面の認証状態。URL の `screenId` が画面IDの形式に一致しない場合、または端末セッションの
+ * `role` もしくは `screenId` が画面と一致しない場合の `mismatch` を含む。
+ */
+export type ScreenAuthStatus = DeviceAuthStatus | "mismatch";
+
 /** 端末セッションを確認する。未登録なら `null`。 */
 export async function fetchDeviceSession(): Promise<DeviceSession | null> {
 	const response = await fetch("/api/session", { cache: "no-store" });

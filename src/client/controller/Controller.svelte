@@ -13,6 +13,7 @@ import type { QrModel } from "../lib/qr.ts";
 import { createQrModel, generateQrWithRetry } from "../lib/qr.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
+import type { DeviceAuthStatus } from "../lib/session.ts";
 import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
 import QrCode from "./QrCode.svelte";
 import ShardField from "./ShardField.svelte";
@@ -23,7 +24,7 @@ import Slider from "./Slider.svelte";
 const RESULT_GROW_MS = 1_400;
 const NOTICE_MS = 4_000;
 
-let auth = $state<"checking" | "unpaired" | "ok">("checking");
+let auth = $state<DeviceAuthStatus>("checking");
 let status = $state<ConnectionStatus>("connecting");
 let exhibit = $state<ExhibitState | null>(null);
 let pending = $state<Command["name"] | null>(null);
@@ -121,6 +122,7 @@ onMount(async () => {
 		return;
 	}
 	if (session.role !== "controller") {
+		// 役割が一致しない端末に `mismatch` 状態を表示せず、該当する画面へ移動させる。
 		location.replace(`/${session.role}/${encodeURIComponent(session.screenId ?? "")}`);
 		return;
 	}

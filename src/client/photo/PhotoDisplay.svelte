@@ -8,13 +8,14 @@ import { displayOrderOf } from "../../shared/screens.ts";
 import Pairing from "../common/Pairing.svelte";
 import PhotoImage from "../common/PhotoImage.svelte";
 import { RealtimeClient } from "../lib/realtime.ts";
+import type { ScreenAuthStatus } from "../lib/session.ts";
 import { fetchDeviceSession } from "../lib/session.ts";
 
 let { screenId }: { screenId: string } = $props();
 
 const order = $derived(displayOrderOf(screenId, "photo"));
 const playlist = idlePlaylist(PHOTOS);
-let auth = $state<"checking" | "ok" | "unpaired" | "mismatch">("checking");
+let auth = $state<ScreenAuthStatus>("checking");
 let cycle = $state(0);
 let imageStatus = $state<Record<string, "loaded" | "failed">>({});
 let client: RealtimeClient | null = null;
