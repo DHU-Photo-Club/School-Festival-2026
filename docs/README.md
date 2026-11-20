@@ -405,7 +405,7 @@ WebSocketではUTF-8のJSONテキストメッセージだけを扱い、バイ�
 
 `command`への`ack`は状態の検証、永続化、`revision`更新が完了した後に返す。送信元には更新後状態を含む`ack`を返し、それ以外の接続端末には役割別の`state`メッセージを配信する。`resultStarted`と`diagnostic`への`ack`は報告の保存後に返し、現在の`revision`を含めて`state`を省略する。クライアントは`command`の`ack`を受け取るまで次の状態へ進まず、同時に複数の状態変更要求を送らない。
 
-クライアントは`requestId`を`crypto.randomUUID()`で要求ごとに生成し、再送時は同じ値を使用する。サーバーは認証セッションIDと`requestId`の組を冪等性キーとして、`command`、`resultStarted`、`diagnostic`の応答を10分間または最大512件までDurable Objectのストレージへ保存する。同じキーを再受信した場合は保存済みの`ack`または`error`を返し、状態変更、計測値保存、配信を繰り返さない。
+クライアントは`requestId`をv4 UUIDとして要求ごとに生成し、再送時は同じ値を使用する。生成方法はビルド時に切り替え、HTTPSで配信する本番では常に`crypto.randomUUID()`を使用し、開発時は`crypto.getRandomValues()`からv4 UUIDを組み立てる。`crypto.randomUUID()`は安全なコンテキスト（HTTPSまたは`localhost`など）でのみ定義され、LAN内のHTTP開発サーバーへブラウザから接続した場合は使用できないためである。サーバーは認証セッションIDと`requestId`の組を冪等性キーとして、`command`、`resultStarted`、`diagnostic`の応答を10分間または最大512件までDurable Objectのストレージへ保存する。同じキーを再受信した場合は保存済みの`ack`または`error`を返し、状態変更、計測値保存、配信を繰り返さない。
 
 送信後3秒以内に応答がない場合、接続中なら同じ要求を最大2回再送する。この3秒は性能の受け入れ値ではなく再送タイマーであり、`WebSocket.send()`直前から対応する`ack`または`error`受信までをクライアントの`performance.now()`で測る。送信後に切断した場合は、再接続して`welcome`を受け取った後に未応答の要求を同じ`requestId`で一度だけ再送する。再送後も応答がなければ操作を停止し、管理画面からの確認を求める。
 

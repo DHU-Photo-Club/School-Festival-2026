@@ -67,16 +67,31 @@ export interface RealtimeOptions {
 
 const clientNow = () => performance.timeOrigin + performance.now();
 
+/**
+ * v4 UUIDを返す。`crypto.randomUUID` は安全なコンテキスト（HTTPSまたは `localhost` など）でのみ定義され、
+ * LAN内のHTTP開発サーバーでは使えないため、開発時は `crypto.getRandomValues` から組み立てる。
+ * 本番はHTTPSで配信するため、常に `crypto.randomUUID` を使う。
+ */
+export const randomId: () => string = import.meta.env.DEV
+	? () => {
+			const bytes = crypto.getRandomValues(new Uint8Array(16));
+			bytes[6] = (bytes[6] & 0x0f) | 0x40;
+			bytes[8] = (bytes[8] & 0x3f) | 0x80;
+			const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+			return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+		}
+	: () => crypto.randomUUID();
+
 function storedClientId(role: Role): string {
 	const key = `dpc-client-id:${role}`;
 	try {
 		const existing = localStorage.getItem(key);
 		if (existing) return existing;
-		const created = crypto.randomUUID();
+		const created = randomId();
 		localStorage.setItem(key, created);
 		return created;
 	} catch {
-		return crypto.randomUUID();
+		return randomId();
 	}
 }
 
@@ -325,7 +340,7 @@ export class RealtimeClient {
 
 	// ---- 生存確認と時刻補正（仕様書8.6節） ----
 
-	private ping(id = crypto.randomUUID()): void {
+	private ping(id = randomId()): void {
 		if (!this.welcomed) return;
 		this.sendRaw({ version: 1, type: "ping", pingId: id, clientSentAt: clientNow() });
 	}
@@ -351,7 +366,7 @@ export class RealtimeClient {
 		for (let i = 0; i < SYNC_BURST_COUNT; i += 1) {
 			setTimeout(() => {
 				if (round !== this.syncRound) return;
-				const id = crypto.randomUUID();
+				const id = randomId();
 				this.burst.set(id, i);
 				this.ping(id);
 			}, i * SYNC_BURST_GAP_MS);
@@ -377,7 +392,7 @@ export class RealtimeClient {
 
 	/** 要求を送り、同じ `requestId` の `ack` または `error` を待つ。未接続なら接続後に送る。 */
 	request(body: RequestBody): Promise<Reply> {
-		const requestId = crypto.randomUUID();
+		const requestId = randomId();
 		const payload = JSON.stringify({ version: 1, requestId, ...body });
 		return new Promise((resolve) => {
 			const entry: PendingRequest = {

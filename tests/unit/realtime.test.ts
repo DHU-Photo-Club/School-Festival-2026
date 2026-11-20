@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionStatus } from "../../src/client/lib/realtime.ts";
-import { RealtimeClient } from "../../src/client/lib/realtime.ts";
+import { RealtimeClient, randomId } from "../../src/client/lib/realtime.ts";
 import { initialState } from "../../src/shared/machine.ts";
 import type { ServerMessage } from "../../src/shared/protocol.ts";
 import { ERROR_MESSAGES } from "../../src/shared/protocol.ts";
@@ -358,5 +358,21 @@ describe("操作権限の再確認", () => {
 		expect(FakeWebSocket.instances).toHaveLength(2);
 		expect(statuses.at(-1)).toBe("controllerInUse");
 		client.stop();
+	});
+});
+
+describe("randomId", () => {
+	const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("開発時は crypto.randomUUID がない安全でないコンテキストでも、v4 UUID を返す", () => {
+		const real = globalThis.crypto;
+		vi.stubGlobal("crypto", { getRandomValues: real.getRandomValues.bind(real) });
+		const ids = Array.from({ length: 100 }, () => randomId());
+		for (const id of ids) expect(id).toMatch(UUID_V4);
+		expect(new Set(ids).size).toBe(ids.length);
 	});
 });
