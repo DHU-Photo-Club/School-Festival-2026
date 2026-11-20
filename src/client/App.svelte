@@ -1,6 +1,5 @@
 <script lang="ts">
 import { EXHIBIT } from "../data/exhibit.ts";
-import Admin from "./admin/Admin.svelte";
 import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
 import PhotoDisplay from "./photo/PhotoDisplay.svelte";
@@ -35,7 +34,14 @@ const pageLabel = display
 {:else if photo}
 	<PhotoDisplay screenId={decodeURIComponent(photo[1])} />
 {:else if path === "/admin"}
-	<Admin />
+	<!-- 管理画面は Tailwind CSS（要素の初期化を含む）を読み込むため、展示用の画面に影響しないよう別のチャンクに分ける。 -->
+	{#await import("./admin/Admin.svelte")}
+		<main class="not-found">管理画面を読み込んでいます…</main>
+	{:then { default: Admin }}
+		<Admin />
+	{:catch}
+		<main class="not-found">管理画面を読み込めませんでした。ページを再読み込みしてください。</main>
+	{/await}
 {:else if result}
 	<ResultPage colorId={decodeURIComponent(result[1])} />
 {:else}

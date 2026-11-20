@@ -2,7 +2,11 @@
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
-		"types": ["svelte", "vite/client"]
+		"types": ["svelte", "vite/client"],
+		"paths": {
+			"$lib": ["./src/client/lib"],
+			"$lib/*": ["./src/client/lib/*"]
+		}
 	},
 	"include": ["src/client/**/*", "src/shared/**/*", "src/data/**/*"]
 }

@@ -45,7 +45,9 @@ test("コード発行は種別ごとの3列で表示し、各種別のコード�
 			expect(boxes[0]!.x + boxes[0]!.width).toBeLessThan(boxes[1]!.x);
 			expect(boxes[1]!.x + boxes[1]!.width).toBeLessThan(boxes[2]!.x);
 			expect(
-				await page.locator(".registration-panel").evaluate((panel) => panel.scrollWidth <= panel.clientWidth),
+				await page
+					.locator(".registration-panel [data-slot=card-content]")
+					.evaluate((content) => content.scrollWidth <= content.clientWidth),
 			).toBe(true);
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 		}

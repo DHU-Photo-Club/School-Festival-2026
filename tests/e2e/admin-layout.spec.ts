@@ -33,9 +33,13 @@ test("管理画面はFHD内に全パネルを配置し、端末一覧をパネ�
 			}),
 		);
 		await expect(page.locator(".registration-panel tbody tr")).toHaveCount(40);
+		// 登録パネルでは、コード発行の欄を残したままセッションの表だけをスクロールする。
 		expect(
-			await page.locator(".registration-panel").evaluate((panel) => panel.scrollHeight > panel.clientHeight),
+			await page
+				.locator(".registration-panel [data-slot=table-container]")
+				.evaluate((table) => table.scrollHeight > table.clientHeight),
 		).toBe(true);
+		await expect(pairing.getByRole("button", { name: "コードを発行" })).toBeInViewport();
 		expect(
 			await page.evaluate(() => ({
 				horizontal: document.documentElement.scrollWidth > window.innerWidth,

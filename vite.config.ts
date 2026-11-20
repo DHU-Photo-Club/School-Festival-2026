@@ -1,5 +1,7 @@
+import path from "node:path";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { exhibitChecks, readWranglerConfig } from "./scripts/exhibit-checks.ts";
 
@@ -18,9 +20,14 @@ export default defineConfig(({ command, isPreview }) => {
 		cacheDir: e2e ? "node_modules/.vite-e2e" : undefined,
 		plugins: [
 			exhibitChecks(),
+			tailwindcss(),
 			svelte(),
 			cloudflare(e2e ? { persistState: false, inspectorPort: false } : undefined),
 		],
+		resolve: {
+			// shadcn-svelte のコンポーネントが参照する別名（tsconfig.json の paths と合わせる）。
+			alias: { $lib: path.resolve("./src/client/lib") },
+		},
 		define: {
 			// QRコードと結果URLの正本（仕様書10.1節）。
 			__PUBLIC_ORIGIN__: JSON.stringify(wrangler.vars.PUBLIC_ORIGIN),
