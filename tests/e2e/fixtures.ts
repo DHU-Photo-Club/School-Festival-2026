@@ -1,5 +1,6 @@
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
+import { splitAt } from "../../src/client/controller/split.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
@@ -155,12 +156,11 @@ export async function tapStop(page: Page, index: number): Promise<void> {
 	await tapSliderAt(page, index / 4);
 }
 
-/** iPadの質問画面で、スライダーのトラック上の位置 `ratio`（左端0から右端1）をタップする。 */
+/** iPadの質問画面で、スライダーの回答の位置 `ratio`（左端0から右端1）に当たる仕切り線の位置をタップする。 */
 export async function tapSliderAt(page: Page, ratio: number): Promise<void> {
 	const box = await page.locator(".slider .area").boundingBox();
 	if (!box) throw new Error("slider not found");
-	const half = 22;
-	await page.mouse.click(box.x + half + (box.width - half * 2) * ratio, box.y + box.height / 2);
+	await page.mouse.click(box.x + box.width * splitAt(ratio), box.y + box.height / 2);
 }
 
 /** スライダーで選んでいる位置（0〜1）。未回答は `null`。 */
@@ -170,8 +170,8 @@ export async function sliderValue(page: Page): Promise<number | null> {
 }
 
 /**
- * スライダーのトラック上の位置 `from` で押し、`to` まで動かす（左端0から右端1）。指を離す前に
- * `whileDragging` を呼ぶ。
+ * スライダーの回答の位置 `from` に当たる仕切り線の位置で押し、`to` に当たる位置まで動かす（左端0から右端1）。
+ * 指を離す前に `whileDragging` を呼ぶ。
  */
 export async function dragSlider(
 	page: Page,
@@ -181,8 +181,7 @@ export async function dragSlider(
 ): Promise<void> {
 	const box = await page.locator(".slider .area").boundingBox();
 	if (!box) throw new Error("slider not found");
-	const half = 22;
-	const at = (ratio: number) => box.x + half + (box.width - half * 2) * ratio;
+	const at = (ratio: number) => box.x + box.width * splitAt(ratio);
 	const y = box.y + box.height / 2;
 	await page.mouse.move(at(from), y);
 	await page.mouse.down();

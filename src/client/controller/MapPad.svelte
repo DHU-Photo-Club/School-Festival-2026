@@ -141,7 +141,8 @@ function roundedCenter(index: number): MapPoint {
 	</div>
 	<span class="edge right">{question.rightLabel}</span>
 	<span class="edge bottom">{question.bottomLabel}</span>
-	<p class="caption" aria-live="polite">{caption}</p>
+	<!-- ドラッグ中は補助文が次々に変わるため読み上げない。 -->
+	<p class="caption" aria-live={shownMode === "dragging" ? "off" : "polite"}>{caption}</p>
 </div>
 
 <style>

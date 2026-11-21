@@ -275,7 +275,7 @@ const discScale = $derived(
 					current={exhibit.questionIndex + 1}
 					label="質問 {exhibit.questionIndex + 1} / {QUESTIONS.length}"
 				/>
-				<div class="body">
+				<div class="body" class:split={question.kind === "slider"}>
 					<h1 class="prompt">{question.prompt}</h1>
 					{#key question.id}
 						{#if question.kind === "slider"}
@@ -508,11 +508,19 @@ p {
 	text-align: center;
 	font-size: clamp(26px, 5vmin, 40px);
 }
+/* スライダーは画面全体を左右に分けるため、質問文と補助文を上部に寄せる。 */
+.question .body.split {
+	align-self: start;
+	gap: 8px;
+}
 .question footer {
 	display: flex;
 	justify-content: space-between;
 	width: 100%;
 	gap: 16px;
+	/* 画面全体を覆うスライダーの操作面より前に出す。ボタンの押し損じで回答が変わらないよう、余白も指を受け取る。 */
+	position: relative;
+	z-index: 1;
 }
 .result {
 	display: grid;
@@ -574,6 +582,8 @@ p {
 .overlay {
 	position: fixed;
 	inset: 0;
+	/* 質問画面のフッター（`z-index: 1`）より前に出す。 */
+	z-index: 2;
 	display: grid;
 	place-content: center;
 	gap: 8px;

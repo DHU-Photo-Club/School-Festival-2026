@@ -89,6 +89,13 @@ test("通信断中のiPadは操作できず、復旧後はサーバーの状態�
 	await network?.down();
 	await expect(ipad.page.getByText("再接続しています")).toBeVisible({ timeout: 25_000 });
 	await expect(ipad.page.getByRole("button", { name: "次へ" })).toBeDisabled();
+	// 再接続の案内は、前に出してある質問画面のフッターよりも前に表示する。
+	const footer = await ipad.page.locator(".question footer").boundingBox();
+	if (!footer) throw new Error("footer not found");
+	const center = { x: footer.x + footer.width / 2, y: footer.y + footer.height / 2 };
+	expect(
+		await ipad.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".overlay") !== null, center),
+	).toBe(true);
 	// 通信断の間にほかの端末から状態が変わる。
 	await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");

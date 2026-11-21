@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SPLIT_MAX, SPLIT_MIN } from "../../src/client/controller/split.ts";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
@@ -36,8 +37,42 @@ const revisionOf = async (device: Device) =>
 async function exploreInput(page: Page, question: Question) {
 	const next = page.getByRole("button", { name: "次へ" });
 	switch (question.kind) {
-		case "slider":
-			// トラックのタップで5段階の回答位置すべてを選べる。補助文は最も近い回答位置のもの。
+		case "slider": {
+			// 操作面は画面の幅全体を覆う。仕切り線の可動範囲の右端をタップすると、左の領域が広がり左端の回答に、
+			// 左端をタップすると右端の回答になる。
+			const viewport = page.viewportSize();
+			const area = await page.locator(".slider .area").boundingBox();
+			if (!viewport || !area) throw new Error("slider area not found");
+			expect(area.x).toBe(0);
+			expect(area.width).toBeCloseTo(viewport.width, 0);
+			for (const [split, value] of [
+				[SPLIT_MAX, 0],
+				[SPLIT_MIN, 1],
+			]) {
+				await page.mouse.click(viewport.width * split, viewport.height / 2);
+				await expect.poll(() => sliderValue(page)).toBe(value);
+				const divider = await page.locator(".slider .divider").boundingBox();
+				if (!divider) throw new Error("slider divider not found");
+				expect(Math.abs(divider.x + divider.width / 2 - viewport.width * split)).toBeLessThan(2);
+			}
+			// 可動範囲の外（画面の左右の端）をタップすると、近い側の端の回答になる。
+			for (const [x, value] of [
+				[1, 1],
+				[viewport.width - 1, 0],
+			]) {
+				await page.mouse.click(x, viewport.height / 2);
+				await expect.poll(() => sliderValue(page)).toBe(value);
+			}
+			// ボタンの並ぶ下部の余白はフッターが受け取り、操作面へ届かない。届けば中央の回答（0.5）になる。
+			const footer = await page.locator(".question footer").boundingBox();
+			if (!footer) throw new Error("footer not found");
+			const gap = { x: footer.x + footer.width / 2, y: footer.y + footer.height / 2 };
+			expect(
+				await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.matches(".question footer") ?? false, gap),
+			).toBe(true);
+			await page.mouse.click(gap.x, gap.y);
+			expect(await sliderValue(page)).toBe(0);
+			// 画面のタップで5段階の回答位置すべてを選べる。補助文は最も近い回答位置のもの。
 			for (const [stop, { caption }] of question.stops.entries()) {
 				await tapStop(page, stop);
 				await expect.poll(() => sliderValue(page)).toBeCloseTo(stop / 4, 2);
@@ -64,6 +99,7 @@ async function exploreInput(page: Page, question: Question) {
 			await expect(page.getByRole("radio", { name: question.stops[2].caption, exact: true })).toBeChecked();
 			await expect.poll(() => sliderValue(page)).toBe(0.5);
 			break;
+		}
 		case "map":
 			// 平面のタップで9区画すべてを選べる。補助文は位置を含む区画のもの。
 			for (const [cell, { caption }] of question.cells.entries()) {

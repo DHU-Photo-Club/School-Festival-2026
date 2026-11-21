@@ -1,7 +1,9 @@
 <script lang="ts">
+import ChevronsLeftRightIcon from "@lucide/svelte/icons/chevrons-left-right";
 import { nearestStop, roundPosition } from "../../shared/answer.ts";
 import type { SliderQuestion } from "../../shared/types.ts";
 import type { InputMode } from "./input-mode.ts";
+import { splitAt, valueAt } from "./split.ts";
 
 let {
 	question,
@@ -18,8 +20,12 @@ let {
 	oninteract: (interacting: boolean) => void;
 } = $props();
 
-/** つまみのタップ領域の半分（44 CSS px の半分、仕様書7.1節）。 */
-const HALF = 22;
+/** 左右の語が同じ大きさのときの文字の大きさ（px）。 */
+const LABEL_BASE = 24;
+/** 端まで寄せたとき、広い側の語を `LABEL_BASE` の何倍にするか。狭い側は同じ割合で小さくする。 */
+const LABEL_RATIO = 2.2;
+/** 狭い側の語の文字の大きさの下限（px）。 */
+const LABEL_MIN = 13;
 
 let area = $state<HTMLDivElement>();
 /** ドラッグ中の指の `pointerId`。ドラッグしていなければ `null`。 */
@@ -29,11 +35,15 @@ const locked = $derived(mode === "disabled" || mode === "pending");
 /** 表示する状態。操作できない状態になったら、ドラッグ中でもその状態を見せる。 */
 const shownMode = $derived(pointer !== null && !locked ? "dragging" : mode);
 
-const shown = $derived(value ?? 0.5);
-/** 補助文と強調する目盛りに使う、最も近い回答位置。 */
+const shown = $derived(Math.min(1, Math.max(0, value ?? 0.5)));
+/** 補助文に使う、最も近い回答位置。 */
 const stop = $derived(nearestStop(shown));
-const position = (ratio: number) => `calc(${HALF}px + (100% - ${HALF * 2}px) * ${ratio})`;
-/** 回答位置の目盛りの位置（0〜1）。 */
+/** 仕切り線の位置（画面幅に対する割合）。 */
+const split = $derived(splitAt(shown));
+/** 左の語への寄り具合。左端で1、中央で0、右端で-1。 */
+const lean = $derived(1 - shown * 2);
+const labelSize = (weight: number) => `${Math.max(LABEL_MIN, LABEL_BASE * LABEL_RATIO ** weight)}px`;
+/** 回答位置の値（0〜1）。キーボード操作で選ぶ位置に使う。 */
 const ticks = $derived(question.stops.map((_, index) => index / (question.stops.length - 1)));
 
 const caption = $derived.by(() => {
@@ -43,7 +53,7 @@ const caption = $derived.by(() => {
 		case "pending":
 			return "送信しています";
 		case "unanswered":
-			return "動かして選んでください";
+			return "しっくりくる位置に動かしてください。真ん中でも大丈夫です。";
 		case "answered":
 			return `回答済み: ${question.stops[stop].caption}`;
 		default:
@@ -51,15 +61,14 @@ const caption = $derived.by(() => {
 	}
 });
 
-/** 指の位置をトラック上の位置（0〜1）にする。トラックの外は端にする。 */
+/** 指の位置を回答の位置（0〜1）にする。仕切り線を動かせる範囲の外は端にする。 */
 function positionAt(clientX: number): number {
 	if (!area) return shown;
-	// `.area` の内側（枠線を除く）を基準にする。つまみや目盛りの `left` も同じ基準で決まる。
-	const left = area.getBoundingClientRect().left + area.clientLeft;
-	return roundPosition((clientX - left - HALF) / Math.max(1, area.clientWidth - HALF * 2));
+	const rect = area.getBoundingClientRect();
+	return roundPosition(valueAt((clientX - rect.left) / Math.max(1, rect.width)));
 }
 
-// トラックの任意位置のタップとつまみのドラッグの両方で、指の位置をそのまま選ぶ（仕様書7.1節）。
+// 画面の任意の位置のタップと仕切り線のドラッグの両方で、指の位置へ仕切り線を動かす（仕様書7.1節）。
 // 最初に触れた指だけを追い、ほかの指は無視する。
 function down(event: PointerEvent) {
 	if (locked || pointer !== null) return;
@@ -84,10 +93,9 @@ function up(event: PointerEvent) {
 </script>
 
 <div class="slider" data-answer-input="slider" data-mode={shownMode}>
-	<div class="ends">
-		<span>{question.leftLabel}</span>
-		<span>{question.rightLabel}</span>
-	</div>
+	<!-- ドラッグ中は補助文が次々に変わるため読み上げない。 -->
+	<p class="caption" aria-live={shownMode === "dragging" ? "off" : "polite"}>{caption}</p>
+	<!-- 画面全体を覆う操作面。質問文と補助文の上も含め、どこを触っても仕切り線が指の位置へ動く。 -->
 	<div
 		class="area"
 		bind:this={area}
@@ -98,8 +106,9 @@ function up(event: PointerEvent) {
 		onlostpointercapture={up}
 		role="presentation"
 		data-value={value ?? ""}
+		style:--split={split}
 	>
-		<!-- 読み上げとキーボード操作用。矢印キーで別の回答位置へ移ると、つまみがその回答位置へ動く。 -->
+		<!-- 読み上げとキーボード操作用。矢印キーで別の回答位置へ移ると、仕切り線がその回答位置へ動く。 -->
 		<div
 			class="sr-only"
 			role="radiogroup"
@@ -119,34 +128,34 @@ function up(event: PointerEvent) {
 				</label>
 			{/each}
 		</div>
-		<!-- トラックの線。ポインター操作は囲みの領域（.area）、キーボード操作はラジオボタンで受け付ける。 -->
-		<span class="track"></span>
-		{#each ticks as tick, index (index)}
-			<span class="tick" class:current={value !== null && stop === index} style:left={position(tick)}></span>
-		{/each}
-		<span class="thumb" style:left={position(shown)}></span>
+		<span class="label left" aria-hidden="true" style:font-size={labelSize(lean)}>{question.leftLabel}</span>
+		<span class="label right" aria-hidden="true" style:font-size={labelSize(-lean)}>{question.rightLabel}</span>
+		<span class="divider"></span>
+		<span class="handle">
+			<ChevronsLeftRightIcon aria-hidden="true" size={22} strokeWidth={2} />
+		</span>
 	</div>
-	<p class="caption" aria-live="polite">{caption}</p>
 </div>
 
 <style>
 .slider {
-	width: 100%;
-	max-width: 640px;
-	min-width: 280px;
 	display: grid;
-	gap: 8px;
+	justify-items: center;
 }
+/* `.screen` を基準に画面全体へ広げる。進捗バーと質問文の上にも重なるが、背景は透明。 */
 .area {
-	position: relative;
-	height: 64px;
+	position: absolute;
+	inset: 0;
+	z-index: 0;
 	touch-action: none;
-	cursor: pointer;
+	cursor: ew-resize;
+	user-select: none;
+	-webkit-user-select: none;
 }
-/* 見えないラジオボタンにフォーカスがあるときは、トラックに枠を出す。 */
-.area:has(input:focus-visible) {
+/* 見えないラジオボタンにフォーカスがあるときは、つまみに枠を出す。 */
+.area:has(input:focus-visible) .handle {
 	outline: 2px solid var(--text);
-	outline-offset: 3px;
+	outline-offset: 4px;
 }
 .sr-only {
 	position: absolute;
@@ -159,104 +168,124 @@ function up(event: PointerEvent) {
 	white-space: nowrap;
 	border: 0;
 }
-.track {
+.label {
 	position: absolute;
-	left: 0;
-	right: 0;
 	top: 50%;
-	height: 4px;
-	border-radius: 2px;
-	background: #5a5754;
+	padding: 0 8px;
+	box-sizing: border-box;
 	transform: translateY(-50%);
+	text-align: center;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
 	pointer-events: none;
 }
-.tick {
+.label.left {
+	left: 0;
+	width: calc(100% * var(--split));
+}
+.label.right {
+	left: calc(100% * var(--split));
+	right: 0;
+}
+/* 仕切り線。質問文と重なる上部は薄くし、文字を読みやすくする。 */
+.divider {
 	position: absolute;
-	top: 50%;
-	width: 4px;
-	height: 16px;
-	border-radius: 2px;
-	background: #8a8784;
-	transform: translate(-50%, -50%);
-	pointer-events: none;
-}
-.tick.current {
-	width: 6px;
-	height: 28px;
+	top: 0;
+	bottom: 0;
+	left: calc(100% * var(--split));
+	width: 2px;
+	transform: translateX(-50%);
 	background: var(--text);
+	mask-image: linear-gradient(to bottom, transparent 0, transparent 22%, #000 36%);
+	pointer-events: none;
 }
-.thumb {
+.handle {
 	position: absolute;
 	top: 50%;
-	width: 28px;
-	height: 28px;
+	left: calc(100% * var(--split));
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
 	border-radius: 50%;
 	transform: translate(-50%, -50%);
-	background: var(--text);
-	border: 3px solid var(--text);
+	background: var(--idle);
+	color: var(--text);
 	pointer-events: none;
 	transition:
 		width 120ms,
 		height 120ms;
 }
-/* 未回答: 中央に薄く、破線の枠。 */
-[data-mode="unanswered"] .thumb {
-	background: transparent;
-	border: 3px dashed #8a8784;
-	opacity: 0.8;
+/* 枠は疑似要素に描き、確定待ちで枠だけを回す。 */
+.handle::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	border: 2px solid var(--text);
+}
+/* 未回答: 破線の枠。 */
+[data-mode="unanswered"] .handle::before {
+	border-style: dashed;
 }
 /* 操作中: 大きく、太い実線の枠。 */
-[data-mode="dragging"] .thumb,
-[data-mode="active"] .thumb {
-	width: 40px;
-	height: 40px;
-	border: 5px solid var(--idle);
-	box-shadow: 0 0 0 3px var(--text);
+[data-mode="dragging"] .handle,
+[data-mode="active"] .handle {
+	width: 48px;
+	height: 48px;
+}
+[data-mode="dragging"] .handle::before,
+[data-mode="active"] .handle::before {
+	border-width: 3px;
 }
 /* 確定待ち: 点線の輪が回る。 */
-[data-mode="pending"] .thumb {
-	background: transparent;
-	border: 4px dotted var(--text);
+[data-mode="pending"] .handle::before {
+	border-style: dotted;
+	border-width: 3px;
 	animation: turn 1.6s linear infinite;
 }
 /* 確定済み: 二重線。 */
-[data-mode="answered"] .thumb {
-	width: 32px;
-	height: 32px;
-	border: 6px double var(--idle);
-	box-shadow: 0 0 0 2px var(--text);
+[data-mode="answered"] .handle::before {
+	border: 6px double var(--text);
 }
-/* 無効: 枠なしの暗い円。 */
-[data-mode="disabled"] .thumb {
+/* 無効: 枠なしの暗い円。仕切り線と語も暗くする。 */
+[data-mode="disabled"] .handle {
 	background: var(--line);
+	color: var(--idle);
+}
+[data-mode="disabled"] .handle::before {
 	border-color: var(--line);
 }
-[data-mode="disabled"] .area {
+[data-mode="disabled"] .divider {
+	background: var(--line);
+}
+[data-mode="disabled"] .label {
+	color: var(--muted);
+}
+[data-mode="disabled"] .area,
+[data-mode="pending"] .area {
 	cursor: default;
 }
 @keyframes turn {
 	to {
-		transform: translate(-50%, -50%) rotate(360deg);
+		transform: rotate(360deg);
 	}
 }
 @media (prefers-reduced-motion: reduce) {
-	[data-mode="pending"] .thumb {
+	[data-mode="pending"] .handle::before {
 		animation: none;
 	}
-	.thumb {
+	.handle {
 		transition: none;
 	}
 }
-.ends {
-	display: flex;
-	justify-content: space-between;
-	font-size: 18px;
-}
 .caption {
 	margin: 0;
-	min-height: 1.6em;
+	min-height: 1.7em;
 	text-align: center;
-	font-size: 18px;
+	font-size: 16px;
 	color: var(--muted);
 }
 [data-mode="active"] .caption,
