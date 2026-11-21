@@ -1,148 +1,144 @@
 <script lang="ts">
+import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
 import { onDestroy, onMount } from "svelte";
 import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { QUESTIONS } from "../../data/questions.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
+import { isMapPoint, isValidAnswer, sameAnswer } from "../../shared/answer.ts";
 import type { Command } from "../../shared/machine.ts";
 import { easeOutCubic } from "../../shared/motion.ts";
+import { NICKNAME_MAX_LENGTH, normalizeNickname } from "../../shared/nickname.ts";
 import { resultUrl } from "../../shared/result-url.ts";
 import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
-import type { ColorId, ExhibitState } from "../../shared/types.ts";
-import { SLIDER_STOP_IDS } from "../../shared/types.ts";
-import Pairing from "../common/Pairing.svelte";
-import type { QrModel } from "../lib/qr.ts";
-import { createQrModel, generateQrWithRetry } from "../lib/qr.ts";
+import type { Answer, ExhibitState } from "../../shared/types.ts";
+import { createQrModel } from "../lib/qr.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
-import type { DeviceAuthStatus } from "../lib/session.ts";
-import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
+import { watchReducedMotion } from "../lib/reduced-motion.ts";
 import { controllerSequence } from "../sequences/controllers.ts";
+import ChoiceList from "./ChoiceList.svelte";
+import type { InputMode } from "./input-mode.ts";
+import MapPad from "./MapPad.svelte";
+import ProgressBar from "./ProgressBar.svelte";
 import QrCode from "./QrCode.svelte";
-import type { SliderMode } from "./Slider.svelte";
 import Slider from "./Slider.svelte";
 
 /** 結果の色面が広がる時間（docs/visual-language.md 4.2節）。 */
 const RESULT_GROW_MS = 1_400;
-const NOTICE_MS = 4_000;
 
-let auth = $state<DeviceAuthStatus>("checking");
 let status = $state<ConnectionStatus>("connecting");
 let exhibit = $state<ExhibitState | null>(null);
+/** 送信してからサーバーの `state` が届くまでのコマンド。その間は操作を無効にする。 */
 let pending = $state<Command["name"] | null>(null);
-let stalled = $state(false);
-let notice = $state<string | null>(null);
 let reducedMotion = $state(false);
 let now = $state(0);
-let draft = $state<number | null>(null);
+/** 確定前の回答。サーバーへは「次へ」で送る。 */
+let draft = $state<Answer | null>(null);
+/** スライダーと2Dマップを指で動かしている間は `true`。 */
 let interacting = $state(false);
-let qr = $state<{ sessionId: string; url: string; model: QrModel | null; failed: boolean } | null>(null);
+/** `intro` で入力中のニックネーム。 */
+let nicknameDraft = $state("");
+let nicknameInput = $state<HTMLInputElement | null>(null);
+/** 日本語入力の変換中なら `true`。 */
+let composing = false;
 
 let client: RealtimeClient | null = null;
-let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let questionKey = "";
 let stopWatching = () => {};
 
-const online = $derived(status === "open" && !stalled);
+const online = $derived(status === "open");
 const question = $derived(
 	exhibit?.phase === "question" && exhibit.questionIndex !== null ? QUESTIONS[exhibit.questionIndex] : null,
 );
-const answeredIndex = $derived.by(() => {
-	if (!question || !exhibit) return null;
-	const stopId = exhibit.answers[question.id];
-	return stopId ? SLIDER_STOP_IDS.indexOf(stopId) : null;
-});
+/** サーバーが受理済みの回答。前の質問へ戻ったときに使う。 */
+const answered = $derived(question && exhibit ? (exhibit.answers[question.id] ?? null) : null);
+/** 「次へ」で送れる回答がそろっているか。複数選択は選択数が下限に届くまで送れない。 */
+const canSubmit = $derived(question !== null && isValidAnswer(question, draft));
 const color = $derived(RESULT_COLORS.find((candidate) => candidate.id === exhibit?.resultColorId) ?? null);
 const sequence = $derived(exhibit?.phase === "sequence" ? findSequence(SEQUENCES, exhibit.sequenceId) : null);
 const SequenceView = $derived(sequence ? controllerSequence(sequence.id) : null);
 const sequenceMs = $derived(sequence && exhibit ? sequenceDuration(sequence, exhibit) : 0);
+const nickname = $derived(normalizeNickname(nicknameDraft));
+/** 最大文字数を超えているか。`maxlength` はUTF-16の単位で数えて絵文字を2文字とするため使わない。 */
+const nicknameTooLong = $derived(Array.from(nicknameDraft.trim()).length > NICKNAME_MAX_LENGTH);
+/** 進捗バーの区画数。`intro` と各質問に一区画ずつ割り当てる。 */
+const progressTotal = 1 + QUESTIONS.length;
 
 function onState(next: ExhibitState) {
 	exhibit = next;
+	pending = null;
 	const key = `${next.sessionId}:${next.phase}:${next.questionIndex}`;
 	if (key !== questionKey) {
 		questionKey = key;
-		// 新しい質問は未回答から、戻った質問は既存回答の位置から始める（仕様書5章、6.1節）。
+		// 新しい質問は未回答から、戻った質問は既存回答から始める（仕様書5章、6.1節）。
 		const q = next.phase === "question" && next.questionIndex !== null ? QUESTIONS[next.questionIndex] : null;
-		const stopId = q ? next.answers[q.id] : undefined;
-		draft = stopId ? SLIDER_STOP_IDS.indexOf(stopId) : null;
+		draft = q ? (next.answers[q.id] ?? null) : null;
 		interacting = false;
+		// 新しいセッションの `intro` は空欄から始める。
+		if (next.phase === "intro") nicknameDraft = "";
 	}
-	if (next.phase === "result" && next.sessionId && next.resultColorId && qr?.sessionId !== next.sessionId) {
-		void prepareQr(next.sessionId, next.resultColorId);
-	}
-	if (next.phase !== "result") qr = null;
 }
 
-function showNotice(message: string) {
-	notice = message;
-	if (noticeTimer) clearTimeout(noticeTimer);
-	noticeTimer = setTimeout(() => (notice = null), NOTICE_MS);
-}
-
-async function send(command: Command) {
+function send(command: Command) {
 	if (!client || !exhibit || pending || !online) return;
-	// 「次へ」などのタップ直後に確定待ちを表示し、画面遷移は ack 受信後に行う（仕様書8.8節）。
+	// タップ直後に確定待ちを表示し、画面遷移はサーバーの state を受け取ってから行う。
 	pending = command.name;
-	const reply = await client.request({ type: "command", expectedRevision: exhibit.revision, command });
-	pending = null;
-	if (reply.type === "error") showNotice(reply.message);
+	if (!client.send(command)) pending = null;
+}
+
+/**
+ * 送信できない入力（空、または長すぎる）では入力欄へフォーカスを戻す。
+ * ボタンを無効にすると、押しても何も起きないように見えるため、ボタンは押せるままにする。
+ */
+function submitNickname(event: SubmitEvent) {
+	event.preventDefault();
+	if (composing) return;
+	if (nickname === null) {
+		nicknameInput?.focus();
+		return;
+	}
+	send({ name: "continue", nickname });
+}
+
+/**
+ * 日本語入力の変換確定に使うEnterでは送信しない。Safariは確定時の keydown で
+ * `isComposing` を `false`、`keyCode` を229にする。
+ */
+function onNicknameKeydown(event: KeyboardEvent) {
+	if (event.key === "Enter" && (composing || event.isComposing || event.keyCode === 229)) event.preventDefault();
 }
 
 function next() {
-	if (!question || draft === null) return;
-	void send({ name: "answer", questionId: question.id, stopId: SLIDER_STOP_IDS[draft] });
+	if (!question || !isValidAnswer(question, draft)) return;
+	send({ name: "answer", questionId: question.id, answer: draft });
 }
 
-/** `result` へ入ったときにQRコードを生成する。失敗時は一度だけ再試行する（仕様書10.4節）。 */
-async function prepareQr(sessionId: string, colorId: ColorId) {
-	const fallbackUrl = `${__PUBLIC_ORIGIN__}/result/${encodeURIComponent(colorId)}`;
-	qr = { sessionId, url: fallbackUrl, model: null, failed: false };
-	let url = fallbackUrl;
-	const outcome = await generateQrWithRetry(colorId, (id) => {
-		url = resultUrl(__PUBLIC_ORIGIN__, id);
-		return createQrModel(url);
-	});
-	if (qr?.sessionId !== sessionId) return;
-	if (outcome.ok) {
-		qr = { sessionId, url, model: outcome.model, failed: false };
-		return;
+/** 結果ページのURLとQRコード。生成できなければQRコードの代わりにURLだけを表示する。 */
+const qr = $derived.by(() => {
+	if (exhibit?.phase !== "result" || !exhibit.resultColorId) return null;
+	const url = `${__PUBLIC_ORIGIN__}/result/${encodeURIComponent(exhibit.resultColorId)}`;
+	try {
+		return { url, model: createQrModel(resultUrl(__PUBLIC_ORIGIN__, exhibit.resultColorId)) };
+	} catch (error) {
+		console.error("QRコードを生成できませんでした", error instanceof Error ? error.name : "Error");
+		return { url, model: null };
 	}
-	console.error("QRコードを生成できませんでした", outcome.error instanceof Error ? outcome.error.name : "Error");
-	qr = { sessionId, url, model: null, failed: true };
-	void client?.request({
-		type: "diagnostic",
-		name: "qrGenerationFailed",
-		sessionId,
-		colorId,
-		occurredAt: client.serverNow(),
-	});
-}
+});
 
-onMount(async () => {
+onMount(() => {
 	stopWatching = watchReducedMotion((reduced) => (reducedMotion = reduced));
-	const session = await fetchDeviceSession().catch(() => null);
-	if (!session) {
-		auth = "unpaired";
-		return;
-	}
-	if (session.role !== "controller") {
-		// 展示ディスプレイなどとして登録済みのPCでもコントローラーを使えるよう、`/` では自動で移動せず、登録し直せる状態にする。
-		auth = "unpaired";
-		return;
-	}
-	auth = "ok";
 	client = new RealtimeClient({
 		role: "controller",
 		onState: (state) => onState(state as ExhibitState),
 		onStatus: (next) => {
 			status = next;
-			if (next === "unauthenticated") auth = "unpaired";
-			// 再接続時は welcome のサーバー状態を正本とし、確定待ちを破棄する（仕様書8.8節）。
-			if (next !== "open") interacting = false;
+			if (next !== "open") {
+				// 再接続後はサーバーの状態を正とし、確定待ちと操作中の表示を解除する。
+				pending = null;
+				interacting = false;
+			}
 		},
-		onStalled: (value) => (stalled = value),
-		checkAuth: async () => (await fetchDeviceSession()) !== null,
 	});
 	client.start();
 });
@@ -150,14 +146,13 @@ onMount(async () => {
 onDestroy(() => {
 	client?.stop();
 	stopWatching();
-	if (noticeTimer) clearTimeout(noticeTimer);
 });
 
-const sliderMode = $derived.by((): SliderMode => {
+const inputMode = $derived.by((): InputMode => {
 	if (!online) return "disabled";
 	if (pending === "answer") return "pending";
-	if (draft === null) return "unanswered";
-	if (!interacting && draft === answeredIndex) return "answered";
+	if (draft === null || (Array.isArray(draft) && draft.length === 0)) return "unanswered";
+	if (!interacting && sameAnswer(draft, answered)) return "answered";
 	return "active";
 });
 
@@ -198,14 +193,7 @@ const discScale = $derived(
 );
 </script>
 
-{#if auth === "unpaired"}
-	<Pairing />
-{:else if status === "controllerInUse"}
-	<main class="screen center stack">
-		<p class="lead">別の端末で診断を操作しています。</p>
-		<p class="muted">スタッフにお声がけください。</p>
-	</main>
-{:else if auth === "checking" || !exhibit}
+{#if !exhibit}
 	<main class="screen center"><p class="muted">接続しています</p></main>
 {:else}
 	<main
@@ -244,39 +232,76 @@ const discScale = $derived(
 				{/if}
 			</section>
 		{:else if exhibit.phase === "intro"}
-			<section class="center stack">
-				<h1>はじめる前に</h1>
-				<div class="intro">
-					<p>所要時間はおよそ2分です。7つの質問に、直感で答えてください。</p>
-					<p>
-						正解や得点はありません。この診断は展示作品として楽しむためのもので、回答から選ばれた「今のあなたの色」をお届けします。
+			<section class="step">
+				<ProgressBar total={progressTotal} current={0} label="ニックネームの入力" />
+				<form class="intro" onsubmit={submitNickname} aria-busy={pending === "continue"}>
+					<h1><label for="nickname">ニックネームを入力して下さい</label></h1>
+					<div class="nickname-field">
+						<input
+							id="nickname"
+							type="text"
+							bind:this={nicknameInput}
+							bind:value={nicknameDraft}
+							placeholder="好きな名前を入力..."
+							aria-invalid={nicknameTooLong}
+							aria-describedby="nickname-hint"
+							autocomplete="off"
+							autocapitalize="off"
+							spellcheck="false"
+							enterkeyhint="go"
+							disabled={!online || pending !== null}
+							onkeydown={onNicknameKeydown}
+							oncompositionstart={() => (composing = true)}
+							oncompositionend={() => (composing = false)}
+						>
+						<button
+							type="submit"
+							class="nickname-submit"
+							aria-label={pending === "continue" ? "準備しています" : "進む"}
+							disabled={!online || pending !== null}
+						>
+							<ArrowRightIcon aria-hidden="true" size={24} strokeWidth={2} />
+						</button>
+					</div>
+					<p id="nickname-hint" class="nickname-hint" aria-live="polite">
+						{nicknameTooLong ? `${NICKNAME_MAX_LENGTH}文字までにしてください` : ""}
 					</p>
-					<p class="muted">名前などの個人情報は入力しません。</p>
-				</div>
-				<button
-					type="button"
-					class="primary-button"
-					disabled={!online || pending !== null}
-					onclick={() => send({ name: "continue" })}
-				>
-					{pending === "continue" ? "準備しています" : "進む"}
-				</button>
+				</form>
 			</section>
 		{:else if exhibit.phase === "question" && question && exhibit.questionIndex !== null}
-			<section class="question">
-				<header>
-					<p class="progress">{exhibit.questionIndex + 1} / {QUESTIONS.length}</p>
-				</header>
+			<section class="step question">
+				<ProgressBar
+					total={progressTotal}
+					current={exhibit.questionIndex + 1}
+					label="質問 {exhibit.questionIndex + 1} / {QUESTIONS.length}"
+				/>
 				<div class="body">
 					<h1 class="prompt">{question.prompt}</h1>
 					{#key question.id}
-						<Slider
-							{question}
-							value={draft}
-							mode={sliderMode}
-							onselect={(index) => (draft = index)}
-							oninteract={(value) => (interacting = value)}
-						/>
+						{#if question.kind === "slider"}
+							<Slider
+								{question}
+								value={typeof draft === "number" ? draft : null}
+								mode={inputMode}
+								onselect={(position) => (draft = position)}
+								oninteract={(value) => (interacting = value)}
+							/>
+						{:else if question.kind === "map"}
+							<MapPad
+								{question}
+								value={isMapPoint(draft) ? draft : null}
+								mode={inputMode}
+								onselect={(point) => (draft = point)}
+								oninteract={(value) => (interacting = value)}
+							/>
+						{:else}
+							<ChoiceList
+								{question}
+								value={draft}
+								mode={inputMode}
+								onselect={(answer) => (draft = answer)}
+							/>
+						{/if}
 					{/key}
 				</div>
 				<footer>
@@ -295,7 +320,7 @@ const discScale = $derived(
 					<button
 						type="button"
 						class="primary-button"
-						disabled={!online || pending !== null || draft === null}
+						disabled={!online || pending !== null || !canSubmit}
 						onclick={next}
 					>
 						{pending === "answer" ? "送信しています" : "次へ"}
@@ -317,11 +342,11 @@ const discScale = $derived(
 					<p class="message">{color.message}</p>
 				</div>
 				<div class="takeaway">
-					{#if qr && !qr.failed && qr.model}
+					{#if qr?.model}
 						<QrCode model={qr.model} label="結果ページのQRコード" />
 						<p class="url">{qr.url}</p>
 						<p class="hint">カメラで読み取ると、結果をあなたの端末で開けます</p>
-					{:else if qr?.failed}
+					{:else if qr}
 						<div class="qr-fallback">
 							<p>QRコードを表示できませんでした</p>
 							<p class="url">結果URL: {qr.url}</p>
@@ -341,21 +366,7 @@ const discScale = $derived(
 			</section>
 		{/if}
 
-		{#if notice}
-			<p class="notice" role="status">{notice}</p>
-		{/if}
-
-		{#if status === "closed"}
-			<div class="overlay">
-				<p>この画面は使用できません。</p>
-				<p class="muted">スタッフにお声がけください。</p>
-			</div>
-		{:else if stalled}
-			<div class="overlay">
-				<p>操作を受け付けられませんでした。</p>
-				<p class="muted">スタッフにお声がけください。</p>
-			</div>
-		{:else if status !== "open"}
+		{#if status !== "open"}
 			<div class="overlay">
 				<p>再接続しています</p>
 				<p class="muted">しばらくお待ちください</p>
@@ -406,27 +417,86 @@ p {
 .muted {
 	color: var(--muted);
 }
+/* 進捗バーを上端に置き、残りの高さに本文を置く。 */
+.step {
+	display: grid;
+	grid-template-rows: auto 1fr;
+	/* 列幅を内容の最小幅で広げず、画面の幅に収める。 */
+	grid-template-columns: minmax(0, 1fr);
+	gap: 32px;
+	width: 100%;
+}
 .intro {
 	display: grid;
-	gap: 12px;
-	width: 100%;
-	font-size: 18px;
+	grid-template-columns: minmax(0, 1fr);
+	align-content: center;
+	justify-items: center;
+	gap: 40px;
+	/*
+	 * 上の進捗バーと間隔（36px）と、下の案内文の行（約43px）がほぼ釣り合うため、
+	 * 下の余白を足さなくても見出しと入力欄が画面全体のほぼ中央に来る。
+	 */
+}
+.intro h1 {
+	text-align: center;
+	letter-spacing: 0.12em;
+}
+.nickname-field {
+	display: flex;
+	width: min(100%, 500px);
+	height: 64px;
+}
+.nickname-field input {
+	flex: 1;
+	min-width: 0;
+	padding: 0 24px;
+	border: 1.5px solid var(--text);
+	border-right: 0;
+	border-radius: 0;
+	background: var(--idle);
+	color: var(--text);
+	font-size: 22px;
+	letter-spacing: 0.04em;
+	-webkit-appearance: none;
+	appearance: none;
+}
+.nickname-field input::placeholder {
+	color: var(--placeholder);
+}
+.nickname-field input:focus {
+	outline: none;
+}
+.nickname-field:focus-within {
+	outline: 2px solid var(--text);
+	outline-offset: 3px;
+}
+.nickname-submit {
+	display: grid;
+	place-items: center;
+	width: 64px;
+	padding: 0;
+	border: 0;
+	background: var(--text);
+	color: var(--idle);
+	cursor: pointer;
+	touch-action: manipulation;
+}
+.nickname-submit:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+/* 案内文の有無で入力欄の位置が動かないよう、一行分の高さを常に確保する。 */
+.nickname-hint {
+	min-height: 1.7em;
+	margin-top: -24px;
+	font-size: 16px;
+	color: var(--muted);
 }
 .question {
-	display: grid;
 	grid-template-rows: auto 1fr auto;
-	gap: 32px;
 	justify-items: center;
 	align-items: center;
-	width: 100%;
 	margin: 0 auto;
-}
-.question header {
-	justify-self: stretch;
-}
-.progress {
-	font-size: 20px;
-	letter-spacing: 0.1em;
 }
 .question .body {
 	display: grid;
@@ -501,16 +571,6 @@ p {
 		margin: 0 auto;
 	}
 }
-.notice {
-	position: fixed;
-	left: 50%;
-	bottom: max(24px, env(safe-area-inset-bottom));
-	transform: translateX(-50%);
-	padding: 12px 20px;
-	border-radius: 12px;
-	background: #1f1e1d;
-	color: var(--text);
-}
 .overlay {
 	position: fixed;
 	inset: 0;
@@ -518,7 +578,7 @@ p {
 	place-content: center;
 	gap: 8px;
 	text-align: center;
-	background: rgba(11, 11, 11, 0.94);
+	background: rgba(255, 255, 255, 0.97);
 	color: var(--text);
 	font-size: 20px;
 }

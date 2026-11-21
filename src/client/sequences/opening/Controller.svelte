@@ -6,10 +6,7 @@ import type { SequenceProps } from "../props.ts";
 let { t, reducedMotion }: SequenceProps = $props();
 
 const SECOND_FROM = 1_200;
-const LINES = [
-	{ from: 0, to: SECOND_FROM, title: "ようこそ", body: null },
-	{ from: SECOND_FROM, to: null, title: "あなたの色を", body: "さがしにいきます" },
-];
+const LINES = [{ from: 0, to: SECOND_FROM, title: "ディスプレイをご覧ください", body: null }];
 const FADE_IN_MS = 400;
 const FADE_OUT_MS = 300;
 

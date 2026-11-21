@@ -9,7 +9,7 @@ let {
 	onstatus?: (status: "loaded" | "failed") => void;
 } = $props();
 
-// AVIFの取得に失敗した場合は <source> を外し、同じ写真のJPEGを表示する（仕様書9.4節、15章）。
+// AVIFの取得に失敗した場合は <source> を外し、同じ写真のJPEGを表示する（仕様書12.1節）。
 let avifFailed = $state(false);
 
 function loaded(event: Event) {

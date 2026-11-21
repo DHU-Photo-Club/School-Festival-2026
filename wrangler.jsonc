@@ -3,6 +3,10 @@
 	"name": "dpc-school-festival",
 	"main": "src/worker/index.ts",
 	"compatibility_date": "2026-10-01",
+	// 認証は Cloudflare Access で行う（docs/README.md 14章）。Access の外から入れる入口を増やさないため、
+	// バージョンごとのプレビューURLは使わない。
+	"workers_dev": true,
+	"preview_urls": false,
 	"assets": {
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application",

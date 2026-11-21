@@ -5,12 +5,20 @@ import { QUESTIONS } from "../../src/data/questions.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import { COLOR_IDS } from "../../src/shared/types.ts";
 import type { Device } from "./fixtures.ts";
-import { controllableNetwork, ExhibitHarness, expectedResultView, tapStop } from "./fixtures.ts";
+import {
+	answerQuestion,
+	controllableNetwork,
+	ExhibitHarness,
+	enterNickname,
+	expectedResultView,
+	expectQuestion,
+	waitForResultPhotos,
+} from "./fixtures.ts";
 
 async function startQuestions(ipad: Device) {
 	await ipad.page.getByRole("button", { name: "はじめる" }).click();
-	await ipad.page.getByRole("button", { name: "進む" }).click();
-	await expect(ipad.page.getByText(`1 / ${QUESTIONS.length}`)).toBeVisible();
+	await enterNickname(ipad.page);
+	await expectQuestion(ipad.page, 0);
 }
 
 async function answerAll(ipad: Device) {
@@ -20,8 +28,8 @@ async function answerAll(ipad: Device) {
 
 async function answerQuestions(ipad: Device) {
 	for (let index = 0; index < QUESTIONS.length; index += 1) {
-		await expect(ipad.page.getByText(`${index + 1} / ${QUESTIONS.length}`)).toBeVisible();
-		await tapStop(ipad.page, (index * 3) % 5);
+		await expectQuestion(ipad.page, index);
+		await answerQuestion(ipad.page, QUESTIONS[index], index * 3);
 		await ipad.page.getByRole("button", { name: "次へ" }).click();
 	}
 	await expect(ipad.page.getByText("あなたの色は")).toBeVisible({ timeout: 6_000 });
@@ -29,17 +37,17 @@ async function answerQuestions(ipad: Device) {
 
 test("強制リセットで全端末が待機へ戻り、回答と結果とQRコードが残らない", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
-	const [display] = await harness.pairDisplays(1);
-	const ipad = await harness.pair("controller");
+	const [display] = await harness.openDisplays(1);
+	const ipad = await harness.openDevice("controller");
 
 	await startQuestions(ipad);
-	await tapStop(ipad.page, 4);
+	await answerQuestion(ipad.page, QUESTIONS[0], 4);
 	await ipad.page.getByRole("button", { name: "次へ" }).click();
-	await expect(ipad.page.getByText(`2 / ${QUESTIONS.length}`)).toBeVisible();
+	await expectQuestion(ipad.page, 1);
 	// iPad操作と強制リセットをほぼ同時に送っても最終状態は idle。
 	// 強制リセットが先に反映されると「次へ」が画面から消えるため、iPad側のクリックは失敗を許容する。
 	// 上限の2秒は、押せるボタンのクリックが送信を終えるのに十分な長さで、待機を打ち切るのに十分短い値。
-	await tapStop(ipad.page, 1);
+	await answerQuestion(ipad.page, QUESTIONS[1], 1);
 	const next = ipad.page.getByRole("button", { name: "次へ" });
 	// クリック前に押せる状態を確かめ、iPad側の送信が最初から成立しないまま通過することを防ぐ。
 	await expect(next).toBeEnabled();
@@ -67,32 +75,16 @@ test("強制リセットで全端末が待機へ戻り、回答と結果とQRコ
 	await harness.close();
 });
 
-test("二台目のiPadは操作中の案内を表示し、管理画面で解放すると操作端末にできる", async ({ browser }) => {
-	const harness = await ExhibitHarness.open(browser);
-	const first = await harness.pair("controller");
-	await expect(first.page.getByRole("button", { name: "はじめる" })).toBeVisible();
-	const second = await harness.pair("controller");
-	await expect(second.page.getByText("別の端末で診断を操作しています。")).toBeVisible();
-	await harness.admin.page.getByRole("button", { name: "操作端末を解放" }).click();
-	await expect(first.page.getByRole("heading", { name: "端末の登録" })).toBeVisible();
-	await expect(second.page.getByText("別の端末で診断を操作しています。")).toHaveCount(0, { timeout: 15_000 });
-	await second.page.getByRole("button", { name: "はじめる" }).click();
-	await expect(second.page.getByRole("button", { name: "進む" })).toBeVisible();
-	await first.context.close();
-	await second.context.close();
-	await harness.close();
-});
-
-test("通信断中のiPadは操作できず、復旧後は welcome のサーバー状態を表示する", async ({ browser }) => {
+test("通信断中のiPadは操作できず、復旧後はサーバーの状態を表示する", async ({ browser }) => {
 	test.setTimeout(120_000);
 	const harness = await ExhibitHarness.open(browser);
-	const [display] = await harness.pairDisplays(1);
+	const [display] = await harness.openDisplays(1);
 	let network: Awaited<ReturnType<typeof controllableNetwork>> | undefined;
-	const ipad = await harness.pair("controller", {}, async (context) => {
+	const ipad = await harness.openDevice("controller", {}, async (context) => {
 		network = await controllableNetwork(context);
 	});
 	await startQuestions(ipad);
-	await tapStop(ipad.page, 2);
+	await answerQuestion(ipad.page, QUESTIONS[0], 2);
 
 	await network?.down();
 	await expect(ipad.page.getByText("再接続しています")).toBeVisible({ timeout: 25_000 });
@@ -115,7 +107,7 @@ test("切断した展示ディスプレイは管理画面で切断表示にな�
 	test.setTimeout(120_000);
 	const harness = await ExhibitHarness.open(browser);
 	let network: Awaited<ReturnType<typeof controllableNetwork>> | undefined;
-	const display = await harness.pair("display", {}, async (context) => {
+	const display = await harness.openDevice("display", {}, async (context) => {
 		network = await controllableNetwork(context);
 	});
 	const row = harness.admin.page.getByTestId("device-display-1");
@@ -133,8 +125,8 @@ test("切断した展示ディスプレイは管理画面で切断表示にな�
 test("result 開始から60秒後に操作がなくても待機表示へ戻る", async ({ browser }) => {
 	test.setTimeout(150_000);
 	const harness = await ExhibitHarness.open(browser);
-	const [display] = await harness.pairDisplays(1);
-	const ipad = await harness.pair("controller");
+	const [display] = await harness.openDisplays(1);
+	const ipad = await harness.openDevice("controller");
 	await answerAll(ipad);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "result");
 	await ipad.page.waitForTimeout(55_000);
@@ -148,19 +140,15 @@ test("result 開始から60秒後に操作がなくても待機表示へ戻る",
 
 test("結果写真を読み込めない画面は開始時刻を遅らせずタイポグラフィを表示する", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
-	const code = await harness.issueCode("display");
-	const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
-	// display-1 に割り当てられる各色の写真の取得を失敗させる。
+	// 展示ディスプレイ1に割り当てられる各色の写真の取得を失敗させる。
 	const assigned = COLOR_IDS.flatMap((colorId) => resultPhotoFor(PHOTOS, colorId, 0)?.id ?? []);
-	await context.route(new RegExp(`/photos/(${assigned.join("|")})\\.(avif|jpg)$`), (route) => route.abort());
-	await context.request.post("/api/pair", { data: { code } });
-	const page = await context.newPage();
-	await page.goto("/display/display-1");
-	const other = await harness.pair("display");
-	await expect(harness.admin.page.getByTestId("device-display-1")).toContainText("失敗", { timeout: 15_000 });
-	await expect(harness.admin.page.getByTestId("device-display-2")).toContainText("準備完了");
+	const { context, page } = await harness.openDevice("display", {}, (context) =>
+		context.route(new RegExp(`/photos/(${assigned.join("|")}).(avif|jpg)$`), (route) => route.abort()),
+	);
+	const other = await harness.openDevice("display");
+	await waitForResultPhotos(other.page);
 
-	const ipad = await harness.pair("controller");
+	const ipad = await harness.openDevice("controller");
 	await answerAll(ipad);
 	const name = await ipad.page.locator(".color-name").innerText();
 	const color = RESULT_COLORS.find((candidate) => candidate.name === name);
@@ -171,59 +159,9 @@ test("結果写真を読み込めない画面は開始時刻を遅らせずタ�
 		"data-result-view",
 		expectedResultView(color?.id ?? "red", 1),
 	);
-	// 写真のない画面も同じ結果開始時刻で計測される。
-	await expect(harness.admin.page.getByTestId("sync-spread")).not.toHaveText("—");
-	const spread = Number((await harness.admin.page.getByTestId("sync-spread").innerText()).replace("ms", ""));
-	expect(spread).toBeLessThanOrEqual(200);
 
 	await context.close();
 	await other.context.close();
-	await ipad.context.close();
-	await harness.close();
-});
-
-test("QRコード生成失敗の通知は結果と60秒タイマーを止めず、管理画面に qrGenerationFailed を表示する", async ({
-	browser,
-}) => {
-	const harness = await ExhibitHarness.open(browser);
-	const ipad = await harness.pair("controller");
-	await answerAll(ipad);
-	// iPadの端末セッションで、10.4節の diagnostic をそのまま送る。
-	const sent = await ipad.page.evaluate(async () => {
-		const state = await new Promise<{ sessionId: string; resultColorId: string }>((resolve) => {
-			const socket = new WebSocket(`ws://${location.host}/api/realtime?role=controller`);
-			socket.addEventListener("open", () =>
-				socket.send(
-					JSON.stringify({
-						version: 1,
-						type: "hello",
-						clientId: localStorage.getItem("dpc-client-id:controller"),
-					}),
-				),
-			);
-			socket.addEventListener("message", (event) => {
-				const message = JSON.parse(event.data);
-				if (message.type === "welcome") {
-					socket.send(
-						JSON.stringify({
-							version: 1,
-							type: "diagnostic",
-							requestId: crypto.randomUUID(),
-							name: "qrGenerationFailed",
-							sessionId: message.state.sessionId,
-							colorId: message.state.resultColorId,
-							occurredAt: Date.now(),
-						}),
-					);
-				}
-				if (message.type === "ack") resolve(message);
-			});
-		});
-		return state;
-	});
-	expect(sent).toMatchObject({ type: "ack" });
-	await expect(harness.admin.page.getByTestId("alert")).toContainText("qrGenerationFailed");
-	await expect(harness.admin.page.getByTestId("phase")).toContainText("result");
 	await ipad.context.close();
 	await harness.close();
 });

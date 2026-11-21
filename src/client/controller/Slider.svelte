@@ -1,7 +1,7 @@
 <script lang="ts">
-import type { Question } from "../../shared/types.ts";
-
-export type SliderMode = "unanswered" | "active" | "pending" | "answered" | "disabled";
+import { nearestStop, roundPosition } from "../../shared/answer.ts";
+import type { SliderQuestion } from "../../shared/types.ts";
+import type { InputMode } from "./input-mode.ts";
 
 let {
 	question,
@@ -10,26 +10,34 @@ let {
 	onselect,
 	oninteract,
 }: {
-	question: Question;
-	/** 選択中の位置（0〜4）。未回答は `null`。 */
+	question: SliderQuestion;
+	/** 選択中の位置（左端0から右端1）。未回答は `null`。 */
 	value: number | null;
-	mode: SliderMode;
-	onselect: (index: number) => void;
+	mode: InputMode;
+	onselect: (position: number) => void;
 	oninteract: (interacting: boolean) => void;
 } = $props();
 
 /** つまみのタップ領域の半分（44 CSS px の半分、仕様書7.1節）。 */
 const HALF = 22;
-const STOPS = [0, 1, 2, 3, 4];
 
 let area = $state<HTMLDivElement>();
-let dragging = $state(false);
+/** ドラッグ中の指の `pointerId`。ドラッグしていなければ `null`。 */
+let pointer = $state<number | null>(null);
 
-const shown = $derived(value ?? 2);
-const position = (index: number) => `calc(${HALF}px + (100% - ${HALF * 2}px) * ${index / 4})`;
+const locked = $derived(mode === "disabled" || mode === "pending");
+/** 表示する状態。操作できない状態になったら、ドラッグ中でもその状態を見せる。 */
+const shownMode = $derived(pointer !== null && !locked ? "dragging" : mode);
+
+const shown = $derived(value ?? 0.5);
+/** 補助文と強調する目盛りに使う、最も近い回答位置。 */
+const stop = $derived(nearestStop(shown));
+const position = (ratio: number) => `calc(${HALF}px + (100% - ${HALF * 2}px) * ${ratio})`;
+/** 回答位置の目盛りの位置（0〜1）。 */
+const ticks = $derived(question.stops.map((_, index) => index / (question.stops.length - 1)));
 
 const caption = $derived.by(() => {
-	switch (mode) {
+	switch (shownMode) {
 		case "disabled":
 			return "操作できません";
 		case "pending":
@@ -37,43 +45,45 @@ const caption = $derived.by(() => {
 		case "unanswered":
 			return "動かして選んでください";
 		case "answered":
-			return `回答済み: ${question.stops[shown].caption}`;
+			return `回答済み: ${question.stops[stop].caption}`;
 		default:
-			return question.stops[shown].caption;
+			return question.stops[stop].caption;
 	}
 });
 
-function nearest(clientX: number): number {
+/** 指の位置をトラック上の位置（0〜1）にする。トラックの外は端にする。 */
+function positionAt(clientX: number): number {
 	if (!area) return shown;
-	const rect = area.getBoundingClientRect();
-	const ratio = (clientX - rect.left - HALF) / Math.max(1, rect.width - HALF * 2);
-	return Math.min(4, Math.max(0, Math.round(ratio * 4)));
+	// `.area` の内側（枠線を除く）を基準にする。つまみや目盛りの `left` も同じ基準で決まる。
+	const left = area.getBoundingClientRect().left + area.clientLeft;
+	return roundPosition((clientX - left - HALF) / Math.max(1, area.clientWidth - HALF * 2));
 }
 
-// トラックの任意位置のタップとつまみのドラッグの両方で最寄りの位置を選ぶ（仕様書7.1節）。
+// トラックの任意位置のタップとつまみのドラッグの両方で、指の位置をそのまま選ぶ（仕様書7.1節）。
+// 最初に触れた指だけを追い、ほかの指は無視する。
 function down(event: PointerEvent) {
-	if (mode === "disabled" || mode === "pending") return;
+	if (locked || pointer !== null) return;
 	area?.setPointerCapture(event.pointerId);
-	dragging = true;
+	pointer = event.pointerId;
 	oninteract(true);
-	onselect(nearest(event.clientX));
+	onselect(positionAt(event.clientX));
 }
 
 function move(event: PointerEvent) {
-	if (!dragging) return;
-	const index = nearest(event.clientX);
-	if (index !== value) onselect(index);
+	if (locked || event.pointerId !== pointer) return;
+	const next = positionAt(event.clientX);
+	if (next !== value) onselect(next);
 }
 
 function up(event: PointerEvent) {
-	if (!dragging) return;
-	dragging = false;
-	area?.releasePointerCapture(event.pointerId);
+	if (event.pointerId !== pointer) return;
+	pointer = null;
+	if (area?.hasPointerCapture(event.pointerId)) area.releasePointerCapture(event.pointerId);
 	oninteract(false);
 }
 </script>
 
-<div class="slider" data-mode={dragging ? "dragging" : mode}>
+<div class="slider" data-answer-input="slider" data-mode={shownMode}>
 	<div class="ends">
 		<span>{question.leftLabel}</span>
 		<span>{question.rightLabel}</span>
@@ -85,21 +95,34 @@ function up(event: PointerEvent) {
 		onpointermove={move}
 		onpointerup={up}
 		onpointercancel={up}
+		onlostpointercapture={up}
 		role="presentation"
+		data-value={value ?? ""}
 	>
-		<input
-			type="range"
-			min="0"
-			max="4"
-			step="1"
-			value={shown}
-			disabled={mode === "disabled" || mode === "pending"}
-			tabindex="-1"
-			aria-label={question.prompt}
-			aria-valuetext={value === null ? "未回答" : question.stops[value].caption}
+		<!-- 読み上げとキーボード操作用。矢印キーで別の回答位置へ移ると、つまみがその回答位置へ動く。 -->
+		<div
+			class="sr-only"
+			role="radiogroup"
+			aria-label="{question.prompt}（左: {question.leftLabel}、右: {question.rightLabel}）"
 		>
-		{#each STOPS as index (index)}
-			<span class="tick" class:current={value === index} style:left={position(index)}></span>
+			{#each question.stops as item, index (item.id)}
+				<label>
+					<input
+						type="radio"
+						name="slider-{question.id}"
+						value={item.id}
+						checked={value !== null && stop === index}
+						disabled={locked}
+						onchange={() => onselect(ticks[index])}
+					>
+					{item.caption}
+				</label>
+			{/each}
+		</div>
+		<!-- トラックの線。ポインター操作は囲みの領域（.area）、キーボード操作はラジオボタンで受け付ける。 -->
+		<span class="track"></span>
+		{#each ticks as tick, index (index)}
+			<span class="tick" class:current={value !== null && stop === index} style:left={position(tick)}></span>
 		{/each}
 		<span class="thumb" style:left={position(shown)}></span>
 	</div>
@@ -120,38 +143,32 @@ function up(event: PointerEvent) {
 	touch-action: none;
 	cursor: pointer;
 }
-input {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	margin: 0;
-	background: transparent;
-	pointer-events: none;
-	-webkit-appearance: none;
-	appearance: none;
+/* 見えないラジオボタンにフォーカスがあるときは、トラックに枠を出す。 */
+.area:has(input:focus-visible) {
+	outline: 2px solid var(--text);
+	outline-offset: 3px;
 }
-input::-webkit-slider-runnable-track {
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+.track {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
 	height: 4px;
 	border-radius: 2px;
 	background: #5a5754;
-}
-input::-webkit-slider-thumb {
-	-webkit-appearance: none;
-	appearance: none;
-	width: 44px;
-	height: 44px;
-	margin-top: -20px;
-	opacity: 0;
-}
-input::-moz-range-track {
-	height: 4px;
-	background: #5a5754;
-}
-input::-moz-range-thumb {
-	width: 44px;
-	height: 44px;
-	opacity: 0;
+	transform: translateY(-50%);
+	pointer-events: none;
 }
 .tick {
 	position: absolute;

@@ -9,9 +9,11 @@ import {
 	initialState,
 	JUDGING_MS,
 	RESULT_MS,
+	reconcileState,
 } from "../../src/shared/machine.ts";
 import { sequenceDuration, sequenceTime } from "../../src/shared/sequence.ts";
 import type { ExhibitState, Sequence } from "../../src/shared/types.ts";
+import { sampleAnswer } from "./helpers.ts";
 
 let ids = 0;
 const newSessionId = () => {
@@ -38,9 +40,9 @@ function apply(
 }
 
 function toLastQuestion(now: number): ExhibitState {
-	let state = apply(apply(initialState(now), { name: "start" }, now), { name: "continue" }, now);
+	let state = apply(apply(initialState(now), { name: "start" }, now), { name: "continue", nickname: "テスト" }, now);
 	for (const q of QUESTIONS.slice(0, -1))
-		state = apply(state, { name: "answer", questionId: q.id, stopId: "left" }, now);
+		state = apply(state, { name: "answer", questionId: q.id, answer: sampleAnswer(q, 1) }, now);
 	return state;
 }
 
@@ -48,13 +50,14 @@ function toLastQuestion(now: number): ExhibitState {
 const advance = (state: ExhibitState, now: number) => advanceDeadlines(state, now, []);
 
 const finalAnswer = (state: ExhibitState, now: number) =>
-	apply(state, { name: "answer", questionId: QUESTIONS[6].id, stopId: "far-left" }, now);
+	apply(state, { name: "answer", questionId: QUESTIONS[6].id, answer: 0 }, now);
 
 describe("状態遷移", () => {
 	it("初期状態は仕様書8.1節のとおり", () => {
 		expect(initialState(10)).toEqual({
 			sessionId: null,
 			phase: "idle",
+			nickname: null,
 			sequenceId: null,
 			questionIndex: null,
 			answers: {},
@@ -71,13 +74,36 @@ describe("状態遷移", () => {
 		const intro = apply(initialState(0), { name: "start" }, 5);
 		expect(intro).toMatchObject({ phase: "intro", revision: 1, phaseEndsAt: 5 + INACTIVITY_MS });
 		expect(intro.sessionId).not.toBeNull();
-		const question = apply(intro, { name: "continue" }, 6);
+		const question = apply(intro, { name: "continue", nickname: "テスト" }, 6);
 		expect(question).toMatchObject({
 			phase: "question",
 			questionIndex: 0,
 			revision: 2,
 			sessionId: intro.sessionId,
 		});
+	});
+
+	it("continue で正規化したニックネームを保存し、result まで保持して idle で消す", () => {
+		const intro = apply(initialState(0), { name: "start" });
+		expect(intro.nickname).toBeNull();
+		const question = apply(intro, { name: "continue", nickname: "  ゆ​き  	 ちゃん " });
+		expect(question.nickname).toBe("ゆき ちゃん");
+		const result = advance(finalAnswer(toLastQuestion(0), 0), JUDGING_MS);
+		expect(result).toMatchObject({ phase: "result", nickname: "テスト" });
+		expect(apply(result, { name: "returnToIdle" }).nickname).toBeNull();
+		expect(apply(question, { name: "forceReset" }).nickname).toBeNull();
+		expect(advance(question, INACTIVITY_MS).nickname).toBeNull();
+	});
+
+	it("空や長すぎるニックネームの continue を拒否する", () => {
+		const intro = apply(initialState(0), { name: "start" });
+		for (const nickname of ["", "   ", "​", "あ".repeat(13)]) {
+			expect(applyCommand(intro, { name: "continue", nickname }, context(0))).toEqual({
+				ok: false,
+				code: "INVALID_NICKNAME",
+			});
+		}
+		expect(apply(intro, { name: "continue", nickname: "あ".repeat(12) }).nickname).toBe("あ".repeat(12));
 	});
 
 	it("セッション開始ごとに異なる sessionId を発行し、idle へ戻ると null になる", () => {
@@ -89,37 +115,94 @@ describe("状態遷移", () => {
 	});
 
 	it("回答で次の質問へ進み、戻ると既存回答を保持し、再確定で上書きする", () => {
-		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue" });
-		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, stopId: "far-right" }, 100);
+		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
+		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, answer: 1 }, 100);
 		expect(state.questionIndex).toBe(1);
 		expect(state.phaseEndsAt).toBe(100 + INACTIVITY_MS);
 		state = apply(state, { name: "back" }, 200);
 		expect(state.questionIndex).toBe(0);
-		expect(state.answers[QUESTIONS[0].id]).toBe("far-right");
-		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, stopId: "left" }, 300);
-		expect(state.answers[QUESTIONS[0].id]).toBe("left");
+		expect(state.answers[QUESTIONS[0].id]).toBe(1);
+		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, answer: 0.25 }, 300);
+		expect(state.answers[QUESTIONS[0].id]).toBe(0.25);
 	});
 
 	it("戻って変更した回答だけが判定へ反映される", () => {
-		const answerAll = (first: "far-left" | "far-right", changeTo?: "far-left" | "far-right") => {
-			let state = apply(apply(initialState(0), { name: "start" }), { name: "continue" });
-			state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, stopId: first });
+		const answerAll = (first: 0 | 1, changeTo?: 0 | 1) => {
+			let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
+			state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, answer: first });
 			if (changeTo) {
 				state = apply(state, { name: "back" });
-				state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, stopId: changeTo });
+				state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, answer: changeTo });
 			}
 			for (const q of QUESTIONS.slice(1))
-				state = apply(state, { name: "answer", questionId: q.id, stopId: "center" });
+				state = apply(state, { name: "answer", questionId: q.id, answer: sampleAnswer(q, 2) });
 			return state.resultColorId;
 		};
-		expect(answerAll("far-left", "far-right")).toBe(answerAll("far-right"));
-		expect(answerAll("far-right", "far-left")).toBe(answerAll("far-left"));
+		expect(answerAll(0, 1)).toBe(answerAll(1));
+		expect(answerAll(1, 0)).toBe(answerAll(0));
+	});
+
+	it("質問の入力方式に合わない回答を拒否する", () => {
+		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
+		const rejected = (answer: unknown) =>
+			applyCommand(
+				state,
+				{ name: "answer", questionId: QUESTIONS[state.questionIndex ?? 0].id, answer: answer as string },
+				context(0),
+			);
+		const invalid = { ok: false, code: "INVALID_ANSWER" };
+		// 2Dマップの位置は各座標が0〜1、スライダーの位置は0〜1。
+		// スライダー
+		expect(QUESTIONS[0].kind).toBe("slider");
+		for (const answer of ["left", [0.5], -0.1, 1.5, { x: 0.5, y: 0.5 }]) expect(rejected(answer)).toEqual(invalid);
+		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, answer: 0.25 });
+		// 単選択
+		expect(QUESTIONS[1].kind).toBe("single");
+		for (const answer of ["left", ["morning"]]) expect(rejected(answer)).toEqual(invalid);
+		state = apply(state, { name: "answer", questionId: QUESTIONS[1].id, answer: "morning" });
+		// 2Dマップ
+		expect(QUESTIONS[2].kind).toBe("map");
+		for (const answer of ["center", 0.5, { x: 1.2, y: 0.5 }, { x: 0.5 }, [0.5, 0.5]])
+			expect(rejected(answer)).toEqual(invalid);
+		state = apply(state, { name: "answer", questionId: QUESTIONS[2].id, answer: { x: 0.9, y: 0.8 } });
+		state = apply(state, { name: "answer", questionId: QUESTIONS[3].id, answer: 0.25 });
+		// 複数選択: 個数の範囲外、重複、定義順でない並び、単一のID、未定義のIDを拒否する。
+		expect(QUESTIONS[4].kind).toBe("multiple");
+		for (const answer of [[], ["birds", "waves", "rain"], ["birds", "birds"], ["rain", "birds"], "birds", ["nope"]])
+			expect(rejected(answer)).toEqual(invalid);
+		state = apply(state, { name: "answer", questionId: QUESTIONS[4].id, answer: ["birds", "rain"] });
+		expect(state.answers).toMatchObject({
+			[QUESTIONS[1].id]: "morning",
+			[QUESTIONS[2].id]: { x: 0.9, y: 0.8 },
+			[QUESTIONS[4].id]: ["birds", "rain"],
+		});
+	});
+
+	it("質問定義の変更で合わなくなった保存済みの回答を除き、最終問の後に未回答の質問へ戻す", () => {
+		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
+		for (const q of QUESTIONS.slice(0, -1))
+			state = apply(state, { name: "answer", questionId: q.id, answer: sampleAnswer(q, 1) });
+		// 変更前の定義ではスライダーだった質問に、回答位置IDが保存されている。
+		const stale = { ...state, answers: { ...state.answers, [QUESTIONS[1].id]: "center" } };
+		const reconciled = reconcileState(stale, QUESTIONS);
+		expect(reconciled.answers).not.toHaveProperty(QUESTIONS[1].id);
+		expect(reconcileState(state, QUESTIONS)).toBe(state);
+		const back = apply(reconciled, { name: "answer", questionId: QUESTIONS[6].id, answer: 0.25 });
+		expect(back).toMatchObject({ phase: "question", questionIndex: 1 });
+		const judging = apply(back, {
+			name: "answer",
+			questionId: QUESTIONS[1].id,
+			answer: sampleAnswer(QUESTIONS[1]),
+		});
+		expect(judging.questionIndex).toBe(2);
+		// 範囲外の questionIndex は最終問にする。
+		expect(reconcileState({ ...state, questionIndex: 99 }, QUESTIONS).questionIndex).toBe(QUESTIONS.length - 1);
 	});
 
 	it("表示中ではない質問への回答と、最初の質問での「戻る」を拒否する", () => {
-		const state = apply(apply(initialState(0), { name: "start" }), { name: "continue" });
+		const state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
 		expect(
-			applyCommand(state, { name: "answer", questionId: QUESTIONS[1].id, stopId: "left" }, context(0)),
+			applyCommand(state, { name: "answer", questionId: QUESTIONS[1].id, answer: "left" }, context(0)),
 		).toEqual({
 			ok: false,
 			code: "INVALID_PHASE",
@@ -171,8 +254,8 @@ describe("状態遷移", () => {
 	});
 
 	it("intro と question は最終操作から5分で idle へ戻り、回答を消去する", () => {
-		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue" }, 10);
-		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, stopId: "left" }, 1_000);
+		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" }, 10);
+		state = apply(state, { name: "answer", questionId: QUESTIONS[0].id, answer: 0.25 }, 1_000);
 		expect(advance(state, 1_000 + INACTIVITY_MS - 1).phase).toBe("question");
 		expect(advance(state, 1_000 + INACTIVITY_MS)).toMatchObject({
 			phase: "idle",
@@ -191,7 +274,7 @@ describe("状態遷移", () => {
 
 	it("進行中に受付停止しても現在の診断は続く", () => {
 		const stopped = apply(apply(initialState(0), { name: "start" }), { name: "setAccepting", accepting: false });
-		expect(apply(stopped, { name: "continue" }).phase).toBe("question");
+		expect(apply(stopped, { name: "continue", nickname: "テスト" }).phase).toBe("question");
 	});
 
 	it("previewColor は idle だけで受理し、clearPreview、start、forceReset で消える", () => {
@@ -242,7 +325,7 @@ describe("シーケンス", () => {
 
 	it("continue で question の前のシーケンスへ入り、終えると最初の質問を表示する", () => {
 		const intro = advanceDeadlines(apply(initialState(0), { name: "start" }, 0, sequences), 1_500, sequences);
-		const state = apply(intro, { name: "continue" }, 2_000, sequences);
+		const state = apply(intro, { name: "continue", nickname: "テスト" }, 2_000, sequences);
 		expect(state).toMatchObject({ phase: "sequence", sequenceId: "warmup", phaseEndsAt: 4_000 });
 		expect(advanceDeadlines(state, 4_000, sequences)).toMatchObject({
 			phase: "question",
@@ -254,7 +337,11 @@ describe("シーケンス", () => {
 
 	it("再生中の iPad 操作を拒否し、forceReset では idle へ戻す", () => {
 		const state = apply(initialState(0), { name: "start" }, 0, sequences);
-		for (const command of [{ name: "start" }, { name: "continue" }, { name: "back" }] as const) {
+		for (const command of [
+			{ name: "start" },
+			{ name: "continue", nickname: "テスト" },
+			{ name: "back" },
+		] as const) {
 			expect(applyCommand(state, command, context(0, sequences))).toEqual({ ok: false, code: "INVALID_PHASE" });
 		}
 		expect(apply(state, { name: "forceReset" }, 0, sequences)).toMatchObject({

@@ -1,17 +1,20 @@
+import { isValidAnswer } from "./answer.ts";
 import { judge } from "./diagnosis.ts";
+import { normalizeNickname } from "./nickname.ts";
 import { findSequence, sequenceBefore } from "./sequence.ts";
 import type {
+	Answer,
 	ColorId,
 	ExhibitState,
 	Question,
+	QuestionId,
 	ResultColor,
 	Role,
 	Sequence,
 	SequenceTarget,
-	SliderStopId,
 } from "./types.ts";
 
-/** `judging` の長さ（仕様書8.7節）。 */
+/** `judging` の長さ（仕様書8.2節）。 */
 export const JUDGING_MS = 2_000;
 /** `result` の長さ（仕様書5章）。 */
 export const RESULT_MS = 60_000;
@@ -20,22 +23,21 @@ export const INACTIVITY_MS = 5 * 60_000;
 
 export type Command =
 	| { name: "start" }
-	| { name: "continue" }
-	| { name: "answer"; questionId: string; stopId: SliderStopId }
+	| { name: "continue"; nickname: string }
+	| { name: "answer"; questionId: string; answer: Answer }
 	| { name: "back" }
 	| { name: "returnToIdle" }
 	| { name: "setAccepting"; accepting: boolean }
 	| { name: "forceReset" }
-	| { name: "releaseController" }
 	| { name: "previewColor"; colorId: ColorId }
 	| { name: "clearPreview" };
 
 export type CommandName = Command["name"];
 
-/** 役割ごとに許可するコマンド（仕様書8.5節）。 */
+/** 役割ごとに許可するコマンド（仕様書8.3節）。 */
 export const ROLE_COMMANDS: Readonly<Record<Role, readonly CommandName[]>> = {
 	controller: ["start", "continue", "answer", "back", "returnToIdle"],
-	admin: ["setAccepting", "forceReset", "releaseController", "previewColor", "clearPreview"],
+	admin: ["setAccepting", "forceReset", "previewColor", "clearPreview"],
 	display: [],
 	photo: [],
 };
@@ -48,13 +50,16 @@ export interface MachineContext {
 	newSessionId: () => string;
 }
 
-export type CommandOutcome = { ok: true; state: ExhibitState } | { ok: false; code: "INVALID_PHASE" | "NOT_ACCEPTING" };
+export type RejectCode = "INVALID_PHASE" | "NOT_ACCEPTING" | "INVALID_NICKNAME" | "INVALID_ANSWER";
+
+export type CommandOutcome = { ok: true; state: ExhibitState } | { ok: false; code: RejectCode };
 
 /** Durable Objectを初めて作成したときの状態（仕様書8.1節）。 */
 export function initialState(now: number): ExhibitState {
 	return {
 		sessionId: null,
 		phase: "idle",
+		nickname: null,
 		sequenceId: null,
 		questionIndex: null,
 		answers: {},
@@ -67,12 +72,34 @@ export function initialState(now: number): ExhibitState {
 	};
 }
 
+/**
+ * 保存済みの状態を現在の質問定義に合わせる。質問定義を変えてデプロイした後に、変更前に保存した
+ * 回答が残っている場合に使う。定義に合わない回答を除き、範囲外の `questionIndex` は最終問にする。
+ * 変更がなければ同じオブジェクトを返す。
+ */
+export function reconcileState(state: ExhibitState, questions: readonly Question[]): ExhibitState {
+	const answers: Record<QuestionId, Answer> = {};
+	for (const question of questions) {
+		const answer = state.answers[question.id];
+		if (isValidAnswer(question, answer)) answers[question.id] = answer;
+	}
+	const answersChanged = Object.keys(answers).length !== Object.keys(state.answers).length;
+	const indexOutOfRange = state.questionIndex !== null && state.questionIndex >= questions.length;
+	if (!answersChanged && !indexOutOfRange) return state;
+	return {
+		...state,
+		answers,
+		questionIndex: indexOutOfRange ? Math.max(0, questions.length - 1) : state.questionIndex,
+	};
+}
+
 /** セッション状態を初期化して `idle` へ戻す。`accepting` は変更しない（仕様書8.2節）。 */
 function toIdle(state: ExhibitState, at: number): ExhibitState {
 	return {
 		...state,
 		sessionId: null,
 		phase: "idle",
+		nickname: null,
 		sequenceId: null,
 		questionIndex: null,
 		answers: {},
@@ -109,12 +136,13 @@ function enterWithSequence(target: SequenceTarget, at: number, sequences: readon
 }
 
 /**
- * コマンドを現在状態へ適用する。役割と `expectedRevision` の確認は呼び出し側で行う。
- * 受理した場合は `revision` を1加算した状態を返す。`releaseController` は展示状態を変えないので扱わない。
+ * コマンドを現在状態へ適用する。役割の確認は呼び出し側で行う。
+ * 受理した場合は `revision` を1加算した状態を返す。現在状態で実行できないコマンドは拒否するため、
+ * 同じ操作が二度届いても二度目は拒否される（例: 表示中ではない質問への回答）。
  */
 export function applyCommand(state: ExhibitState, command: Command, context: MachineContext): CommandOutcome {
 	const { now } = context;
-	const reject = (code: "INVALID_PHASE" | "NOT_ACCEPTING"): CommandOutcome => ({ ok: false, code });
+	const reject = (code: RejectCode): CommandOutcome => ({ ok: false, code });
 	const accept = (next: Partial<ExhibitState>): CommandOutcome => ({
 		ok: true,
 		state: { ...state, ...next, revision: state.revision + 1 },
@@ -129,18 +157,26 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 				previewColorId: null,
 				...enterWithSequence("intro", now, context.sequences),
 			});
-		case "continue":
+		case "continue": {
 			if (state.phase !== "intro") return reject("INVALID_PHASE");
-			return accept(enterWithSequence("question", now, context.sequences));
+			const nickname = normalizeNickname(command.nickname);
+			if (nickname === null) return reject("INVALID_NICKNAME");
+			return accept({ nickname, ...enterWithSequence("question", now, context.sequences) });
+		}
 		case "answer": {
 			if (state.phase !== "question" || state.questionIndex === null) return reject("INVALID_PHASE");
 			const question = context.questions[state.questionIndex];
 			if (!question || question.id !== command.questionId) return reject("INVALID_PHASE");
-			if (!question.stops.some((stop) => stop.id === command.stopId)) return reject("INVALID_PHASE");
-			const answers = { ...state.answers, [question.id]: command.stopId };
+			if (!isValidAnswer(question, command.answer)) return reject("INVALID_ANSWER");
+			const answers = { ...state.answers, [question.id]: command.answer };
 			if (state.questionIndex < context.questions.length - 1) {
 				return accept({ answers, questionIndex: state.questionIndex + 1, phaseEndsAt: now + INACTIVITY_MS });
 			}
+			// 最終問でも未回答の質問が残っていれば（質問定義の変更で回答を除いた場合）、その質問へ戻す。
+			const missing = context.questions.findIndex(
+				(candidate) => !isValidAnswer(candidate, answers[candidate.id]),
+			);
+			if (missing !== -1) return accept({ answers, questionIndex: missing, phaseEndsAt: now + INACTIVITY_MS });
 			return accept({
 				phase: "judging",
 				resultColorId: judge(context.questions, context.colors, answers),
@@ -168,8 +204,6 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 		case "clearPreview":
 			if (state.previewColorId === null) return reject("INVALID_PHASE");
 			return accept({ previewColorId: null });
-		case "releaseController":
-			return reject("INVALID_PHASE");
 	}
 }
 

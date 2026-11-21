@@ -1,5 +1,6 @@
+import { answerItems } from "./answer.ts";
 import type { ColorId, Photo, Question, ResultColor, Sequence } from "./types.ts";
-import { COLOR_IDS, SEQUENCE_TARGETS } from "./types.ts";
+import { COLOR_IDS, MAP_CELL_IDS, QUESTION_KINDS, SEQUENCE_TARGETS, SLIDER_STOP_IDS } from "./types.ts";
 
 /** 写真IDの形式（仕様書12.1節）。 */
 export const PHOTO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -25,6 +26,63 @@ export function contrastRatio(a: string, b: string): number {
 }
 
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+/** 単選択と複数選択の選択肢の数の範囲。 */
+export const MIN_OPTIONS = 2;
+export const MAX_OPTIONS = 8;
+
+/** 空白を除いて文字が残るか。 */
+const filled = (text: string) => typeof text === "string" && text.trim().length > 0;
+
+/** 質問の形式ごとの確認。配点は呼び出し側で確かめる。 */
+function validateQuestionShape(question: Question): string[] {
+	const label = `質問 ${question.id}`;
+	const errors: string[] = [];
+	if (!filled(question.prompt)) errors.push(`${label} の質問文がありません`);
+	switch (question.kind) {
+		case "slider":
+			if (question.stops.map((stop) => stop.id).join(",") !== SLIDER_STOP_IDS.join(","))
+				errors.push(`${label} の回答位置が不正です`);
+			if (!filled(question.leftLabel) || !filled(question.rightLabel))
+				errors.push(`${label} の左右端の語がありません`);
+			for (const stop of question.stops)
+				if (!filled(stop.caption)) errors.push(`${label} ${stop.id} の補助文がありません`);
+			break;
+		case "map":
+			if (question.cells.map((cell) => cell.id).join(",") !== MAP_CELL_IDS.join(","))
+				errors.push(`${label} の区画が不正です`);
+			if (
+				[question.leftLabel, question.rightLabel, question.topLabel, question.bottomLabel].some(
+					(t) => !filled(t),
+				)
+			)
+				errors.push(`${label} の4辺の語がありません`);
+			for (const cell of question.cells)
+				if (!filled(cell.caption)) errors.push(`${label} ${cell.id} の補助文がありません`);
+			break;
+		case "single":
+		case "multiple": {
+			const { options } = question;
+			if (options.length < MIN_OPTIONS || options.length > MAX_OPTIONS)
+				errors.push(`${label} の選択肢は${MIN_OPTIONS}〜${MAX_OPTIONS}個にします`);
+			const ids = options.map((option) => option.id);
+			if (new Set(ids).size !== ids.length) errors.push(`${label} の選択肢IDが重複しています`);
+			for (const option of options) {
+				if (!PHOTO_ID_PATTERN.test(option.id))
+					errors.push(`${label} の選択肢ID ${option.id} は英小文字、数字、ハイフンで書きます`);
+				if (!filled(option.label)) errors.push(`${label} ${option.id} の表示文がありません`);
+			}
+			if (question.kind === "multiple") {
+				const { minSelections: min, maxSelections: max } = question;
+				if (!Number.isInteger(min) || !Number.isInteger(max) || min < 1 || min > max || max > options.length)
+					errors.push(`${label} の選択数は 1 <= minSelections <= maxSelections <= 選択肢の数 にします`);
+			}
+			break;
+		}
+		default:
+			errors.push(`${label} の kind は ${QUESTION_KINDS.join("、")} のいずれかにします`);
+	}
+	return errors;
+}
 
 /** 色定義、診断定義、写真定義の整合性を確認し、問題の一覧を返す。 */
 export function validateExhibitData(input: {
@@ -84,17 +142,18 @@ export function validateExhibitData(input: {
 	const questionIds = questions.map((question) => question.id);
 	if (new Set(questionIds).size !== questionIds.length) errors.push("質問IDが重複しています");
 	for (const question of questions) {
-		const stopIds = question.stops.map((stop) => stop.id).join(",");
-		if (stopIds !== "far-left,left,center,right,far-right") errors.push(`質問 ${question.id} の回答位置が不正です`);
-		for (const stop of question.stops) {
-			const scored = Object.entries(stop.scores);
+		const shape = validateQuestionShape(question);
+		errors.push(...shape);
+		if (shape.length > 0) continue;
+		for (const item of answerItems(question)) {
+			const scored = Object.entries(item.scores);
 			if (scored.length < 1 || scored.length > 2)
-				errors.push(`質問 ${question.id} ${stop.id} の加点は1〜2色にします`);
+				errors.push(`質問 ${question.id} ${item.id} の加点は1〜2色にします`);
 			for (const [colorId, points] of scored) {
 				if (!COLOR_IDS.includes(colorId as ColorId))
-					errors.push(`質問 ${question.id} ${stop.id} の ${colorId} は未定義です`);
-				if (typeof points !== "number" || points <= 0)
-					errors.push(`質問 ${question.id} ${stop.id} の点数が不正です`);
+					errors.push(`質問 ${question.id} ${item.id} の ${colorId} は未定義です`);
+				if (!Number.isSafeInteger(points) || points <= 0)
+					errors.push(`質問 ${question.id} ${item.id} の点数が不正です`);
 			}
 		}
 	}

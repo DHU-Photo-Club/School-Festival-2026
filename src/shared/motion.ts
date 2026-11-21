@@ -458,7 +458,7 @@ export function computeScene(input: SceneInput): Scene {
 		};
 	}
 
-	// `judging`。結果開始時刻を過ぎたフレームからは結果を描く（仕様書8.7節）。
+	// `judging`。結果開始時刻を過ぎたフレームからは結果を描く（仕様書7.2.4節）。
 	if (state.phase === "judging" && (state.phaseEndsAt === null || now < state.phaseEndsAt)) {
 		if (reducedMotion) {
 			return {

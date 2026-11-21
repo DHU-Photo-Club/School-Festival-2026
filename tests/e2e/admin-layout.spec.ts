@@ -1,45 +1,20 @@
 import { expect, test } from "@playwright/test";
+import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { ExhibitHarness } from "./fixtures.ts";
 
-test("管理画面はFHD内に全パネルを配置し、端末一覧をパネル内でスクロールする", async ({ browser }) => {
+const PANELS = ["展示状態", "結果色の表示確認", "端末"];
+
+test("管理画面はFHD内に全パネルを配置し、狭い画面でも横にはみ出さない", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const { page } = harness.admin;
 	try {
 		await expect(page).toHaveTitle("運営管理 | あなた色写真展");
 		await page.setViewportSize({ width: 1920, height: 1080 });
 		const panels = page.locator(".dashboard > section");
-		await expect(panels).toHaveCount(6);
+		await expect(panels).toHaveCount(PANELS.length);
 		for (const panel of await panels.all()) {
 			await expect(panel).toBeInViewport({ ratio: 1 });
 		}
-		const pairing = page.getByRole("form", { name: "展示ディスプレイのコード発行" });
-		await expect(pairing.getByRole("button", { name: "コードを発行" })).toBeInViewport();
-		await pairing.getByRole("button", { name: "コードを発行" }).click();
-		await expect(pairing.getByTestId("pairing-code")).toBeVisible();
-
-		await page.route("**/api/admin/sessions", (route) =>
-			route.fulfill({
-				json: {
-					sessions: Array.from({ length: 40 }, (_, index) => ({
-						id: `session-${index}`,
-						role: "display",
-						screenId: `display-${index + 1}`,
-						issuedAt: Date.now(),
-						expiresAt: Date.now() + 60_000,
-						lastReceivedAt: null,
-						connected: false,
-					})),
-				},
-			}),
-		);
-		await expect(page.locator(".registration-panel tbody tr")).toHaveCount(40);
-		// 登録パネルでは、コード発行の欄を残したままセッションの表だけをスクロールする。
-		expect(
-			await page
-				.locator(".registration-panel [data-slot=table-container]")
-				.evaluate((table) => table.scrollHeight > table.clientHeight),
-		).toBe(true);
-		await expect(pairing.getByRole("button", { name: "コードを発行" })).toBeInViewport();
 		expect(
 			await page.evaluate(() => ({
 				horizontal: document.documentElement.scrollWidth > window.innerWidth,
@@ -49,9 +24,32 @@ test("管理画面はFHD内に全パネルを配置し、端末一覧をパネ�
 
 		await page.setViewportSize({ width: 390, height: 844 });
 		expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-		await page.getByRole("heading", { name: "端末の登録" }).scrollIntoViewIfNeeded();
-		await expect(page.getByRole("heading", { name: "端末の登録" })).toBeInViewport();
+		await page.getByRole("heading", { name: "端末", exact: true }).scrollIntoViewIfNeeded();
+		await expect(page.getByRole("heading", { name: "端末", exact: true })).toBeInViewport();
 	} finally {
 		await harness.close();
+	}
+});
+
+test("管理画面は展示状態を受信する前から全パネルを表示する", async ({ browser }) => {
+	const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+	try {
+		const page = await context.newPage();
+		// サーバーへ接続せずに保留し、最初の state が届かない状態にする。
+		await page.routeWebSocket(/\/api\/realtime/, () => {});
+		await page.goto("/admin");
+		await expect(page.locator(".dashboard > section")).toHaveCount(PANELS.length);
+		for (const name of PANELS) {
+			await expect(page.getByRole("heading", { name, exact: true, level: 2 })).toBeVisible();
+		}
+		await expect(page.getByTestId("admin-loading")).toHaveCount(4);
+		await expect(page.getByRole("button", { name: "強制リセット" })).toBeDisabled();
+		await expect(page.getByRole("button", { name: "受付状態を取得中" })).toBeDisabled();
+		// 結果色は固定のデータのため先に表示するが、展示状態を受信するまで操作できない。
+		for (const color of RESULT_COLORS) {
+			await expect(page.getByRole("button", { name: color.name })).toBeDisabled();
+		}
+	} finally {
+		await context.close();
 	}
 });

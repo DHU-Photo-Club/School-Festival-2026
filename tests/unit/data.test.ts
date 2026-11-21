@@ -1,12 +1,12 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validatePhotoFiles, validateSequenceComponents } from "../../scripts/validate-assets.ts";
-import { createQrModel, generateQrWithRetry, QR_RETRY_DELAY_MS } from "../../src/client/lib/qr.ts";
+import { createQrModel } from "../../src/client/lib/qr.ts";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
-import { estimateClock } from "../../src/shared/clock.ts";
+import { bestOffset } from "../../src/shared/clock.ts";
 import {
 	contrastRatio,
 	validateExhibitData,
@@ -87,6 +87,52 @@ describe("展示データ", () => {
 		);
 	});
 
+	it("質問の入力方式ごとの定義の誤りを検出する", () => {
+		const [season, time, place, light, sound] = QUESTIONS;
+		if (season.kind !== "slider" || time.kind !== "single" || place.kind !== "map" || sound.kind !== "multiple")
+			throw new Error("仮データの入力方式が想定と異なります");
+		const questions = [
+			{ ...season, stops: [...season.stops].reverse() as unknown as typeof season.stops },
+			{ ...time, options: [time.options[0], { ...time.options[0] }, { ...time.options[1], id: "Bad_ID" }] },
+			{ ...place, cells: place.cells.slice(1) as unknown as typeof place.cells, topLabel: " " },
+			{
+				...place,
+				id: "place-2",
+				cells: place.cells.map((cell, i) =>
+					i === 0 ? { ...cell, caption: "" } : cell,
+				) as unknown as typeof place.cells,
+			},
+			{
+				...season,
+				id: "season-2",
+				stops: season.stops.map((stop, i) =>
+					i === 0 ? { ...stop, scores: { red: Number.NaN } } : stop,
+				) as unknown as typeof season.stops,
+			},
+			{ ...light, kind: "dial" } as never,
+			{ ...sound, minSelections: 3, maxSelections: 2 },
+			{
+				...sound,
+				id: "sound-2",
+				options: [{ ...sound.options[0], scores: { pink: 1 } as never }, sound.options[1]],
+			},
+		];
+		expect(validateExhibitData({ ...data, questions })).toEqual(
+			expect.arrayContaining([
+				`質問 ${season.id} の回答位置が不正です`,
+				`質問 ${time.id} の選択肢IDが重複しています`,
+				`質問 ${time.id} の選択肢ID Bad_ID は英小文字、数字、ハイフンで書きます`,
+				`質問 ${place.id} の区画が不正です`,
+				`質問 ${place.id} の4辺の語がありません`,
+				"質問 place-2 top-left の補助文がありません",
+				"質問 season-2 far-left の点数が不正です",
+				`質問 ${light.id} の kind は single、multiple、slider、map のいずれかにします`,
+				`質問 ${sound.id} の選択数は 1 <= minSelections <= maxSelections <= 選択肢の数 にします`,
+				`質問 sound-2 ${sound.options[0].id} の pink は未定義です`,
+			]),
+		);
+	});
+
 	it("全写真IDに同寸法のAVIFとJPEGがあり、容量上限と長辺3,840px以下を満たす", async () => {
 		expect(await validatePhotoFiles(PHOTOS, join(import.meta.dirname, "..", "..", "public", "photos"))).toEqual([]);
 	}, 60_000);
@@ -151,44 +197,17 @@ describe("QRコード", () => {
 		expect((model.size - 8 - 17) % 4).toBe(0);
 		expect(model.path).toMatch(/^M4 4h1v1h-1z/);
 	});
-
-	it("失敗したら500ms後に一度だけ再試行し、二回とも失敗したら失敗を返す", async () => {
-		const waits: number[] = [];
-		let calls = 0;
-		const failing = () => {
-			calls += 1;
-			throw new Error("boom");
-		};
-		const outcome = await generateQrWithRetry("x", failing, async (ms) => void waits.push(ms));
-		expect(outcome.ok).toBe(false);
-		expect(calls).toBe(2);
-		expect(waits).toEqual([QR_RETRY_DELAY_MS]);
-
-		let attempts = 0;
-		const flaky = (text: string) => {
-			attempts += 1;
-			if (attempts === 1) throw new Error("once");
-			return createQrModel(text);
-		};
-		expect((await generateQrWithRetry("https://example.com/result/red", flaky, async () => {})).ok).toBe(true);
-	});
 });
 
 describe("時刻補正", () => {
-	it("往復時間が長い2件を除き、残る3件の補正値の中央値を使う", () => {
+	it("往復時間が最も短い計測の補正値を使う", () => {
 		const sample = (sent: number, rtt: number, offset: number) => ({
 			clientSentAt: sent,
 			clientReceivedAt: sent + rtt,
 			serverTime: sent + rtt / 2 + offset,
 		});
-		const estimate = estimateClock([
-			sample(0, 10, 100),
-			sample(200, 12, 104),
-			sample(400, 500, 900),
-			sample(600, 8, 98),
-			sample(800, 300, -50),
-		]);
-		expect(estimate).toEqual({ offset: 100, minRoundTripTime: 8, offsetSpread: 6 });
+		expect(bestOffset([sample(0, 10, 100), sample(200, 500, 900), sample(600, 8, 98)])).toBe(98);
+		expect(bestOffset([])).toBeNull();
 	});
 });
 

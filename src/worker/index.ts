@@ -1,11 +1,14 @@
-import { ADMIN_COOKIE, DEVICE_COOKIE, readCookie } from "./auth.ts";
 import { goneResponse, notFoundResponse, resultAvailability } from "./result-page.ts";
 
 export { Exhibit } from "./exhibit.ts";
 
-/** 展示全体で一つのDurable Objectを使う（仕様書9.3節）。 */
+/** 展示全体で一つのDurable Objectを使う。 */
 const exhibit = (env: Env) => env.EXHIBIT.getByName("exhibit");
 
+/**
+ * 認証はアプリでは行わない。本番では Cloudflare Access が `/result/*` と静的ファイル以外を保護する
+ * （docs/README.md 14章）。
+ */
 export default {
 	async fetch(request, env): Promise<Response> {
 		const url = new URL(request.url);
@@ -20,16 +23,8 @@ export default {
 			return response;
 		}
 
-		if (url.pathname === "/api/realtime") {
-			const role = url.searchParams.get("role");
-			const token = readCookie(request, role === "admin" ? ADMIN_COOKIE : DEVICE_COOKIE);
-			const stub = exhibit(env);
-			const status = await stub.authorizeRealtime(token, role, url.searchParams.get("screenId"));
-			if (status !== 200) return new Response(null, { status });
-			return stub.fetch(request);
-		}
-
-		if (url.pathname.startsWith("/api/")) return exhibit(env).fetch(request);
+		if (url.pathname === "/api/realtime") return exhibit(env).fetch(request);
+		if (url.pathname.startsWith("/api/")) return new Response("Not Found", { status: 404 });
 
 		return env.ASSETS.fetch(request);
 	},

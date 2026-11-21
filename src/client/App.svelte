@@ -1,19 +1,20 @@
 <script lang="ts">
 import { EXHIBIT } from "../data/exhibit.ts";
+import { parseScreenNumber } from "../shared/screens.ts";
 import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
 import PhotoDisplay from "./photo/PhotoDisplay.svelte";
 import ResultPage from "./result/ResultPage.svelte";
 
-// ルート数が固定で少ないため、起動時のパスで最上位コンポーネントを決める（仕様書9.2節）。
+// ルート数が固定で少ないため、起動時のパスで最上位コンポーネントを決める。
 const path = location.pathname.replace(/\/+$/, "") || "/";
-const display = path.match(/^\/display\/([^/]+)$/);
-const photo = path.match(/^\/photo\/([^/]+)$/);
+const display = parseScreenNumber(path.match(/^\/display\/([^/]+)$/)?.[1] ?? null);
+const photo = parseScreenNumber(path.match(/^\/photo\/([^/]+)$/)?.[1] ?? null);
 const result = path.match(/^\/result\/([^/]+)$/);
 const pageLabel = display
-	? `展示ディスプレイ ${decodeURIComponent(display[1]).replace(/^display-/, "")}`
+	? `展示ディスプレイ ${display}`
 	: photo
-		? `写真用 ${decodeURIComponent(photo[1]).replace(/^photo-/, "")}`
+		? `写真用 ${photo}`
 		: path === "/"
 			? "診断用iPad"
 			: path === "/admin"
@@ -30,9 +31,9 @@ const pageLabel = display
 {#if path === "/"}
 	<Controller />
 {:else if display}
-	<Display screenId={decodeURIComponent(display[1])} />
+	<Display screen={display} />
 {:else if photo}
-	<PhotoDisplay screenId={decodeURIComponent(photo[1])} />
+	<PhotoDisplay screen={photo} />
 {:else if path === "/admin"}
 	<!-- 管理画面は Tailwind CSS（要素の初期化を含む）を読み込むため、展示用の画面に影響しないよう別のチャンクに分ける。 -->
 	{#await import("./admin/Admin.svelte")}

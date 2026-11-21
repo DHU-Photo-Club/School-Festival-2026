@@ -3,12 +3,15 @@ import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import type { Device } from "./fixtures.ts";
 import {
+	answerQuestion,
 	canvasDigest,
 	canvasHasGraphics,
 	canvasPixel,
 	ExhibitHarness,
+	enterNickname,
 	expectedResultView,
-	tapStop,
+	expectQuestion,
+	waitForResultPhotos,
 } from "./fixtures.ts";
 
 /** 現在枠の待機写真のIDと不透明度。 */
@@ -38,7 +41,7 @@ async function waitForFramePosition(device: Device, from: number, to: number) {
 test("待機写真は8秒ごとに進み、先頭1秒だけクロスフェードし、同じ写真を複数画面へ表示しない", async ({ browser }) => {
 	test.setTimeout(90_000);
 	const harness = await ExhibitHarness.open(browser);
-	const displays = await harness.pairDisplays(3);
+	const displays = await harness.openDisplays(3);
 	await expect.poll(async () => (await currentIdle(displays[0])).opacity).toBe(1);
 
 	const ids = await Promise.all(displays.map(async (display) => (await currentIdle(display)).id));
@@ -65,7 +68,7 @@ test("待機写真は8秒ごとに進み、先頭1秒だけクロスフェード
 test("reduced-motion の待機表示はクロスフェードせず即時に切り替える", async ({ browser }) => {
 	test.setTimeout(60_000);
 	const harness = await ExhibitHarness.open(browser);
-	const [display] = await harness.pairDisplays(1, { reducedMotion: "reduce" });
+	const [display] = await harness.openDisplays(1, { reducedMotion: "reduce" });
 	const first = (await currentIdle(display)).id;
 	await expect
 		.poll(async () => (await currentIdle(display)).id, { timeout: 12_000, intervals: [20] })
@@ -80,12 +83,8 @@ test("reduced-motion の待機表示はクロスフェードせず即時に切�
 
 test("管理画面の表示確認で全画面が結果色の完了状態を表示し、終了で待機へ戻る", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
-	const displays = await harness.pairDisplays(3);
-	for (const display of ["display-1", "display-2", "display-3"]) {
-		await expect(harness.admin.page.getByTestId(`device-${display}`)).toContainText("準備完了", {
-			timeout: 15_000,
-		});
-	}
+	const displays = await harness.openDisplays(3);
+	for (const display of displays) await waitForResultPhotos(display.page);
 	const violet = RESULT_COLORS.find((color) => color.id === "violet");
 	await harness.admin.page.getByRole("button", { name: violet?.name }).click();
 	for (const [displayOrder, display] of displays.entries()) {
@@ -107,11 +106,11 @@ test("管理画面の表示確認で全画面が結果色の完了状態を表�
 test("reduced-motion でも全状態が色面の切り替えと静止した構図で成立する", async ({ browser }) => {
 	test.setTimeout(120_000);
 	const harness = await ExhibitHarness.open(browser);
-	const displays = await harness.pairDisplays(3, { reducedMotion: "reduce" });
-	const ipad = await harness.pair("controller", { reducedMotion: "reduce" });
+	const displays = await harness.openDisplays(3, { reducedMotion: "reduce" });
+	const ipad = await harness.openDevice("controller", { reducedMotion: "reduce" });
 	const { page } = ipad;
 	await page.getByRole("button", { name: "はじめる" }).click();
-	await page.getByRole("button", { name: "進む" }).click();
+	await enterNickname(page);
 
 	// 質問: 破片は静止して表示される。
 	// 属性は状態の受信で、canvas は次の描画フレームで変わるため、描画を待ってから比べる。
@@ -125,8 +124,8 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	expect(await canvasDigest(displays[1].page)).not.toBe(still);
 
 	for (let index = 0; index < QUESTIONS.length; index += 1) {
-		await expect(page.getByText(`${index + 1} / ${QUESTIONS.length}`)).toBeVisible();
-		await tapStop(page, 2);
+		await expectQuestion(page, index);
+		await answerQuestion(page, QUESTIONS[index], 2);
 		const before = await canvasDigest(displays[0].page);
 		await page.getByRole("button", { name: "次へ" }).click();
 		if (index < QUESTIONS.length - 1) {
@@ -161,71 +160,11 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	await harness.close();
 });
 
-test("「次へ」のタップから確定待ちの表示まで", async ({ browser }) => {
-	const harness = await ExhibitHarness.open(browser);
-	const ipad = await harness.pair("controller");
-	const { page } = ipad;
-	await page.getByRole("button", { name: "はじめる" }).click();
-	await page.getByRole("button", { name: "進む" }).click();
-	const timings: number[] = [];
-	let current = 0;
-	for (let round = 0; round < 20; round += 1) {
-		await expect(page.getByText(`${current + 1} / ${QUESTIONS.length}`)).toBeVisible();
-		await tapStop(page, round % 5);
-		const box = await page.getByRole("button", { name: "次へ" }).boundingBox();
-		if (!box) throw new Error("button not found");
-		// pointerup から確定待ちを描画した最初の requestAnimationFrame まで（仕様書13章）。
-		await page.evaluate(() => {
-			const target = window as unknown as { pendingTiming: Promise<number> };
-			target.pendingTiming = new Promise<number>((resolve) => {
-				addEventListener(
-					"pointerup",
-					() => {
-						const start = performance.now();
-						const observer = new MutationObserver(() => {
-							if (!document.querySelector('.slider[data-mode="pending"]')) return;
-							observer.disconnect();
-							requestAnimationFrame(() => resolve(performance.now() - start));
-						});
-						observer.observe(document.body, {
-							attributes: true,
-							subtree: true,
-							attributeFilter: ["data-mode"],
-						});
-					},
-					{ once: true, capture: true },
-				);
-			});
-		});
-		await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-		const measure = page.evaluate(() => (window as unknown as { pendingTiming: Promise<number> }).pendingTiming);
-		timings.push(await measure);
-		current += 1;
-		await expect(page.getByText(`${current + 1} / ${QUESTIONS.length}`)).toBeVisible();
-		if (current === QUESTIONS.length - 1) {
-			// 最終問は送らず、最初の質問まで戻って同じセッションで測定を続ける。
-			while (current > 0) {
-				await page.getByRole("button", { name: "戻る" }).click();
-				current -= 1;
-				await expect(page.getByText(`${current + 1} / ${QUESTIONS.length}`)).toBeVisible();
-			}
-		}
-	}
-	timings.sort((a, b) => a - b);
-	const p95 = timings[Math.ceil(timings.length * 0.95) - 1];
-	console.log(`pending表示まで: p95=${p95.toFixed(1)}ms max=${timings.at(-1)?.toFixed(1)}ms`);
-	expect(p95).toBeLessThanOrEqual(100);
-	expect(timings.at(-1)).toBeLessThanOrEqual(150);
-	await ipad.context.close();
-	await harness.close();
-});
-
-test("登録した台数の展示ディスプレイで動き、台数は登録しただけ増える", async ({ browser }) => {
+test("開いた台数の展示ディスプレイで動き、管理画面に接続中の台数だけ並ぶ", async ({ browser }) => {
 	test.setTimeout(120_000);
 	const harness = await ExhibitHarness.open(browser);
-	await expect(harness.admin.page.getByTestId("display-count")).toContainText("0 台");
-	const displays = await harness.pairDisplays(5, { viewport: { width: 960, height: 540 } });
-	await expect(harness.admin.page.getByTestId("display-count")).toContainText("5 台");
+	const displays = await harness.openDisplays(5, { viewport: { width: 960, height: 540 } });
+	await expect(harness.admin.page.locator('[data-testid^="device-display-"]')).toHaveCount(5);
 	for (let index = 1; index <= 5; index += 1) {
 		await expect(harness.admin.page.getByTestId(`device-display-${index}`)).toContainText("接続中");
 	}

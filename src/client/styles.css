@@ -9,10 +9,12 @@
 :root {
 	--idle: #ffffff;
 	--text: #000000;
-	--muted: #8a8784;
+	--muted: #63605d;
 	--line: #3a3836;
+	--track: #d4d4d4;
+	--placeholder: #767676;
 	--font: "MOBO-Regular", "Noto Sans JP", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
-	color-scheme: dark;
+	color-scheme: light;
 }
 
 /*

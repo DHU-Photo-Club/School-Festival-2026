@@ -1,8 +1,10 @@
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { PHOTOS } from "../../src/data/photos.ts";
+import { QUESTIONS } from "../../src/data/questions.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
-import type { ColorId, DeviceRole } from "../../src/shared/types.ts";
+import type { ColorId, DeviceRole, Question } from "../../src/shared/types.ts";
+import { MAP_SIZE } from "../../src/shared/types.ts";
 
 export interface Device {
 	context: BrowserContext;
@@ -12,8 +14,11 @@ export interface Device {
 export const DISPLAY_VIEWPORT = { width: 1920, height: 1080 };
 export const IPAD_VIEWPORT = { width: 820, height: 1180 };
 
-/** 管理画面を開き、展示を初期状態へ戻してから端末を登録する。 */
+/** 管理画面を開き、展示を初期状態へ戻してから端末の画面を開く。 */
 export class ExhibitHarness {
+	/** 次に開く展示ディスプレイと写真用の画面番号。 */
+	private readonly nextScreen = { display: 1, photo: 1 };
+
 	private constructor(
 		readonly browser: Browser,
 		readonly admin: Device,
@@ -29,53 +34,44 @@ export class ExhibitHarness {
 		return harness;
 	}
 
-	/** 端末セッションを失効させ、受付を再開し、強制リセットする。 */
+	/** 受付を再開し、強制リセットする。 */
 	async reset(): Promise<void> {
-		const { page, context } = this.admin;
-		const response = await context.request.get("/api/admin/sessions");
-		const { sessions } = (await response.json()) as { sessions: { id: string }[] };
-		for (const session of sessions) await context.request.delete(`/api/admin/sessions/${session.id}`);
+		const { page } = this.admin;
 		await page.getByRole("button", { name: "強制リセット" }).click();
 		await expect(page.getByTestId("phase")).toContainText("idle");
 		const resume = page.getByRole("button", { name: "受付を再開" });
 		if (await resume.isVisible()) await resume.click();
 		await expect(page.getByRole("button", { name: "受付を停止" })).toBeVisible();
-		const release = page.getByRole("button", { name: "操作端末を解放" });
-		if (await release.isEnabled()) await release.click();
 	}
 
-	async issueCode(role: DeviceRole): Promise<string> {
-		const response = await this.admin.context.request.post("/api/admin/pairing-codes", { data: { role } });
-		expect(response.status()).toBe(200);
-		return ((await response.json()) as { code: string }).code;
-	}
-
-	/** 新しいブラウザコンテキストを端末として登録し、登録後の画面を開く。 */
-	async pair(
+	/**
+	 * 新しいブラウザコンテキストで端末の画面を開く。展示ディスプレイと写真用には、開いた順に
+	 * 1、2…の画面番号を使う。`beforeOpen` はページを開く前にコンテキストを設定するときに使う。
+	 */
+	async openDevice(
 		role: DeviceRole,
 		options: BrowserContextOptions = {},
-		beforeOpen?: (context: BrowserContext) => Promise<void>,
+		beforeOpen?: (context: BrowserContext) => Promise<unknown>,
 	): Promise<Device> {
-		const code = await this.issueCode(role);
 		const context = await this.browser.newContext({
 			viewport: role === "controller" ? IPAD_VIEWPORT : DISPLAY_VIEWPORT,
 			...options,
 		});
-		const response = await context.request.post("/api/pair", { data: { code } });
-		expect(response.status()).toBe(200);
-		const { location } = (await response.json()) as { location: string };
 		await beforeOpen?.(context);
 		const page = await context.newPage();
-		await page.goto(location);
+		if (role === "controller") {
+			await page.goto("/");
+		} else {
+			await page.goto(`/${role}/${this.nextScreen[role]}`);
+			this.nextScreen[role] += 1;
+		}
 		return { context, page };
 	}
 
-	async pairDisplays(count: number, options: BrowserContextOptions = {}): Promise<Device[]> {
+	async openDisplays(count: number, options: BrowserContextOptions = {}): Promise<Device[]> {
 		const displays: Device[] = [];
-		for (let index = 1; index <= count; index += 1) {
-			const display = await this.pair("display", options);
-			// 展示ディスプレイには登録順に display-1、display-2…が振られる。
-			await expect(display.page).toHaveURL(new RegExp(`/display/display-${index}$`));
+		for (let index = 0; index < count; index += 1) {
+			const display = await this.openDevice("display", options);
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
 			displays.push(display);
 		}
@@ -140,21 +136,164 @@ export async function canvasDigest(page: Page): Promise<string> {
 	return String(hash);
 }
 
+/** `intro` でニックネームを入力して質問へ進む。 */
+export async function enterNickname(page: Page, nickname = "テスト"): Promise<void> {
+	await page.getByRole("textbox", { name: "ニックネームを入力して下さい" }).fill(nickname);
+	await page.getByRole("button", { name: "進む" }).click();
+}
+
+/** 質問 `index`（0始まり）を表示していることを、進捗バーで確かめる。 */
+export async function expectQuestion(page: Page, index: number): Promise<void> {
+	await expect(page.getByRole("progressbar")).toHaveAttribute(
+		"aria-valuetext",
+		`質問 ${index + 1} / ${QUESTIONS.length}`,
+	);
+}
+
 /** iPadの質問画面で、スライダーの位置（0〜4）をタップする。 */
 export async function tapStop(page: Page, index: number): Promise<void> {
-	const area = page.locator(".slider .area");
-	const box = await area.boundingBox();
+	await tapSliderAt(page, index / 4);
+}
+
+/** iPadの質問画面で、スライダーのトラック上の位置 `ratio`（左端0から右端1）をタップする。 */
+export async function tapSliderAt(page: Page, ratio: number): Promise<void> {
+	const box = await page.locator(".slider .area").boundingBox();
 	if (!box) throw new Error("slider not found");
 	const half = 22;
-	const x = box.x + half + ((box.width - half * 2) * index) / 4;
-	await page.mouse.click(x, box.y + box.height / 2);
+	await page.mouse.click(box.x + half + (box.width - half * 2) * ratio, box.y + box.height / 2);
 }
 
-export async function sliderValue(page: Page): Promise<string> {
-	return page.locator('.slider input[type="range"]').inputValue();
+/** スライダーで選んでいる位置（0〜1）。未回答は `null`。 */
+export async function sliderValue(page: Page): Promise<number | null> {
+	const value = await page.locator(".slider .area").getAttribute("data-value");
+	return value ? Number(value) : null;
 }
 
-/** 写真定義から決まる結果表示の種類。写真が足りない画面はタイポグラフィ（仕様書7.2.4節）。 */
+/**
+ * スライダーのトラック上の位置 `from` で押し、`to` まで動かす（左端0から右端1）。指を離す前に
+ * `whileDragging` を呼ぶ。
+ */
+export async function dragSlider(
+	page: Page,
+	from: number,
+	to: number,
+	whileDragging: () => Promise<void>,
+): Promise<void> {
+	const box = await page.locator(".slider .area").boundingBox();
+	if (!box) throw new Error("slider not found");
+	const half = 22;
+	const at = (ratio: number) => box.x + half + (box.width - half * 2) * ratio;
+	const y = box.y + box.height / 2;
+	await page.mouse.move(at(from), y);
+	await page.mouse.down();
+	try {
+		await page.mouse.move(at(to), y, { steps: 8 });
+		await whileDragging();
+	} finally {
+		// 確認に失敗しても指を離し、後続の操作がドラッグ中のまま止まらないようにする。
+		await page.mouse.up();
+	}
+}
+
+/** iPadの質問画面で、2Dマップの区画（0〜8、上の行から左→右の順）の中心をタップする。 */
+export async function tapCell(page: Page, index: number): Promise<void> {
+	const [x, y] = await cellCenter(page, index);
+	await page.mouse.click(x, y);
+}
+
+/** iPadの質問画面で、2Dマップの平面上の位置（左上0、右下1）をタップする。 */
+export async function tapMapAt(page: Page, x: number, y: number): Promise<void> {
+	const box = await page.locator(".map .area").boundingBox();
+	if (!box) throw new Error("map not found");
+	await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+}
+
+/** 2Dマップで選んでいる位置。未回答は `null`。 */
+export async function mapValue(page: Page): Promise<{ x: number; y: number } | null> {
+	const area = page.locator(".map .area");
+	const [x, y] = await Promise.all([area.getAttribute("data-x"), area.getAttribute("data-y")]);
+	return x && y ? { x: Number(x), y: Number(y) } : null;
+}
+
+/** 2Dマップの区画の中心のページ座標。 */
+async function cellCenter(page: Page, index: number): Promise<[number, number]> {
+	const box = await page.locator(".map .area").boundingBox();
+	if (!box) throw new Error("map not found");
+	const column = index % MAP_SIZE;
+	const row = Math.floor(index / MAP_SIZE);
+	return [box.x + (box.width * (column + 0.5)) / MAP_SIZE, box.y + (box.height * (row + 0.5)) / MAP_SIZE];
+}
+
+/**
+ * 2Dマップの区画 `from` で押し、区画 `to` まで動かす。指を離す前に `whileDragging` を呼ぶ。
+ * 押してから離すまでの間はピンを動かしている状態になる。
+ */
+export async function dragCell(
+	page: Page,
+	from: number,
+	to: number,
+	whileDragging: () => Promise<void>,
+): Promise<void> {
+	const [startX, startY] = await cellCenter(page, from);
+	const [endX, endY] = await cellCenter(page, to);
+	await page.mouse.move(startX, startY);
+	await page.mouse.down();
+	try {
+		await page.mouse.move(endX, endY, { steps: 8 });
+		await whileDragging();
+	} finally {
+		// 確認に失敗しても指を離し、後続の操作がドラッグ中のまま止まらないようにする。
+		await page.mouse.up();
+	}
+}
+
+/** 入力方式によらない回答入力の要素。`data-mode` で未回答、操作中、確定済みなどを表す。 */
+export function answerInput(page: Page) {
+	return page.locator("[data-answer-input]");
+}
+
+/** 単選択または複数選択の選択肢。 */
+export function choiceOption(page: Page, question: Question, index: number) {
+	if (question.kind !== "single" && question.kind !== "multiple")
+		throw new Error(`${question.id} は選択式ではありません`);
+	return page.getByRole(question.kind === "single" ? "radio" : "checkbox", {
+		name: question.options[index].label,
+		exact: true,
+	});
+}
+
+/**
+ * 表示中の質問へ、入力方式に合わせて `variant` 番目の回答を入力する（「次へ」は押さない）。
+ * 複数選択は `variant` 番目の選択肢から順に、下限の個数だけ選ぶ。未回答の状態から呼ぶ。
+ */
+export async function answerQuestion(page: Page, question: Question, variant = 0): Promise<void> {
+	switch (question.kind) {
+		case "slider":
+			return tapStop(page, variant % question.stops.length);
+		case "map":
+			return tapCell(page, variant % question.cells.length);
+		case "single":
+			return choiceOption(page, question, variant % question.options.length).click();
+		case "multiple":
+			for (let offset = 0; offset < question.minSelections; offset += 1)
+				await choiceOption(page, question, (variant + offset) % question.options.length).click();
+	}
+}
+
+/** 展示ディスプレイが先に読み込む結果写真がすべて読み込まれるまで待つ。 */
+export async function waitForResultPhotos(page: Page): Promise<void> {
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				[...document.querySelectorAll<HTMLImageElement>(".photo[data-result-color] img")].every(
+					(image) => image.complete && image.naturalWidth > 0,
+				),
+			),
+		)
+		.toBe(true);
+}
+
+/** 写真定義から決まる結果表示の種類。写真が足りない画面はタイポグラフィ。 */
 export function expectedResultView(colorId: ColorId, displayOrder: number): "photo" | "typography" {
 	return resultPhotoFor(PHOTOS, colorId, displayOrder) ? "photo" : "typography";
 }
@@ -179,6 +318,13 @@ export async function controllableNetwork(context: BrowserContext) {
 		});
 		server.onMessage((message) => {
 			if (!offline) ws.send(message);
+		});
+		// 通信断中に閉じた接続は、相手側へ伝わらない。サーバーには古い接続が残り、受信が途絶えた状態になる。
+		ws.onClose((code, reason) => {
+			if (!offline) server.close({ code, reason });
+		});
+		server.onClose((code, reason) => {
+			if (!offline) ws.close({ code, reason });
 		});
 	});
 	return {

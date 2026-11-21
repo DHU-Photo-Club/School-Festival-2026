@@ -1,49 +1,159 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
+import type { Question } from "../../src/shared/types.ts";
 import type { Device } from "./fixtures.ts";
-import { canvasDigest, canvasPixel, ExhibitHarness, sliderValue, tapStop } from "./fixtures.ts";
+import {
+	answerInput,
+	answerQuestion,
+	canvasDigest,
+	canvasPixel,
+	choiceOption,
+	dragCell,
+	dragSlider,
+	ExhibitHarness,
+	enterNickname,
+	expectQuestion,
+	mapValue,
+	sliderValue,
+	tapCell,
+	tapMapAt,
+	tapSliderAt,
+	tapStop,
+} from "./fixtures.ts";
 
 const revisionOf = async (device: Device) =>
 	Number(await device.page.locator("main.display").getAttribute("data-revision"));
+
+/**
+ * 入力方式ごとの操作を一通り試す。終了時は、スライダーと2Dマップは最後に選んだ位置、
+ * 単選択は最後の選択肢を選んだ状態、複数選択は何も選んでいない状態。
+ */
+async function exploreInput(page: Page, question: Question) {
+	const next = page.getByRole("button", { name: "次へ" });
+	switch (question.kind) {
+		case "slider":
+			// トラックのタップで5段階の回答位置すべてを選べる。補助文は最も近い回答位置のもの。
+			for (const [stop, { caption }] of question.stops.entries()) {
+				await tapStop(page, stop);
+				await expect.poll(() => sliderValue(page)).toBeCloseTo(stop / 4, 2);
+				expect(await sliderValue(page)).not.toBeNull();
+				await expect(page.locator(".slider .caption")).toHaveText(caption);
+			}
+			// 回答位置の間をタップすると、つまみはスナップせずその位置に止まる。
+			await tapSliderAt(page, 0.4);
+			await expect.poll(() => sliderValue(page)).toBeCloseTo(0.4, 1);
+			expect(await sliderValue(page)).not.toBeCloseTo(0.5, 2);
+			await expect(page.locator(".slider .caption")).toHaveText(question.stops[2].caption);
+			// つまみのドラッグで、指の位置へ移る。離した位置でスナップしない。
+			await dragSlider(page, 0.9, 0.35, async () => {
+				await expect(answerInput(page)).toHaveAttribute("data-mode", "dragging");
+			});
+			await expect(answerInput(page)).toHaveAttribute("data-mode", "active");
+			await expect.poll(() => sliderValue(page)).toBeCloseTo(0.35, 1);
+			expect(await sliderValue(page)).not.toBeCloseTo(0.25, 2);
+			await expect(page.locator(".slider .caption")).toHaveText(question.stops[1].caption);
+			// 読み上げとキーボード用のラジオボタンでも、矢印キーで別の回答位置へ移れる。
+			// 選んだ回答位置へは、つまみがその回答位置ちょうどに動く。
+			await page.getByRole("radio", { name: question.stops[1].caption, exact: true }).focus();
+			await page.keyboard.press("ArrowRight");
+			await expect(page.getByRole("radio", { name: question.stops[2].caption, exact: true })).toBeChecked();
+			await expect.poll(() => sliderValue(page)).toBe(0.5);
+			break;
+		case "map":
+			// 平面のタップで9区画すべてを選べる。補助文は位置を含む区画のもの。
+			for (const [cell, { caption }] of question.cells.entries()) {
+				await tapCell(page, cell);
+				await expect(page.locator(".map .area")).toHaveAttribute("data-cell", String(cell));
+				await expect(page.locator(".map .caption")).toHaveText(caption);
+			}
+			// 区画の中心以外をタップすると、ピンはスナップせずその位置に止まる。
+			await tapMapAt(page, 0.4, 0.2);
+			await expect.poll(async () => (await mapValue(page))?.x).toBeCloseTo(0.4, 1);
+			expect((await mapValue(page))?.y).toBeCloseTo(0.2, 1);
+			await expect(page.locator(".map .area")).toHaveAttribute("data-cell", "1");
+			// ピンのドラッグで、指の位置へ移る。
+			await dragCell(page, 0, 8, async () => {
+				await expect(answerInput(page)).toHaveAttribute("data-mode", "dragging");
+				await expect(page.locator(".map .area")).toHaveAttribute("data-cell", "8");
+			});
+			await expect(answerInput(page)).toHaveAttribute("data-mode", "active");
+			// 読み上げとキーボード用のラジオボタンでも、矢印キーで区画を選べる。
+			await page.getByRole("radio", { name: question.cells[8].caption, exact: true }).focus();
+			await page.keyboard.press("ArrowLeft");
+			await expect(page.getByRole("radio", { name: question.cells[7].caption, exact: true })).toBeChecked();
+			await expect(page.locator(".map .area")).toHaveAttribute("data-cell", "7");
+			break;
+		case "single":
+			// 選び直すと、前に選んだ選択肢の選択が外れる。
+			for (const [index, { label }] of question.options.entries()) {
+				await choiceOption(page, question, index).click();
+				await expect(choiceOption(page, question, index)).toHaveAttribute("aria-checked", "true");
+				if (index > 0)
+					await expect(choiceOption(page, question, index - 1)).toHaveAttribute("aria-checked", "false");
+				await expect(page.locator(".choices .caption")).toHaveText(label);
+			}
+			break;
+		case "multiple": {
+			// 下限に届くまで「次へ」は無効、上限に達すると選んでいない選択肢は押せない。
+			const picks = Array.from({ length: question.maxSelections }, (_, index) => index);
+			for (const index of picks) {
+				if (index + 1 < question.minSelections) await expect(next).toBeDisabled();
+				await choiceOption(page, question, index).click();
+				await expect(choiceOption(page, question, index)).toHaveAttribute("aria-checked", "true");
+			}
+			await expect(next).toBeEnabled();
+			if (question.maxSelections < question.options.length)
+				await expect(choiceOption(page, question, question.maxSelections)).toHaveAttribute(
+					"aria-disabled",
+					"true",
+				);
+			// すべて外すと未回答へ戻る。
+			for (const index of picks) await choiceOption(page, question, index).click();
+			await expect(next).toBeDisabled();
+			await expect(answerInput(page)).toHaveAttribute("data-mode", "unanswered");
+			break;
+		}
+	}
+}
 
 for (const displayCount of [1, 3]) {
 	test(`展示${displayCount}画面: 開始から結果、最初に戻るまで`, async ({ browser }) => {
 		test.setTimeout(240_000);
 		const harness = await ExhibitHarness.open(browser);
-		const displays = await harness.pairDisplays(displayCount);
-		const ipad = await harness.pair("controller");
+		const displays = await harness.openDisplays(displayCount);
+		const ipad = await harness.openDevice("controller");
 		const { page } = ipad;
 
 		await page.getByRole("button", { name: "はじめる" }).click();
-		await page.getByRole("button", { name: "進む" }).click();
-		await expect(page.getByText(`1 / ${QUESTIONS.length}`)).toBeVisible();
+		await enterNickname(page);
+		await expectQuestion(page, 0);
 		for (const display of displays)
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "question");
 
+		const explored = new Set<Question["kind"]>();
 		for (const [index, question] of QUESTIONS.entries()) {
-			await expect(page.getByText(`${index + 1} / ${QUESTIONS.length}`)).toBeVisible();
+			await expectQuestion(page, index);
 			await expect(page.getByRole("heading", { name: question.prompt })).toBeVisible();
 			const next = page.getByRole("button", { name: "次へ" });
-			// 初めて開いた質問では「次へ」が無効で、つまみは未回答の表示。
+			// 初めて開いた質問では「次へ」が無効で、入力は未回答の表示。
 			await expect(next).toBeDisabled();
-			await expect(page.locator(".slider")).toHaveAttribute("data-mode", "unanswered");
+			await expect(answerInput(page)).toHaveAttribute("data-answer-input", question.kind);
+			await expect(answerInput(page)).toHaveAttribute("data-mode", "unanswered");
 
 			const before = await revisionOf(displays[0]);
-			if (index === 0) {
-				// トラックのタップで5位置すべてを選べ、スライダー操作だけでは revision が増えない。
-				for (const stop of [0, 1, 2, 3, 4]) {
-					await tapStop(page, stop);
-					expect(await sliderValue(page)).toBe(String(stop));
-					await expect(page.locator(".slider .caption")).toHaveText(question.stops[stop].caption);
-				}
+			if (!explored.has(question.kind)) {
+				// 入力方式ごとに最初の質問で操作を一通り試す。操作だけでは revision が増えない。
+				explored.add(question.kind);
+				await exploreInput(page, question);
 				await page.waitForTimeout(300);
 				expect(await revisionOf(displays[0])).toBe(before);
 			}
-			await tapStop(page, index % 5);
+			await answerQuestion(page, question, index);
 			await expect(next).toBeEnabled();
 			const digest = await canvasDigest(displays[0].page);
 			await next.click();
@@ -53,14 +163,16 @@ for (const displayCount of [1, 3]) {
 				await expect.poll(() => canvasDigest(displays[0].page), { timeout: 3_000 }).not.toBe(digest);
 			}
 			if (index === 1) {
-				// 戻ると直前の位置が復元され、変更して再確定できる。
+				// 戻ると直前の回答が復元され、変更して再確定できる。
+				expect(question.kind).toBe("single");
 				await page.getByRole("button", { name: "戻る" }).click();
-				await expect(page.getByText(`2 / ${QUESTIONS.length}`)).toBeVisible();
-				expect(await sliderValue(page)).toBe("1");
-				await expect(page.locator(".slider")).toHaveAttribute("data-mode", "answered");
-				await tapStop(page, 3);
+				await expectQuestion(page, 1);
+				await expect(choiceOption(page, question, 1)).toHaveAttribute("aria-checked", "true");
+				await expect(answerInput(page)).toHaveAttribute("data-mode", "answered");
+				await choiceOption(page, question, 3).click();
+				await expect(answerInput(page)).toHaveAttribute("data-mode", "active");
 				await page.getByRole("button", { name: "次へ" }).click();
-				await expect(page.getByText(`3 / ${QUESTIONS.length}`)).toBeVisible();
+				await expectQuestion(page, 2);
 			}
 		}
 
@@ -80,7 +192,7 @@ for (const displayCount of [1, 3]) {
 		const shown: string[] = [];
 		for (const [displayOrder, display] of displays.entries()) {
 			expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(color?.backgroundColor);
-			// 写真がある画面は写真、足りない画面は複製せずに色名のタイポグラフィ（仕様書7.2.4節）。
+			// 写真がある画面は写真、足りない画面は複製せずに色名のタイポグラフィ。
 			const assigned = color ? resultPhotoFor(PHOTOS, color.id, displayOrder) : null;
 			if (assigned) {
 				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "photo");
@@ -95,11 +207,6 @@ for (const displayCount of [1, 3]) {
 		}
 		// 同じ写真を複数の画面へ割り当てない。
 		expect(new Set(shown).size).toBe(shown.length);
-
-		// 管理画面に同期差が表示される。
-		await expect(harness.admin.page.getByTestId("sync-spread")).not.toHaveText("—");
-		const spread = Number((await harness.admin.page.getByTestId("sync-spread").innerText()).replace("ms", ""));
-		expect(spread).toBeLessThanOrEqual(200);
 
 		// QRコードと結果URL。
 		await expect(page.getByRole("img", { name: "結果ページのQRコード" })).toBeVisible();
@@ -126,8 +233,8 @@ test("「はじめる」の後、iPadと展示ディスプレイがシーケン�
 	test.skip(!sequence, "intro の前のシーケンスが定義されていない");
 	if (!sequence) return;
 	const harness = await ExhibitHarness.open(browser);
-	const [display] = await harness.pairDisplays(1);
-	const ipad = await harness.pair("controller");
+	const [display] = await harness.openDisplays(1);
+	const ipad = await harness.openDevice("controller");
 	const { page } = ipad;
 	const main = display.page.locator("main.display");
 	try {

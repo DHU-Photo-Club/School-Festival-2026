@@ -1,228 +1,106 @@
 import type { Command } from "./machine.ts";
-import type { ColorId, DeviceRole, DisplayState, ExhibitState, SliderStopId } from "./types.ts";
-import { COLOR_IDS, SLIDER_STOP_IDS } from "./types.ts";
+import type { Answer, ColorId, DeviceRole, DisplayState, ExhibitState } from "./types.ts";
+import { COLOR_IDS } from "./types.ts";
 
-export const PROTOCOL_VERSION = 1;
+/** クライアントからサーバーへのメッセージ。 */
+export type ClientMessage = { type: "command"; command: Command } | { type: "ping"; clientSentAt: number };
 
-export type ErrorCode =
-	| "INVALID_MESSAGE"
-	| "PROTOCOL_MISMATCH"
-	| "UNAUTHENTICATED"
-	| "FORBIDDEN"
-	| "STALE_REVISION"
-	| "INVALID_PHASE"
-	| "CONTROLLER_IN_USE"
-	| "NOT_ACCEPTING"
-	| "INTERNAL_ERROR";
+/** サーバーからクライアントへのメッセージ。 */
+export type ServerMessage =
+	| { type: "state"; serverTime: number; state: RoleState }
+	| { type: "pong"; clientSentAt: number; serverTime: number };
 
-/** 利用者向けの固定文言（仕様書8.5節）。 */
-export const ERROR_MESSAGES: Readonly<Record<ErrorCode, string>> = {
-	INVALID_MESSAGE: "メッセージを処理できませんでした。",
-	PROTOCOL_MISMATCH: "画面を再読み込みしてください。",
-	UNAUTHENTICATED: "端末の登録が切れました。スタッフにお声がけください。",
-	FORBIDDEN: "この端末ではその操作はできません。",
-	STALE_REVISION: "表示状態を更新しました。もう一度操作してください。",
-	INVALID_PHASE: "表示状態を更新しました。もう一度操作してください。",
-	CONTROLLER_IN_USE: "別の端末で診断を操作しています。",
-	NOT_ACCEPTING: "ただいま受付を停止しています。",
-	INTERNAL_ERROR: "ただいま操作できません。スタッフにお声がけください。",
-};
-
-/** 再送で解決する見込みがあるか。 */
-export const RETRYABLE: Readonly<Record<ErrorCode, boolean>> = {
-	INVALID_MESSAGE: false,
-	PROTOCOL_MISMATCH: false,
-	UNAUTHENTICATED: false,
-	FORBIDDEN: false,
-	STALE_REVISION: false,
-	INVALID_PHASE: false,
-	CONTROLLER_IN_USE: false,
-	NOT_ACCEPTING: false,
-	INTERNAL_ERROR: true,
-};
-
-/** WebSocketのclose code（仕様書8.5節）。 */
-export const CLOSE_CODES = {
-	invalidMessages: 4000,
-	sessionExpired: 4001,
-	protocolMismatch: 4002,
-	helloTimeout: 4008,
-	controllerMoved: 4009,
-} as const;
-
-export interface HelloMessage {
-	version: 1;
-	type: "hello";
-	clientId: string;
+/** 管理画面の端末一覧の一行。接続中のWebSocketごとに一行。 */
+export interface DeviceStatus {
+	role: DeviceRole;
+	/** 展示ディスプレイと写真用の画面番号（1始まり）。診断用iPadは `null`。 */
+	screen: number | null;
+	/** 最後にメッセージを受信してから15秒以内なら `true`。 */
+	connected: boolean;
+	lastReceivedAt: number;
 }
 
-export interface CommandMessage {
-	version: 1;
-	type: "command";
-	requestId: string;
-	expectedRevision?: number;
-	command: Command;
-}
+export type AdminState = Omit<ExhibitState, "answers" | "nickname"> & { devices: DeviceStatus[] };
 
-export interface PingMessage {
-	version: 1;
-	type: "ping";
-	pingId: string;
-	clientSentAt: number;
-}
-
-export interface ResultStartedMessage {
-	version: 1;
-	type: "resultStarted";
-	requestId: string;
-	sessionId: string;
-	screenId: string;
-	actualStartedAt: number;
-}
-
-/**
- * 運用通知。`qrGenerationFailed` は仕様書10.4節。
- * `preloadReport`（仕様書7.2.5節）と `clockSync`（仕様書8.6節）は、仕様書が管理画面への報告を求めながら
- * メッセージ形式を定めていないため、同じ `diagnostic` で送る（docs/progress.md 参照）。
- */
-export type Diagnostic =
-	| { name: "qrGenerationFailed"; sessionId: string; colorId: ColorId; occurredAt: number }
-	| { name: "preloadReport"; succeeded: number; failedPhotoIds: string[] }
-	| { name: "clockSync"; minRoundTripTime: number; offsetSpread: number };
-
-export type DiagnosticMessage = { version: 1; type: "diagnostic"; requestId: string } & Diagnostic;
-
-export type ClientMessage = HelloMessage | CommandMessage | PingMessage | ResultStartedMessage | DiagnosticMessage;
-
-export type ParseResult =
-	| { ok: true; message: ClientMessage }
-	| { ok: false; code: "INVALID_MESSAGE" | "PROTOCOL_MISMATCH"; requestId: string | null; notJson: boolean };
+export type RoleState = ExhibitState | DisplayState | AdminState;
 
 type Json = Record<string, unknown>;
 
 const isObject = (value: unknown): value is Json =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
+/** `continue` で受け取るニックネームの、正規化前の最大長（UTF-16コード単位）。 */
+const MAX_RAW_NICKNAME = 200;
 const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 100;
-const isTime = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
-const isRevision = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
-const isColorId = (value: unknown): value is ColorId => COLOR_IDS.includes(value as ColorId);
+/** 複数選択の回答で受け取る選択肢IDの最大数。 */
+const MAX_ANSWER_IDS = 20;
+const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+/**
+ * 回答はID、IDの配列、数（スライダーの位置）、`{ x, y }`（2Dマップの位置）のいずれか。
+ * 値の範囲と質問の形式に合うかは状態遷移で確かめる。
+ */
+const isAnswer = (value: unknown): value is Answer =>
+	isId(value) ||
+	isFiniteNumber(value) ||
+	(Array.isArray(value) && value.length <= MAX_ANSWER_IDS && value.every(isId)) ||
+	(isObject(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y));
 
 function parseCommand(value: unknown): Command | null {
 	if (!isObject(value) || typeof value.name !== "string") return null;
 	switch (value.name) {
 		case "start":
-		case "continue":
 		case "back":
 		case "returnToIdle":
 		case "forceReset":
-		case "releaseController":
 		case "clearPreview":
 			return { name: value.name };
+		case "continue":
+			// 長さと文字の検証は状態遷移で行い、不正なら現在状態を送り直して確定待ちを解除させる。
+			if (typeof value.nickname !== "string" || value.nickname.length > MAX_RAW_NICKNAME) return null;
+			return { name: "continue", nickname: value.nickname };
 		case "answer":
-			if (!isId(value.questionId) || !SLIDER_STOP_IDS.includes(value.stopId as SliderStopId)) return null;
-			return { name: "answer", questionId: value.questionId, stopId: value.stopId as SliderStopId };
+			if (!isId(value.questionId) || !isAnswer(value.answer)) return null;
+			// 2Dマップの位置は x と y だけを受け取る。
+			return {
+				name: "answer",
+				questionId: value.questionId,
+				answer: isObject(value.answer)
+					? { x: value.answer.x as number, y: value.answer.y as number }
+					: value.answer,
+			};
 		case "setAccepting":
 			if (typeof value.accepting !== "boolean") return null;
 			return { name: "setAccepting", accepting: value.accepting };
 		case "previewColor":
-			if (!isColorId(value.colorId)) return null;
-			return { name: "previewColor", colorId: value.colorId };
+			if (!COLOR_IDS.includes(value.colorId as ColorId)) return null;
+			return { name: "previewColor", colorId: value.colorId as ColorId };
 		default:
 			return null;
 	}
 }
 
-function parseDiagnostic(value: Json): Diagnostic | null {
-	switch (value.name) {
-		case "qrGenerationFailed":
-			if (!isId(value.sessionId) || !isColorId(value.colorId) || !isTime(value.occurredAt)) return null;
-			return {
-				name: "qrGenerationFailed",
-				sessionId: value.sessionId,
-				colorId: value.colorId,
-				occurredAt: value.occurredAt,
-			};
-		case "preloadReport":
-			if (!Number.isSafeInteger(value.succeeded) || (value.succeeded as number) < 0) return null;
-			if (!Array.isArray(value.failedPhotoIds) || !value.failedPhotoIds.every(isId)) return null;
-			return {
-				name: "preloadReport",
-				succeeded: value.succeeded as number,
-				failedPhotoIds: value.failedPhotoIds,
-			};
-		case "clockSync":
-			if (!isTime(value.minRoundTripTime) || !isTime(value.offsetSpread)) return null;
-			return { name: "clockSync", minRoundTripTime: value.minRoundTripTime, offsetSpread: value.offsetSpread };
-		default:
-			return null;
-	}
-}
-
-/** クライアントからのメッセージを検証する。不明なフィールドは無視する（仕様書8.5節）。 */
-export function parseClientMessage(raw: string): ParseResult {
+/** クライアントからのメッセージを検証する。形が正しくなければ `null`。不明なフィールドは無視する。 */
+export function parseClientMessage(raw: string): ClientMessage | null {
 	let data: unknown;
 	try {
 		data = JSON.parse(raw);
 	} catch {
-		return { ok: false, code: "INVALID_MESSAGE", requestId: null, notJson: true };
+		return null;
 	}
-	const requestId = isObject(data) && isId(data.requestId) ? data.requestId : null;
-	const invalid: ParseResult = { ok: false, code: "INVALID_MESSAGE", requestId, notJson: false };
-	if (!isObject(data)) return invalid;
-	if (data.version !== PROTOCOL_VERSION) {
-		return { ok: false, code: "PROTOCOL_MISMATCH", requestId, notJson: false };
-	}
-
+	if (!isObject(data)) return null;
 	switch (data.type) {
-		case "hello":
-			if (!isId(data.clientId)) return invalid;
-			return { ok: true, message: { version: 1, type: "hello", clientId: data.clientId } };
 		case "command": {
-			if (!requestId) return invalid;
 			const command = parseCommand(data.command);
-			if (!command) return invalid;
-			if (data.expectedRevision === undefined) {
-				if (command.name !== "forceReset") return invalid;
-				return { ok: true, message: { version: 1, type: "command", requestId, command } };
-			}
-			if (!isRevision(data.expectedRevision)) return invalid;
-			return {
-				ok: true,
-				message: { version: 1, type: "command", requestId, expectedRevision: data.expectedRevision, command },
-			};
+			return command ? { type: "command", command } : null;
 		}
 		case "ping":
-			if (!isId(data.pingId) || !isTime(data.clientSentAt)) return invalid;
-			return {
-				ok: true,
-				message: { version: 1, type: "ping", pingId: data.pingId, clientSentAt: data.clientSentAt },
-			};
-		case "resultStarted":
-			if (!requestId || !isId(data.sessionId) || !isId(data.screenId) || !isTime(data.actualStartedAt))
-				return invalid;
-			return {
-				ok: true,
-				message: {
-					version: 1,
-					type: "resultStarted",
-					requestId,
-					sessionId: data.sessionId,
-					screenId: data.screenId,
-					actualStartedAt: data.actualStartedAt,
-				},
-			};
-		case "diagnostic": {
-			if (!requestId) return invalid;
-			const diagnostic = parseDiagnostic(data);
-			if (!diagnostic) return invalid;
-			return { ok: true, message: { version: 1, type: "diagnostic", requestId, ...diagnostic } };
-		}
+			if (typeof data.clientSentAt !== "number" || !Number.isFinite(data.clientSentAt)) return null;
+			return { type: "ping", clientSentAt: data.clientSentAt };
 		default:
-			return invalid;
+			return null;
 	}
 }
 
-/** 展示ディスプレイへ配信する範囲だけを取り出す（仕様書8.5節）。 */
+/** 展示ディスプレイと写真用へ配信する範囲だけを取り出す。回答内容は含めない。 */
 export function toDisplayState(state: ExhibitState): DisplayState {
 	return {
 		sessionId: state.sessionId,
@@ -235,65 +113,3 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 		revision: state.revision,
 	};
 }
-
-export interface DeviceStatus {
-	role: DeviceRole;
-	screenId: string | null;
-	connected: boolean;
-	lastReceivedAt: number | null;
-	/** 展示ディスプレイの先読み報告（仕様書7.2.5節）。 */
-	preload: { succeeded: number; failedPhotoIds: string[] } | null;
-	/** 時刻補正の精度（仕様書8.6節）。 */
-	clockSync: { minRoundTripTime: number; offsetSpread: number; degraded: boolean } | null;
-}
-
-export interface SyncEntry {
-	screenId: string;
-	actualStartedAt: number | null;
-	excludedReason: string | null;
-}
-
-/** 結果同期の計測（仕様書8.7節、13章）。 */
-export interface SyncReport {
-	sessionId: string;
-	judgingStartedAt: number;
-	resultStartAt: number;
-	entries: SyncEntry[];
-	/** 計測対象の `actualStartedAt` の最大値と最小値の差。 */
-	syncSpread: number | null;
-	/** `judging.phaseStartedAt` から計測対象の `actualStartedAt` 最大値まで。 */
-	startLatency: number | null;
-}
-
-export type AdminState = Omit<ExhibitState, "answers"> & {
-	devices: DeviceStatus[];
-	controllerAssigned: boolean;
-	syncReport: SyncReport | null;
-	/** サーバー内部の失敗が最後に起きた時刻（仕様書8.5節 INTERNAL_ERROR）。 */
-	lastInternalErrorAt: number | null;
-};
-
-export type RoleState = ExhibitState | DisplayState | AdminState;
-
-export type ServerMessage =
-	| { version: 1; type: "welcome"; serverTime: number; state: RoleState }
-	| { version: 1; type: "state"; revision: number; state: RoleState }
-	| { version: 1; type: "ack"; requestId: string; revision: number; state?: RoleState }
-	| {
-			version: 1;
-			type: "error";
-			requestId: string | null;
-			code: ErrorCode;
-			message: string;
-			retryable: boolean;
-			state?: RoleState;
-	  }
-	| { version: 1; type: "pong"; pingId: string; clientSentAt: number; serverTime: number }
-	| {
-			version: 1;
-			type: "alert";
-			name: "qrGenerationFailed";
-			sessionId: string;
-			colorId: ColorId;
-			occurredAt: number;
-	  };

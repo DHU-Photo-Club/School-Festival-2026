@@ -7,41 +7,35 @@ import { SEQUENCES } from "../../data/sequences.ts";
 import { idlePhotoFor, idlePlaylist, resultPhotoFor } from "../../shared/assignment.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex } from "../../shared/motion.ts";
-import { displayOrderOf } from "../../shared/screens.ts";
 import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses, spectrumColor } from "../../shared/shards.ts";
 import type { ColorId, DisplayState, Photo } from "../../shared/types.ts";
 import { COLOR_IDS } from "../../shared/types.ts";
-import Pairing from "../common/Pairing.svelte";
 import PhotoImage from "../common/PhotoImage.svelte";
 import { drawShards, hexToRgb } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
-import type { ScreenAuthStatus } from "../lib/session.ts";
-import { fetchDeviceSession, watchReducedMotion } from "../lib/session.ts";
+import { watchReducedMotion } from "../lib/reduced-motion.ts";
 import { displaySequence } from "../sequences/displays.ts";
 import type { SceneRenderer } from "./renderer.ts";
 import { createRenderer } from "./renderer.ts";
 
-let { screenId }: { screenId: string } = $props();
+/** URLの画面番号（`/display/2` の `2`）。来場者から見た順に1から振る。 */
+let { screen }: { screen: number } = $props();
 
 type LoadStatus = "loading" | "loaded" | "failed";
 
-// 並び順は登録時に振られた画面IDの番号で決まる。
-const parsedOrder = displayOrderOf(screenId);
-const displayOrder = parsedOrder ?? 0;
+// svelte-ignore state_referenced_locally
+const displayOrder = screen - 1;
 const playlist = idlePlaylist(PHOTOS);
-// 8色それぞれで自分に割り当てられる結果写真（仕様書7.2.5節）。写真がない色は読み込まない。
+// 8色それぞれで自分に割り当てられる結果写真を先に読み込んでおく。写真がない色は読み込まない。
 const resultAssignments = COLOR_IDS.map((colorId) => ({
 	colorId,
 	photo: resultPhotoFor(PHOTOS, colorId, displayOrder),
 }));
 
-let auth = $state<ScreenAuthStatus>("checking");
 let displayState = $state<DisplayState | null>(null);
 let reducedMotion = $state(false);
 let resultStatus = $state<Record<string, LoadStatus>>({});
-let idleStatus = $state<Record<string, LoadStatus>>({});
-let retryRound = $state(0);
 let cycle = $state(0);
 /** `sequence` の再生位置。再生中だけ毎フレーム更新する。 */
 let sequenceT = $state(0);
@@ -61,11 +55,7 @@ let lastDrawn = "";
 let lastShards = "";
 let idleReference: number | null = null;
 let animateSessionId: string | null = null;
-let reportedSessionId: string | null = null;
 let previousBackground: string | null = null;
-let preloadReported = false;
-/** 最初の待機二作品。`null` は未確定。 */
-let firstIdlePhotoIds: string[] | null = null;
 let stopWatching = () => {};
 
 const colorOf = (id: ColorId | null) => RESULT_COLORS.find((color) => color.id === id) ?? null;
@@ -77,11 +67,7 @@ function onState(next: DisplayState) {
 		if (previous && previous.phase !== "idle" && resultChoice) {
 			previousBackground = colorOf(resultChoice.colorId)?.backgroundColor ?? null;
 		}
-		if (previous?.phase !== "idle") {
-			resultChoice = null;
-			// 結果表示で読み込めなかった写真は、次の待機状態で再試行する（仕様書7.2.5節）。
-			if (Object.values(resultStatus).includes("failed")) retryFailedResultPhotos();
-		}
+		if (previous?.phase !== "idle") resultChoice = null;
 	} else if (idleReference === null) {
 		idleReference = next.phaseStartedAt;
 	}
@@ -102,39 +88,8 @@ function onState(next: DisplayState) {
 	displayState = next;
 }
 
-function retryFailedResultPhotos() {
-	const next = { ...resultStatus };
-	for (const [id, status] of Object.entries(next)) if (status === "failed") next[id] = "loading";
-	resultStatus = next;
-	retryRound += 1;
-}
-
 function setResultStatus(photoId: string, status: LoadStatus) {
 	resultStatus = { ...resultStatus, [photoId]: status };
-	maybeReportPreload();
-}
-
-function setIdleStatus(photoId: string, status: LoadStatus) {
-	if (idleStatus[photoId] === status) return;
-	idleStatus = { ...idleStatus, [photoId]: status };
-	maybeReportPreload();
-}
-
-/** 結果用写真8色分と最初の待機二作品の読み込み結果を報告する（仕様書7.2.5節）。 */
-function maybeReportPreload() {
-	if (preloadReported || !client || firstIdlePhotoIds === null) return;
-	const targets = [
-		...resultAssignments.flatMap(({ photo }) => (photo ? [{ id: photo.id, status: resultStatus[photo.id] }] : [])),
-		...firstIdlePhotoIds.map((id) => ({ id, status: idleStatus[id] ?? resultStatus[id] })),
-	];
-	if (targets.some((target) => target.status !== "loaded" && target.status !== "failed")) return;
-	preloadReported = true;
-	void client.request({
-		type: "diagnostic",
-		name: "preloadReport",
-		succeeded: targets.filter((target) => target.status === "loaded").length,
-		failedPhotoIds: targets.filter((target) => target.status === "failed").map((target) => target.id),
-	});
 }
 
 /**
@@ -179,8 +134,8 @@ function drawShardLayer(layer: ShardLayer | null) {
 
 /**
  * 結果表示で見せるもの。結果開始のフレームで写真を読み込めていなければタイポグラフィ表示に決め、
- * そのセッション中は変えない（仕様書7.2.5節）。結果開始後に接続した画面は演出を再生しないため、
- * 割り当て写真の読み込みが終わった時点で決める（docs/progress.md 参照）。
+ * そのセッション中は変えない。結果開始後に接続した画面は演出を再生しないため、
+ * 割り当て写真の読み込みが終わった時点で決める。
  */
 function chooseResult(sessionId: string | null, colorId: ColorId, waitForLoad: boolean) {
 	const photo = resultPhotoFor(PHOTOS, colorId, displayOrder);
@@ -213,13 +168,6 @@ function tick(timestamp: number) {
 	if (idleReference !== null) {
 		const nextCycle = idleCycleIndex(now, idleReference);
 		if (nextCycle !== cycle) cycle = nextCycle;
-		// 最初の待機二作品は、接続後に初めて求めた枠の現在作品と次作品（仕様書7.2.5節）。
-		if (firstIdlePhotoIds === null) {
-			firstIdlePhotoIds = [nextCycle, nextCycle + 1]
-				.map((index) => idlePhotoFor(playlist, index, displayOrder)?.id)
-				.filter((id, index, ids): id is string => id !== undefined && ids.indexOf(id) === index);
-			maybeReportPreload();
-		}
 		// 枠の切り替えフレームでもDOMの更新を待たずに正しい写真を選ぶため、写真IDで不透明度を決める。
 		const fade = idleCrossfade(now, idleReference, reducedMotion);
 		const currentId = idlePhotoFor(playlist, nextCycle, displayOrder)?.id;
@@ -238,7 +186,7 @@ function tick(timestamp: number) {
 		previousBackground = null;
 	}
 
-	// 結果開始のフレーム（仕様書8.7節）。
+	// 結果開始のフレーム。`judging` の `phaseEndsAt` を全画面が補正済みサーバー時刻で待つ。
 	const resultColor = state.phase === "judging" || state.phase === "result" ? state.resultColorId : null;
 	const startAt =
 		state.phase === "judging" ? state.phaseEndsAt : state.phase === "result" ? state.phaseStartedAt : null;
@@ -246,15 +194,6 @@ function tick(timestamp: number) {
 	if (resultColor && startAt !== null && now >= startAt) {
 		if (!resultChoice || resultChoice.sessionId !== state.sessionId) {
 			chooseResult(state.sessionId, resultColor, resultMode === "complete");
-			if (resultMode === "animate" && reportedSessionId !== state.sessionId && state.sessionId) {
-				reportedSessionId = state.sessionId;
-				void client.request({
-					type: "resultStarted",
-					sessionId: state.sessionId,
-					screenId,
-					actualStartedAt: now,
-				});
-			}
 		}
 	} else if (state.phase === "idle" && state.previewColorId) {
 		// 管理画面の表示確認は読み込みが終わり次第写真へ切り替える。
@@ -288,31 +227,13 @@ function tick(timestamp: number) {
 	drawShardLayer(scene.shards);
 }
 
-onMount(async () => {
+onMount(() => {
 	stopWatching = watchReducedMotion((reduced) => (reducedMotion = reduced));
-	if (parsedOrder === null) {
-		auth = "mismatch";
-		return;
-	}
-	const session = await fetchDeviceSession().catch(() => null);
-	if (!session) {
-		auth = "unpaired";
-		return;
-	}
-	// URLと端末セッションの screenId が一致しない場合は表示を開始しない（仕様書7.2.1節）。
-	if (session.role !== "display" || session.screenId !== screenId) {
-		auth = "mismatch";
-		return;
-	}
-	auth = "ok";
 	client = new RealtimeClient({
 		role: "display",
-		screenId,
+		screen,
 		onState: (state) => onState(state as DisplayState),
-		onStatus: (status) => {
-			if (status === "unauthenticated") auth = "unpaired";
-		},
-		checkAuth: async () => (await fetchDeviceSession()) !== null,
+		onStatus: () => {},
 	});
 	client.start();
 	window.addEventListener("resize", resize);
@@ -327,7 +248,7 @@ onDestroy(() => {
 	window.removeEventListener("resize", resize);
 });
 
-// 待機写真は現在枠と次枠の二作品だけを読み込む（仕様書7.2.5節）。
+// 待機写真は前枠・現在枠・次枠の作品だけを読み込む。
 const idleSlots = $derived.by(() => {
 	if (playlist.length === 0 || displayOrder >= playlist.length) return [];
 	const slots: { slot: "previous" | "current" | "next"; photo: Photo }[] = [];
@@ -346,71 +267,63 @@ const SequenceView = $derived(sequence ? displaySequence(sequence.id) : null);
 const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence, displayState) : 0);
 </script>
 
-{#if auth === "unpaired"}
-	<Pairing />
-{:else if auth === "mismatch"}
-	<Pairing message="この画面は再登録が必要です。" />
-{:else}
-	<main
-		class="display"
-		data-phase={displayState?.phase}
-		data-revision={displayState?.revision}
-		data-result-color={resultChoice?.colorId}
-		data-result-view={resultChoice ? (resultChoice.photo ? "photo" : "typography") : undefined}
-	>
-		<canvas bind:this={canvas}></canvas>
-		<canvas bind:this={shardCanvas}></canvas>
+<main
+	class="display"
+	data-phase={displayState?.phase}
+	data-revision={displayState?.revision}
+	data-result-color={resultChoice?.colorId}
+	data-result-view={resultChoice ? (resultChoice.photo ? "photo" : "typography") : undefined}
+>
+	<canvas bind:this={canvas}></canvas>
+	<canvas bind:this={shardCanvas}></canvas>
 
-		<div class="layer" bind:this={idleLayer} style="opacity: 0">
-			{#if displayOrder >= playlist.length}
-				<p class="title">{EXHIBIT.title}</p>
-			{:else}
-				<div class="frame">
-					{#each idleSlots as { slot, photo } (photo.id)}
-						<div class="photo" data-slot={slot} data-photo-id={photo.id} style="opacity: 0">
-							<PhotoImage {photo} onstatus={(status) => setIdleStatus(photo.id, status)} />
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
-
-		<div class="layer" bind:this={resultLayer} style="opacity: 0">
+	<div class="layer" bind:this={idleLayer} style="opacity: 0">
+		{#if displayOrder >= playlist.length}
+			<p class="title">{EXHIBIT.title}</p>
+		{:else}
 			<div class="frame">
-				{#key retryRound}
-					{#each resultAssignments as { colorId, photo } (colorId)}
-						{#if photo}
-							<div
-								class="photo"
-								data-result-color={colorId}
-								style:opacity={resultChoice?.photo?.id === photo.id ? 1 : 0}
-							>
-								<PhotoImage {photo} onstatus={(status) => setResultStatus(photo.id, status)} />
-							</div>
-						{/if}
-					{/each}
-				{/key}
-			</div>
-			{#if shownColor && resultChoice && !resultChoice.photo}
-				<p class="color-name" style:color={shownColor.foregroundColor}>{shownColor.name}</p>
-			{/if}
-		</div>
-
-		<div class="veil" bind:this={veil} style="opacity: 0"></div>
-
-		{#if sequence && SequenceView}
-			<div class="sequence" data-sequence={sequence.id}>
-				<SequenceView
-					t={sequenceT}
-					durationMs={sequenceMs}
-					sessionId={displayState?.sessionId ?? null}
-					{displayOrder}
-					{reducedMotion}
-				/>
+				{#each idleSlots as { slot, photo } (photo.id)}
+					<div class="photo" data-slot={slot} data-photo-id={photo.id} style="opacity: 0">
+						<PhotoImage {photo} />
+					</div>
+				{/each}
 			</div>
 		{/if}
-	</main>
-{/if}
+	</div>
+
+	<div class="layer" bind:this={resultLayer} style="opacity: 0">
+		<div class="frame">
+			{#each resultAssignments as { colorId, photo } (colorId)}
+				{#if photo}
+					<div
+						class="photo"
+						data-result-color={colorId}
+						style:opacity={resultChoice?.photo?.id === photo.id ? 1 : 0}
+					>
+						<PhotoImage {photo} onstatus={(status) => setResultStatus(photo.id, status)} />
+					</div>
+				{/if}
+			{/each}
+		</div>
+		{#if shownColor && resultChoice && !resultChoice.photo}
+			<p class="color-name" style:color={shownColor.foregroundColor}>{shownColor.name}</p>
+		{/if}
+	</div>
+
+	<div class="veil" bind:this={veil} style="opacity: 0"></div>
+
+	{#if sequence && SequenceView}
+		<div class="sequence" data-sequence={sequence.id}>
+			<SequenceView
+				t={sequenceT}
+				durationMs={sequenceMs}
+				sessionId={displayState?.sessionId ?? null}
+				{displayOrder}
+				{reducedMotion}
+			/>
+		</div>
+	{/if}
+</main>
 
 <style>
 .display {
