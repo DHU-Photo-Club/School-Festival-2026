@@ -2,45 +2,46 @@ import { describe, expect, it } from "vitest";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import {
 	answerCandidates,
-	answerScores,
-	cellCenter,
 	cellOf,
+	INITIAL_POSITION,
 	isValidAnswer,
-	mapWeights,
 	nearestStop,
 	roundPosition,
 	sameAnswer,
-	sliderWeights,
+	toggleSelection,
+	toPercent,
 } from "../../src/shared/answer.ts";
-import type { MultipleChoiceQuestion, Question } from "../../src/shared/types.ts";
+import type { MultipleChoiceQuestion, Question, RankedChoiceQuestion } from "../../src/shared/types.ts";
 
 const multiple: MultipleChoiceQuestion = {
 	id: "q",
 	kind: "multiple",
-	theme: "",
 	prompt: "",
+	guide: "",
 	minSelections: 2,
 	maxSelections: 3,
-	options: ["a", "b", "c", "d"].map((id) => ({ id, label: id, scores: { red: 1 } })),
+	options: ["a", "b", "c", "d"].map((id) => ({ id, label: id })),
+};
+
+const ranked: RankedChoiceQuestion = {
+	id: "r",
+	kind: "ranked",
+	prompt: "",
+	guide: "",
+	minSelections: 2,
+	maxSelections: 2,
+	options: ["a", "b", "c"].map((id) => ({ id, label: id })),
 };
 
 /** 仮データから入力方式 `kind` の最初の質問を取り出す。 */
 function sample<K extends Question["kind"]>(kind: K): Extract<Question, { kind: K }> {
 	const question = QUESTIONS.find((candidate) => candidate.kind === kind);
-	if (!question) throw new Error(`仮データに ${kind} の質問がありません`);
+	if (!question) throw new Error(`質問定義に ${kind} の質問がありません`);
 	return question as Extract<Question, { kind: K }>;
 }
 
 describe("回答", () => {
-	it("選択式は取りうる回答を、スライダーと2Dマップは等しい幅に分けた区間の中点を列挙する", () => {
-		expect(answerCandidates(sample("single"))).toEqual(sample("single").options.map((option) => option.id));
-		expect(answerCandidates(sample("slider"), { slider: 5, map: 3 })).toEqual([0.1, 0.3, 0.5, 0.7, 0.9]);
-		expect(answerCandidates(sample("slider"))).toHaveLength(8);
-		// 3×3に分けると、中点は区画の中心と一致する。
-		expect(answerCandidates(sample("map"), { slider: 5, map: 3 })).toEqual(
-			[0, 1, 2, 3, 4, 5, 6, 7, 8].map((index) => cellCenter(index)),
-		);
-		expect(answerCandidates(sample("map"))).toHaveLength(81);
+	it("複数選択は定義順の組み合わせを、順位つき選択は全ての並びを列挙する", () => {
 		// 4個から2〜3個: 6 + 4 通り。各組み合わせは定義順。
 		expect(answerCandidates(multiple)).toEqual([
 			["a", "b"],
@@ -54,11 +55,20 @@ describe("回答", () => {
 			["b", "d"],
 			["c", "d"],
 		]);
+		// 3個から2個の並び: 6通り。
+		expect(answerCandidates(ranked)).toHaveLength(6);
+		// Q1は「どれとも決められない」を単独で選べる。6個から1〜2個（6 + 15）と単独選択の1通り。
+		expect(answerCandidates(sample("multiple"))).toHaveLength(22);
 	});
 
 	it("列挙した回答はすべて有効", () => {
-		for (const question of [...QUESTIONS, multiple])
+		for (const question of [...QUESTIONS, multiple, ranked])
 			for (const answer of answerCandidates(question)) expect(isValidAnswer(question, answer)).toBe(true);
+	});
+
+	it("スライダーと2Dマップの初期位置は真ん中で、そのまま有効な回答", () => {
+		expect(isValidAnswer(sample("slider"), INITIAL_POSITION)).toBe(true);
+		expect(isValidAnswer(sample("map"), { x: INITIAL_POSITION, y: INITIAL_POSITION })).toBe(true);
 	});
 
 	it("スライダーは0〜1の数、2Dマップは各座標が0〜1の位置だけを受け付ける", () => {
@@ -86,51 +96,40 @@ describe("回答", () => {
 		expect(isValidAnswer(multiple, null)).toBe(false);
 	});
 
-	it("スライダーの重みは両隣の回答位置への距離で決まり、合計は1", () => {
-		expect(sliderWeights(0)).toEqual([[0, 1]]);
-		expect(sliderWeights(1)).toEqual([[4, 1]]);
-		expect(sliderWeights(0.5)).toEqual([[2, 1]]);
-		expect(sliderWeights(0.375)).toEqual([
-			[1, 0.5],
-			[2, 0.5],
-		]);
-		for (const x of [0.01, 0.33, 0.61, 0.99]) {
-			const total = sliderWeights(x).reduce((sum, [, weight]) => sum + weight, 0);
-			expect(total).toBeCloseTo(1, 12);
-		}
+	it("順位つき選択は個数、重複、IDを確かめ、並び順は問わない", () => {
+		expect(isValidAnswer(ranked, ["b", "a"])).toBe(true);
+		expect(isValidAnswer(ranked, ["a"])).toBe(false);
+		expect(isValidAnswer(ranked, ["a", "a"])).toBe(false);
+		expect(isValidAnswer(ranked, ["a", "b", "c"])).toBe(false);
+		expect(isValidAnswer(ranked, ["a", "x"])).toBe(false);
 	});
 
-	it("2Dマップの重みは近くの区画の中心への距離で決まり、合計は1", () => {
-		// 区画の中心ではその区画だけ。外周の中心より外側も外周の区画だけ。
-		expect(mapWeights(cellCenter(4))).toEqual([[4, 1]]);
-		expect(mapWeights({ x: 0, y: 0 })).toEqual([[0, 1]]);
-		expect(mapWeights({ x: 1, y: 1 })).toEqual([[8, 1]]);
-		// 4区画の中心の真ん中では4区画が4分の1ずつ。
-		const quarter = mapWeights({ x: 1 / 3, y: 1 / 3 });
-		expect(quarter.map(([index]) => index)).toEqual([0, 1, 3, 4]);
-		for (const [, weight] of quarter) expect(weight).toBeCloseTo(0.25, 12);
-		for (const point of [
-			{ x: 0.1, y: 0.9 },
-			{ x: 0.45, y: 0.2 },
-			{ x: 0.77, y: 0.6 },
-		]) {
-			const total = mapWeights(point).reduce((sum, [, weight]) => sum + weight, 0);
-			expect(total).toBeCloseTo(1, 12);
-		}
+	it("単独選択の選択肢はほかの選択肢と同時に選べない", () => {
+		const q1 = sample("multiple");
+		expect(isValidAnswer(q1, ["q1_7"])).toBe(true);
+		expect(isValidAnswer(q1, ["q1_1", "q1_7"])).toBe(false);
 	});
 
-	it("重みを掛けた配点を返す", () => {
-		const scored = {
-			...multiple,
-			options: multiple.options.map((option, index) => ({ ...option, scores: { blue: index + 1 } })),
-		};
-		expect(answerScores(scored, ["b", "d"])).toEqual([{ blue: 2 }, { blue: 4 }]);
-		const slider = sample("slider");
-		expect(answerScores(slider, 0.5)).toEqual([slider.stops[2].scores]);
-		const halfway = answerScores(slider, 0.375);
-		expect(halfway).toHaveLength(2);
-		for (const [colorId, points] of Object.entries(slider.stops[1].scores))
-			expect(halfway[0][colorId as keyof (typeof halfway)[0]]).toBe((points ?? 0) / 2);
+	it("選択肢を押すと、上限、単独選択、選んだ順に従って次の回答を返す", () => {
+		const q1 = sample("multiple");
+		expect(toggleSelection(q1, [], "q1_3")).toEqual(["q1_3"]);
+		// 複数選択は定義順に並べる。
+		expect(toggleSelection(q1, ["q1_3"], "q1_1")).toEqual(["q1_1", "q1_3"]);
+		// 上限に達したら、選んでいない選択肢は押せない。選択済みの解除はできる。
+		expect(toggleSelection(q1, ["q1_1", "q1_3"], "q1_2")).toBeNull();
+		expect(toggleSelection(q1, ["q1_1", "q1_3"], "q1_1")).toEqual(["q1_3"]);
+		// 単独選択は他を外して置き換え、他を押すと単独選択が外れる。上限でも切り替えられる。
+		expect(toggleSelection(q1, ["q1_1", "q1_3"], "q1_7")).toEqual(["q1_7"]);
+		expect(toggleSelection(q1, ["q1_7"], "q1_2")).toEqual(["q1_2"]);
+		expect(toggleSelection(q1, [], "nope")).toBeNull();
+		// 順位つき選択は選んだ順を保ち、外すと繰り上がる。
+		expect(toggleSelection(ranked, ["c"], "a")).toEqual(["c", "a"]);
+		expect(toggleSelection(ranked, ["c", "a"], "c")).toEqual(["a"]);
+		expect(toggleSelection(ranked, ["c", "a"], "b")).toBeNull();
+	});
+
+	it("AIへ渡す値は0〜100の整数", () => {
+		expect([0, 0.004, 0.005, 0.5, 0.999, 1, 1.5, -1].map(toPercent)).toEqual([0, 0, 1, 50, 100, 100, 100, 0]);
 	});
 
 	it("補助文に使う回答位置と区画は、最も近い回答位置と位置を含む区画", () => {

@@ -1,6 +1,6 @@
 import type { Command } from "./machine.ts";
-import type { Answer, ColorId, DeviceRole, DisplayState, ExhibitState } from "./types.ts";
-import { COLOR_IDS } from "./types.ts";
+import type { Answer, DeviceRole, DisplayState, ExhibitState, PaletteId } from "./types.ts";
+import { PALETTE_IDS } from "./types.ts";
 
 /** クライアントからサーバーへのメッセージ。 */
 export type ClientMessage = { type: "command"; command: Command } | { type: "ping"; clientSentAt: number };
@@ -31,7 +31,7 @@ const isObject = (value: unknown): value is Json =>
 /** `continue` で受け取るニックネームの、正規化前の最大長（UTF-16コード単位）。 */
 const MAX_RAW_NICKNAME = 200;
 const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 100;
-/** 複数選択の回答で受け取る選択肢IDの最大数。 */
+/** 複数選択と順位つき選択の回答で受け取る選択肢IDの最大数。 */
 const MAX_ANSWER_IDS = 20;
 const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 /**
@@ -71,8 +71,8 @@ function parseCommand(value: unknown): Command | null {
 			if (typeof value.accepting !== "boolean") return null;
 			return { name: "setAccepting", accepting: value.accepting };
 		case "previewColor":
-			if (!COLOR_IDS.includes(value.colorId as ColorId)) return null;
-			return { name: "previewColor", colorId: value.colorId as ColorId };
+			if (!PALETTE_IDS.includes(value.colorId as PaletteId)) return null;
+			return { name: "previewColor", colorId: value.colorId as PaletteId };
 		default:
 			return null;
 	}
@@ -100,13 +100,15 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 	}
 }
 
-/** 展示ディスプレイと写真用へ配信する範囲だけを取り出す。回答内容は含めない。 */
+/** 展示ディスプレイと写真用へ配信する範囲だけを取り出す。回答内容と結果ページのIDは含めない。 */
 export function toDisplayState(state: ExhibitState): DisplayState {
 	return {
 		sessionId: state.sessionId,
 		phase: state.phase,
 		sequenceId: state.sequenceId,
-		resultColorId: state.resultColorId,
+		result: state.result
+			? { name: state.result.name, colors: state.result.colors, photoIds: state.result.photoIds }
+			: null,
 		previewColorId: state.previewColorId,
 		phaseStartedAt: state.phaseStartedAt,
 		phaseEndsAt: state.phaseEndsAt,

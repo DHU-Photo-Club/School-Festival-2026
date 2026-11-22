@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESULT_COLORS } from "../../src/data/colors.ts";
+import { PALETTE } from "../../src/data/palette.ts";
 import { INACTIVITY_MS, JUDGING_MS } from "../../src/shared/machine.ts";
 import type { Primitive, Scene, SceneInput } from "../../src/shared/motion.ts";
 import {
@@ -14,10 +14,25 @@ import {
 	ringAngle,
 	ringOrder,
 	ringSteps,
+	screenColorId,
 	spectrumOffset,
 } from "../../src/shared/motion.ts";
-import type { ColorId, DisplayState } from "../../src/shared/types.ts";
-import { COLOR_IDS } from "../../src/shared/types.ts";
+import { backgroundColor, baseColor, paletteColor } from "../../src/shared/palette.ts";
+import type { DisplayState, PaletteId } from "../../src/shared/types.ts";
+import { PALETTE_IDS } from "../../src/shared/types.ts";
+
+const colorOf = (id: PaletteId) => {
+	const color = paletteColor(PALETTE.colors, id);
+	if (!color) throw new Error(`パレットに ${id} がない`);
+	return color;
+};
+
+/** 画面0が `first`、画面1が `second` を見せる結果。 */
+const resultOf = (first: PaletteId, second: PaletteId = first === "sky" ? "amber" : "sky") => ({
+	name: "テスト",
+	colors: [first, second] as const,
+	photoIds: [],
+});
 
 const T0 = 1_800_000_000_000;
 const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): SceneInput => ({
@@ -25,7 +40,7 @@ const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): Sc
 		sessionId: "session-a",
 		phase: "idle",
 		sequenceId: null,
-		resultColorId: null,
+		result: null,
 		previewColorId: null,
 		phaseStartedAt: T0,
 		phaseEndsAt: null,
@@ -37,7 +52,7 @@ const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): Sc
 	width: 1920,
 	height: 1080,
 	reducedMotion: false,
-	colors: RESULT_COLORS,
+	colors: PALETTE.colors,
 	resultMode: "animate",
 	previousBackground: null,
 	...patch,
@@ -58,10 +73,20 @@ describe("決定性", () => {
 		expect(computeScene(input)).toEqual(computeScene(structuredClone(input)));
 	});
 
-	it("輪の並び順はセッションの間は同じで、8色を一度ずつ含む", () => {
+	it("輪の並び順はセッションの間は同じで、13色を一度ずつ含む", () => {
 		expect(ringOrder("session-a")).toEqual(ringOrder("session-a"));
-		expect([...ringOrder("session-a")].sort()).toEqual([...COLOR_IDS].sort());
+		expect([...ringOrder("session-a")].sort()).toEqual([...PALETTE_IDS].sort());
 		expect(ringOrder(null)).toEqual(NEUTRAL_ORDER);
+	});
+
+	it("固定順では色相の隣り合う色を並べない", () => {
+		const position = (id: PaletteId) => PALETTE_IDS.indexOf(id);
+		for (let i = 0; i < NEUTRAL_ORDER.length; i += 1) {
+			const a = position(NEUTRAL_ORDER[i]);
+			const b = position(NEUTRAL_ORDER[(i + 1) % NEUTRAL_ORDER.length]);
+			const gap = Math.abs(a - b);
+			expect(Math.min(gap, PALETTE_IDS.length - gap)).toBeGreaterThan(1);
+		}
 	});
 
 	it("画面が右へ一つ進むごとに一区画戻し、一問確定すると隣の画面の構図へ移る", () => {
@@ -94,11 +119,11 @@ describe("質問中の破片", () => {
 		expect(shardsOf(reconnected)).toEqual(shardsOf(first));
 	});
 
-	it("8色を同じ面積で並べ、どの色も強調しない", () => {
+	it("パレットの13色を同じ面積で並べ、どの色も強調しない", () => {
 		const shards = shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
 		expect(shards).not.toBeNull();
-		expect(shards?.colors).toHaveLength(8);
-		expect(new Set(shards?.colors).size).toBe(8);
+		expect(shards?.colors).toHaveLength(13);
+		expect(new Set(shards?.colors).size).toBe(13);
 		expect(shards?.intensity).toBe(1);
 		expect(shards?.swell).toBe(1);
 	});
@@ -132,16 +157,22 @@ describe("質問中の破片", () => {
 });
 
 describe("判定と結果", () => {
-	const judging = (resultColorId: ColorId): Partial<DisplayState> => ({
+	const judging = (colorId: PaletteId): Partial<DisplayState> => ({
 		phase: "judging",
-		resultColorId,
+		result: resultOf(colorId),
 		phaseStartedAt: T0,
 		phaseEndsAt: T0 + JUDGING_MS,
 	});
 
+	it("二色は画面の順に交互に割り当てる", () => {
+		const result = resultOf("jade", "rose");
+		expect([0, 1, 2, 3].map((order) => screenColorId(result, order))).toEqual(["jade", "rose", "jade", "rose"]);
+		expect(screenColorId(null, 0)).toBeNull();
+	});
+
 	it("結果開始時刻より前の判定画面は、結果色によって変わらない", () => {
 		for (const now of [T0, T0 + 600, T0 + 1_999]) {
-			const scenes = COLOR_IDS.map((colorId) =>
+			const scenes = PALETTE_IDS.map((colorId) =>
 				JSON.stringify(computeScene(base(judging(colorId), { now })).primitives),
 			);
 			expect(new Set(scenes).size).toBe(1);
@@ -149,26 +180,31 @@ describe("判定と結果", () => {
 	});
 
 	it("判定は1.2秒で黒へ沈む", () => {
-		const scene = computeScene(base(judging("red"), { now: T0 + 1_500 }));
+		const scene = computeScene(base(judging("vermilion"), { now: T0 + 1_500 }));
 		expect(scene.primitives).toContainEqual({ type: "fill", color: COLORS.dark, alpha: 1 });
 		expect(shardsOf(scene)).toBeNull();
 	});
 
-	it.each(COLOR_IDS)("%s: 結果開始の最初のフレームで結果色の形が見えている", (colorId) => {
-		const color = RESULT_COLORS.find((entry) => entry.id === colorId);
+	it.each(PALETTE_IDS)("%s: 結果開始の最初のフレームで結果色の形が見えている", (colorId) => {
 		const scene = computeScene(base(judging(colorId), { now: T0 + JUDGING_MS }));
 		const shape = scene.primitives[1];
 		expect(shape).toBeDefined();
-		expect(JSON.stringify(shape)).toContain(color?.baseColor);
+		expect(JSON.stringify(shape)).toContain(baseColor(colorOf(colorId)));
 		expect(scene.resultLayer).toBe(0);
 	});
 
-	it.each(COLOR_IDS)("%s: 広がり、沈み、写真が現れて完了状態になる", (colorId) => {
-		const color = RESULT_COLORS.find((entry) => entry.id === colorId);
+	it("隣の画面はもう一方の色で広がる", () => {
+		const state: Partial<DisplayState> = { ...judging("jade"), result: resultOf("jade", "rose") };
+		const second = computeScene(base(state, { now: T0 + JUDGING_MS, displayOrder: 1 }));
+		expect(JSON.stringify(second.primitives[1])).toContain(baseColor(colorOf("rose")));
+	});
+
+	it.each(PALETTE_IDS)("%s: 広がり、沈み、写真が現れて完了状態になる", (colorId) => {
+		const color = colorOf(colorId);
 		const start = T0 + JUDGING_MS;
 		const result: Partial<DisplayState> = {
 			phase: "result",
-			resultColorId: colorId,
+			result: resultOf(colorId),
 			phaseStartedAt: start,
 			phaseEndsAt: start + 60_000,
 		};
@@ -176,7 +212,7 @@ describe("判定と結果", () => {
 		expect(durationMs).toBeGreaterThanOrEqual(1_400);
 		const settled = computeScene(base(result, { now: start + 10_000 }));
 		expect(settled).toEqual({
-			primitives: [{ type: "fill", color: color?.backgroundColor }],
+			primitives: [{ type: "fill", color: backgroundColor(color) }],
 			shards: null,
 			idleLayer: 0,
 			resultLayer: 1,
@@ -192,11 +228,11 @@ describe("判定と結果", () => {
 		const start = T0 + JUDGING_MS;
 		const scene = computeScene(
 			base(
-				{ phase: "result", resultColorId: "blue", phaseStartedAt: start, phaseEndsAt: start + 60_000 },
+				{ phase: "result", result: resultOf("blue"), phaseStartedAt: start, phaseEndsAt: start + 60_000 },
 				{ now: start + 100, resultMode: "complete" },
 			),
 		);
-		expect(scene.primitives).toEqual([{ type: "fill", color: "#122247" }]);
+		expect(scene.primitives).toEqual([{ type: "fill", color: backgroundColor(colorOf("blue")) }]);
 		expect(scene.resultLayer).toBe(1);
 	});
 
@@ -205,21 +241,29 @@ describe("判定と結果", () => {
 		const at = (offset: number) =>
 			computeScene(
 				base(
-					{ phase: "result", resultColorId: "green", phaseStartedAt: start, phaseEndsAt: start + 60_000 },
+					{
+						phase: "result",
+						result: resultOf("emerald"),
+						phaseStartedAt: start,
+						phaseEndsAt: start + 60_000,
+					},
 					{ now: start + offset, reducedMotion: true },
 				),
 			);
-		expect(at(0).primitives).toEqual([{ type: "fill", color: "#2F9B78" }]);
-		expect(at(1_500).primitives).toEqual([{ type: "fill", color: "#2F9B78" }]);
-		expect(at(1_600).primitives).toEqual([{ type: "fill", color: "#10392C" }]);
-		expect(at(30_000).primitives).toEqual([{ type: "fill", color: "#10392C" }]);
+		const emerald = colorOf("emerald");
+		expect(at(0).primitives).toEqual([{ type: "fill", color: baseColor(emerald) }]);
+		expect(at(1_500).primitives).toEqual([{ type: "fill", color: baseColor(emerald) }]);
+		expect(at(1_600).primitives).toEqual([{ type: "fill", color: backgroundColor(emerald) }]);
+		expect(at(30_000).primitives).toEqual([{ type: "fill", color: backgroundColor(emerald) }]);
 	});
 
-	it("cyan は偶数の画面で左から、奇数の画面で右から掃く", () => {
+	it("掃く広がり方は偶数の画面で左から、奇数の画面で右から掃く", () => {
+		expect(RESULT_FORMS.emerald.form).toBe("sweepingTide");
+		expect(RESULT_FORMS.rose.form).toBe("sweepingTide");
 		const start = T0 + JUDGING_MS;
 		const state: Partial<DisplayState> = {
 			phase: "result",
-			resultColorId: "cyan",
+			result: resultOf("emerald", "rose"),
 			phaseStartedAt: start,
 			phaseEndsAt: start + 60_000,
 		};
@@ -243,7 +287,7 @@ describe("判定と結果", () => {
 		return Math.min(px, width - px, py, height - py);
 	};
 
-	it.each(COLOR_IDS)("%s: 広がり始めは画面の一部だけに色があり、円の形を使わない", (colorId) => {
+	it.each(PALETTE_IDS)("%s: 広がり始めは画面の一部だけに色があり、円の形を使わない", (colorId) => {
 		const blooms = resultFormPrimitives(colorId, "#FFFFFF", 0, 1920, 1080, 0, 0) as Extract<
 			Primitive,
 			{ type: "bloom" }
@@ -261,7 +305,7 @@ describe("判定と結果", () => {
 		);
 	});
 
-	it.each(COLOR_IDS)("%s: 広がりの終わりでは、縁がノイズで揺れても画面全体を塗りつぶす", (colorId) => {
+	it.each(PALETTE_IDS)("%s: 広がりの終わりでは、縁がノイズで揺れても画面全体を塗りつぶす", (colorId) => {
 		for (const [width, height] of [
 			[1920, 1080],
 			[1080, 1920],

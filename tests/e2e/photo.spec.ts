@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { RESULT_COLORS } from "../../src/data/colors.ts";
+import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { idlePlaylist } from "../../src/shared/assignment.ts";
@@ -23,7 +23,7 @@ test("写真用は診断中も8秒周期で写真を繰り返し表示する", a
 		await expect(harness.admin.page.locator('[data-testid^="device-display-"]')).toHaveCount(0);
 		await page.clock.pauseAt(new Date());
 
-		const preview = harness.admin.page.getByRole("button", { name: RESULT_COLORS[0].name, exact: true });
+		const preview = harness.admin.page.getByRole("button", { name: PALETTE.colors[0].name, exact: true });
 		await preview.click({ timeout: 10_000 });
 		await expect(preview).toHaveAttribute("aria-pressed", "true");
 		await expect(main).toHaveAttribute("data-photo-id", playlist[0].id);

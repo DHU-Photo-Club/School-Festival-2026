@@ -1,8 +1,11 @@
-import { RESULT_COLORS } from "../../src/data/colors.ts";
-import { QUESTIONS } from "../../src/data/questions.ts";
+import { PALETTE } from "../../src/data/palette.ts";
+import { PHOTOS } from "../../src/data/photos.ts";
+import { QUESTION_VERSION, QUESTIONS } from "../../src/data/questions.ts";
 import { answerCandidates } from "../../src/shared/answer.ts";
 import type { AdminState, RoleState, ServerMessage } from "../../src/shared/protocol.ts";
 import type { Answer, Question, Role, Sequence } from "../../src/shared/types.ts";
+import type { Judge } from "../../src/worker/ai/judge.ts";
+import { createStubJudge } from "../../src/worker/ai/judge.ts";
 import type { Connection, ConnectionMeta, Store } from "../../src/worker/core.ts";
 import { ExhibitCore } from "../../src/worker/core.ts";
 
@@ -71,8 +74,30 @@ export class Harness {
 	private counter = 0;
 	readonly core: ExhibitCore;
 
-	/** `sequences` を省略すると、シーケンスを再生しない展示として動かす。 */
-	constructor(options: { sequences?: readonly Sequence[] } = {}) {
+	/** 結果IDの連番。 */
+	private resultCounter = 0;
+	readonly log: string[] = [];
+
+	/**
+	 * `sequences` を省略すると、シーケンスを再生しない展示として動かす。
+	 * `judge` を省略すると、決まった二色を返す仮の選定（`AI_STUB=1` と同じ）を使う。`null` なら選定なし。
+	 */
+	constructor(options: { sequences?: readonly Sequence[]; judge?: Judge | null; judgingMaxMs?: number } = {}) {
+		const newResultId = () => {
+			this.resultCounter += 1;
+			return this.resultCounter.toString(16).padStart(16, "0");
+		};
+		const judge =
+			options.judge === null
+				? undefined
+				: (options.judge ??
+					createStubJudge({
+						questionVersion: QUESTION_VERSION,
+						palette: PALETTE,
+						photos: PHOTOS,
+						now: () => this.time,
+						newResultId,
+					}));
 		this.core = new ExhibitCore({
 			store: this.store,
 			now: () => this.time,
@@ -84,8 +109,11 @@ export class Harness {
 			connections: () =>
 				this.connections.filter((connection) => !connection.closed).map((connection) => wrap(connection)),
 			questions: QUESTIONS,
-			colors: RESULT_COLORS,
 			sequences: options.sequences ?? [],
+			photos: PHOTOS,
+			judge,
+			judgingMaxMs: options.judgingMaxMs,
+			log: (message) => this.log.push(message),
 		});
 	}
 
@@ -115,6 +143,11 @@ export class Harness {
 
 	command(connection: FakeConnection, command: Record<string, unknown>): void {
 		this.send(connection, { type: "command", command });
+	}
+
+	/** `command` と同じ。AIの選定を待ち始めた場合は、その Promise を返す。 */
+	commandWithResult(connection: FakeConnection, command: Record<string, unknown>): Promise<void> | null {
+		return this.core.handleMessage(wrap(connection), JSON.stringify({ type: "command", command }));
 	}
 
 	alarm(): void {

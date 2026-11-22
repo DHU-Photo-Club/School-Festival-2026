@@ -1,6 +1,7 @@
 <script lang="ts">
 import CheckIcon from "@lucide/svelte/icons/check";
-import type { Answer, MultipleChoiceQuestion, SingleChoiceQuestion } from "../../shared/types.ts";
+import { toggleSelection } from "../../shared/answer.ts";
+import type { Answer, ChoiceQuestion } from "../../shared/types.ts";
 import type { InputMode } from "./input-mode.ts";
 
 let {
@@ -9,8 +10,10 @@ let {
 	mode,
 	onselect,
 }: {
-	question: SingleChoiceQuestion | MultipleChoiceQuestion;
-	/** 単選択は選択肢ID、複数選択は選択肢IDの配列（定義順）。未回答は `null`。 */
+	question: ChoiceQuestion;
+	/**
+	 * 単選択は選択肢ID、複数選択は選択肢IDの配列（定義順）、順位つき選択は選んだ順の配列。未回答は `null`。
+	 */
 	value: Answer | null;
 	mode: InputMode;
 	onselect: (answer: Answer) => void;
@@ -21,19 +24,26 @@ const selected: readonly string[] = $derived(
 	typeof value === "string" ? [value] : Array.isArray(value) ? (value as readonly string[]) : [],
 );
 const locked = $derived(mode === "disabled" || mode === "pending");
-/** 複数選択で上限まで選んだか。上限に達したら、選んでいない選択肢を押せなくする。 */
-const full = $derived(question.kind === "multiple" && selected.length >= question.maxSelections);
+/** 複数選びの質問か（複数選択と順位つき選択）。 */
+const many = $derived(question.kind !== "single");
+/**
+ * 上限まで選んだか。上限に達したら、選んでいない選択肢を押せなくする。単独選択の選択肢は、他の選択を
+ * 置き換えるため押せるままにする。
+ */
+const full = $derived(question.kind !== "single" && selected.length >= question.maxSelections);
+const exclusiveOf = (id: string) => question.options.find((option) => option.id === id)?.exclusive === true;
 
-/** 複数選択で選べる個数の説明。例: `2つまで`、`1〜3つ`、`2つ`。 */
+/** 複数選びで選べる個数の説明。例: `2つまで`、`1〜3つ`、`2つ`。 */
 const range = $derived.by(() => {
-	if (question.kind !== "multiple") return "";
+	if (question.kind === "single") return "";
 	const { minSelections: min, maxSelections: max } = question;
 	if (min === max) return `${max}つ`;
 	if (min === 1) return `${max}つまで`;
 	return `${min}〜${max}つ`;
 });
 
-const labels = $derived(question.options.filter((option) => selected.includes(option.id)).map((o) => o.label));
+/** 選んだ選択肢の表示文。順位つき選択は選んだ順。 */
+const labels = $derived(selected.map((id) => question.options.find((option) => option.id === id)?.label ?? id));
 
 const caption = $derived.by(() => {
 	switch (mode) {
@@ -42,9 +52,13 @@ const caption = $derived.by(() => {
 		case "pending":
 			return "送信しています";
 		case "unanswered":
-			return question.kind === "single" ? "一つ選んでください" : `${range}選んでください`;
+			if (question.kind === "single") return "一つ選んでください";
+			if (question.kind === "ranked") return `順番に${range}選んでください`;
+			return `${range}選んでください`;
 		case "answered":
-			return `回答済み: ${labels.join("、")}`;
+			return question.kind === "ranked"
+				? `回答済み: ${labels.map((label, i) => `${i + 1}位 ${label}`).join("、")}`
+				: `回答済み: ${labels.join("、")}`;
 		default:
 			if (question.kind === "single") return labels[0] ?? "";
 			if (selected.length < question.minSelections)
@@ -59,11 +73,9 @@ function toggle(id: string) {
 		onselect(id);
 		return;
 	}
-	const has = selected.includes(id);
-	if (!has && full) return;
-	const next = has ? selected.filter((candidate) => candidate !== id) : [...selected, id];
-	// 回答は選択肢の定義順に並べる。
-	onselect(question.options.filter((option) => next.includes(option.id)).map((option) => option.id));
+	// 複数選択は定義順、順位つき選択は選んだ順に並べる。上限を超える選択は `null`。
+	const next = toggleSelection(question, selected, id);
+	if (next) onselect(next);
 }
 </script>
 
@@ -71,19 +83,23 @@ function toggle(id: string) {
 	<div class="options" role={question.kind === "single" ? "radiogroup" : "group"} aria-label={question.prompt}>
 		{#each question.options as option (option.id)}
 			{@const checked = selected.includes(option.id)}
+			{@const rank = selected.indexOf(option.id) + 1}
 			<button
 				type="button"
 				class="option"
 				class:checked
+				class:exclusive={option.exclusive}
 				role={question.kind === "single" ? "radio" : "checkbox"}
 				aria-checked={checked}
 				disabled={locked}
-				aria-disabled={!checked && full ? "true" : undefined}
+				aria-disabled={!checked && full && !exclusiveOf(option.id) ? "true" : undefined}
 				onclick={() => toggle(option.id)}
 			>
-				<span class="mark" class:square={question.kind === "multiple"} aria-hidden="true">
+				<span class="mark" class:square={many} aria-hidden="true">
 					{#if checked}
-						{#if question.kind === "multiple"}
+						{#if question.kind === "ranked"}
+							<span class="rank">{rank}</span>
+						{:else if question.kind === "multiple"}
 							<CheckIcon size={18} strokeWidth={3} />
 						{:else}
 							<span class="dot"></span>
@@ -164,6 +180,15 @@ function toggle(id: string) {
 }
 .mark.square {
 	border-radius: 0;
+}
+/* 単独選択の選択肢（例:「どれとも決められない」）は、他の選択肢と区別できるよう全幅に置く。 */
+.option.exclusive {
+	grid-column: 1 / -1;
+}
+.rank {
+	font-size: 16px;
+	font-weight: 700;
+	line-height: 1;
 }
 .dot {
 	width: 12px;

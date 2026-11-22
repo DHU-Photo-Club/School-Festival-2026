@@ -44,7 +44,7 @@ const pageLabel = display
 		<main class="not-found">管理画面を読み込めませんでした。ページを再読み込みしてください。</main>
 	{/await}
 {:else if result}
-	<ResultPage colorId={decodeURIComponent(result[1])} />
+	<ResultPage resultId={decodeURIComponent(result[1])} />
 {:else}
 	<main class="not-found">ページが見つかりません</main>
 {/if}

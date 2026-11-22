@@ -1,9 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { RESULT_COLORS } from "../../src/data/colors.ts";
-import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
-import { resultPhotoFor } from "../../src/shared/assignment.ts";
-import { COLOR_IDS } from "../../src/shared/types.ts";
 import type { Device } from "./fixtures.ts";
 import {
 	answerQuestion,
@@ -12,6 +8,9 @@ import {
 	enterNickname,
 	expectedResultView,
 	expectQuestion,
+	foregroundRgb,
+	STUB_RESULT,
+	stubScreenColor,
 	waitForResultPhotos,
 } from "./fixtures.ts";
 
@@ -147,24 +146,23 @@ test("result 開始から60秒後に操作がなくても待機表示へ戻る",
 
 test("結果写真を読み込めない画面は開始時刻を遅らせずタイポグラフィを表示する", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
-	// 展示ディスプレイ1に割り当てられる各色の写真の取得を失敗させる。
-	const assigned = COLOR_IDS.flatMap((colorId) => resultPhotoFor(PHOTOS, colorId, 0)?.id ?? []);
+	// 展示ディスプレイ1に割り当てられる写真（選定した写真の先頭）の取得を失敗させる。
+	const assigned = STUB_RESULT.photoIds[0];
 	const { context, page } = await harness.openDevice("display", {}, (context) =>
-		context.route(new RegExp(`/photos/(${assigned.join("|")}).(avif|jpg)$`), (route) => route.abort()),
+		context.route(new RegExp(`/photos/${assigned}\\.(avif|jpg)$`), (route) => route.abort()),
 	);
 	const other = await harness.openDevice("display");
 	await waitForResultPhotos(other.page);
 
 	const ipad = await harness.openDevice("controller");
 	await answerAll(ipad);
-	const name = await ipad.page.locator(".color-name").innerText();
-	const color = RESULT_COLORS.find((candidate) => candidate.name === name);
+	const color = stubScreenColor(0);
 	await expect(page.locator("main.display")).toHaveAttribute("data-result-view", "typography");
-	await expect(page.locator(".color-name")).toHaveText(name);
-	await expect(page.locator(".color-name")).toHaveCSS("color", hexToRgb(color?.foregroundColor ?? ""));
+	await expect(page.locator(".color-name")).toHaveText(color.name);
+	await expect(page.locator(".color-name")).toHaveCSS("color", foregroundRgb(color));
 	await expect(other.page.locator("main.display")).toHaveAttribute(
 		"data-result-view",
-		expectedResultView(color?.id ?? "red", 1),
+		expectedResultView(STUB_RESULT.photoIds, 1),
 	);
 
 	await context.close();
@@ -172,8 +170,3 @@ test("結果写真を読み込めない画面は開始時刻を遅らせずタ�
 	await ipad.context.close();
 	await harness.close();
 });
-
-function hexToRgb(hex: string): string {
-	const n = Number.parseInt(hex.slice(1), 16);
-	return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
-}

@@ -17,9 +17,10 @@ import { Badge } from "$lib/components/ui/badge/index.js";
 import { Button } from "$lib/components/ui/button/index.js";
 import * as Card from "$lib/components/ui/card/index.js";
 import { cn } from "$lib/utils.js";
-import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
+import { PALETTE } from "../../data/palette.ts";
 import type { Command } from "../../shared/machine.ts";
+import { backgroundColor, baseColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
 import type { AdminState, DeviceStatus } from "../../shared/protocol.ts";
 import type { DeviceRole } from "../../shared/types.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
@@ -62,7 +63,6 @@ let status = $state<ConnectionStatus>("connecting");
 let busy = $state(false);
 let client: RealtimeClient | null = null;
 
-const colorOf = (id: string | null) => RESULT_COLORS.find((color) => color.id === id) ?? null;
 const time = (value: number | null) =>
 	value === null ? "—" : new Date(value).toLocaleTimeString("ja-JP", { hour12: false });
 const devicesOf = (role: DeviceRole): DeviceStatus[] => admin?.devices.filter((device) => device.role === role) ?? [];
@@ -70,7 +70,12 @@ const deviceName = (device: DeviceStatus) =>
 	device.screen === null ? DEVICE_LABELS[device.role] : `${DEVICE_LABELS[device.role]} ${device.screen}`;
 const deviceKey = (device: DeviceStatus) => (device.screen === null ? device.role : `${device.role}-${device.screen}`);
 
-const resultColor = $derived(colorOf(admin?.resultColorId ?? null));
+/** 結果の二色。 */
+const resultColors = $derived(
+	admin?.result
+		? admin.result.colors.map((id) => paletteColor(PALETTE.colors, id)).filter((color) => color !== null)
+		: [],
+);
 
 function command(next: Command) {
 	if (!client || !admin || busy) return;
@@ -190,15 +195,19 @@ onDestroy(() => client?.stop());
 									<div class={TILE}>
 										<p class={TILE_LABEL}>結果色</p>
 										<p class={cn(TILE_VALUE, "flex items-center gap-2")}>
-											{#if resultColor}
+											{#if resultColors.length === 2}
 												<span
 													class="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
-													style:background={resultColor.baseColor}
+													style:background={gradientCss(resultColors[0], resultColors[1])}
 													aria-hidden="true"
 												></span>
 											{/if}
-											<span class="truncate" data-testid="result-color"
-												>{resultColor?.name ?? "—"}</span
+											<span
+												class="truncate"
+												data-testid="result-color"
+												title={resultColors.map((color) => color.name).join(" と ")}
+												>{admin?.result?.name ??
+													(admin?.judgeFailed ? "選定に失敗" : "—")}</span
 											>
 										</p>
 									</div>
@@ -263,18 +272,18 @@ onDestroy(() => client?.stop());
 						</Card.Header>
 						<Card.Content class={SCROLL_BODY}>
 							<div class="colors grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1.5 p-0.5">
-								{#each RESULT_COLORS as color (color.id)}
+								{#each PALETTE.colors as color (color.id)}
 									<Button
 										variant="outline"
 										class="swatch h-8 justify-start gap-2 border-foreground/10 px-3 ring-offset-2 ring-offset-card hover:brightness-110 aria-pressed:ring-2 aria-pressed:ring-primary"
-										style="background: {color.backgroundColor}; color: {color.foregroundColor};"
+										style="background: {backgroundColor(color)}; color: {foregroundColor(color)};"
 										aria-pressed={admin?.previewColorId === color.id}
 										disabled={busy || admin?.phase !== "idle"}
 										onclick={() => command({ name: "previewColor", colorId: color.id })}
 									>
 										<span
 											class="size-3 shrink-0 rounded-full ring-1 ring-white/30"
-											style:background={color.baseColor}
+											style:background={baseColor(color)}
 										></span>{color.name}
 									</Button>
 								{/each}

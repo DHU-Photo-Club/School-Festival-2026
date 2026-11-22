@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import type { Device } from "./fixtures.ts";
 import {
 	answerQuestion,
+	backgroundHex,
 	canvasDigest,
 	canvasHasGraphics,
 	canvasPixel,
@@ -11,6 +11,9 @@ import {
 	enterNickname,
 	expectedResultView,
 	expectQuestion,
+	palette,
+	STUB_RESULT,
+	stubScreenColor,
 	waitForResultPhotos,
 } from "./fixtures.ts";
 
@@ -81,19 +84,18 @@ test("reduced-motion の待機表示はクロスフェードせず即時に切�
 	await harness.close();
 });
 
-test("管理画面の表示確認で全画面が結果色の完了状態を表示し、終了で待機へ戻る", async ({ browser }) => {
+test("管理画面の表示確認で全画面がパレットの色の完了状態を表示し、終了で待機へ戻る", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const displays = await harness.openDisplays(3);
 	for (const display of displays) await waitForResultPhotos(display.page);
-	const violet = RESULT_COLORS.find((color) => color.id === "violet");
-	await harness.admin.page.getByRole("button", { name: violet?.name }).click();
-	for (const [displayOrder, display] of displays.entries()) {
-		await expect(display.page.locator("main.display")).toHaveAttribute("data-result-color", "violet");
-		await expect.poll(() => canvasPixel(display.page, 0.5, 0.01)).toBe(violet?.backgroundColor);
-		await expect(display.page.locator("main.display")).toHaveAttribute(
-			"data-result-view",
-			expectedResultView("violet", displayOrder),
-		);
+	const wisteria = palette("wisteria");
+	await harness.admin.page.getByRole("button", { name: wisteria.name, exact: true }).click();
+	for (const display of displays) {
+		await expect(display.page.locator("main.display")).toHaveAttribute("data-result-color", "wisteria");
+		await expect.poll(() => canvasPixel(display.page, 0.5, 0.01)).toBe(backgroundHex(wisteria));
+		// 写真はセッションごとに選ぶため、表示確認は色名のタイポグラフィで見せる。
+		await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "typography");
+		await expect(display.page.locator(".color-name")).toHaveText(wisteria.name);
 	}
 	await harness.admin.page.getByRole("button", { name: "表示確認を終了" }).click();
 	for (const display of displays) {
@@ -141,15 +143,16 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	await expect
 		.poll(() => canvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
 		.toBe("#000000");
-	const name = await page.locator(".color-name").innerText({ timeout: 5_000 });
-	const color = RESULT_COLORS.find((candidate) => candidate.name === name);
+	await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name, { timeout: 5_000 });
 
-	// 結果: 基準色の全面から完了状態へ一回だけ切り替わる。
+	// 結果: 基準色の全面から完了状態へ一回だけ切り替わる。画面ごとに二色を交互に見せる。
 	for (const [displayOrder, display] of displays.entries()) {
-		await expect.poll(() => canvasPixel(display.page, 0.5, 0.01), { timeout: 5_000 }).toBe(color?.backgroundColor);
+		await expect
+			.poll(() => canvasPixel(display.page, 0.5, 0.01), { timeout: 5_000 })
+			.toBe(backgroundHex(stubScreenColor(displayOrder)));
 		await expect(display.page.locator("main.display")).toHaveAttribute(
 			"data-result-view",
-			expectedResultView(color?.id ?? "red", displayOrder),
+			expectedResultView(STUB_RESULT.photoIds, displayOrder),
 		);
 	}
 	await page.getByRole("button", { name: "最初に戻る" }).click();

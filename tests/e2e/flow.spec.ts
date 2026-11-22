@@ -1,7 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { SPLIT_MAX, SPLIT_MIN } from "../../src/client/controller/split.ts";
-import { RESULT_COLORS } from "../../src/data/colors.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
@@ -11,6 +10,7 @@ import type { Device } from "./fixtures.ts";
 import {
 	answerInput,
 	answerQuestion,
+	backgroundHex,
 	canvasDigest,
 	canvasPixel,
 	choiceOption,
@@ -20,7 +20,9 @@ import {
 	enterNickname,
 	expectQuestion,
 	mapValue,
+	STUB_RESULT,
 	sliderValue,
+	stubScreenColor,
 	tapCell,
 	tapMapAt,
 	tapSliderAt,
@@ -32,7 +34,7 @@ const revisionOf = async (device: Device) =>
 
 /**
  * 入力方式ごとの操作を一通り試す。終了時は、スライダーと2Dマップは最後に選んだ位置、
- * 単選択は最後の選択肢を選んだ状態、複数選択は何も選んでいない状態。
+ * 単選択は最後の選択肢を選んだ状態、複数選択と順位つき選択は何も選んでいない状態。
  */
 async function exploreInput(page: Page, question: Question) {
 	const next = page.getByRole("button", { name: "次へ" });
@@ -68,7 +70,10 @@ async function exploreInput(page: Page, question: Question) {
 			if (!footer) throw new Error("footer not found");
 			const gap = { x: footer.x + footer.width / 2, y: footer.y + footer.height / 2 };
 			expect(
-				await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.matches(".question footer") ?? false, gap),
+				await page.evaluate(
+					({ x, y }) => document.elementFromPoint(x, y)?.matches(".question footer") ?? false,
+					gap,
+				),
 			).toBe(true);
 			await page.mouse.click(gap.x, gap.y);
 			expect(await sliderValue(page)).toBe(0);
@@ -134,6 +139,27 @@ async function exploreInput(page: Page, question: Question) {
 				await expect(page.locator(".choices .caption")).toHaveText(label);
 			}
 			break;
+		case "ranked": {
+			// 選んだ順に順位が付き、外すと残りが繰り上がる。上限に達すると選んでいない選択肢は押せない。
+			const ranks = () => page.locator(".option.checked .rank").allInnerTexts();
+			await choiceOption(page, question, 2).click();
+			await expect(next).toBeDisabled();
+			await choiceOption(page, question, 0).click();
+			await expect(next).toBeEnabled();
+			// 選択肢は定義順に並び、順位の印は選んだ順。
+			expect(await page.locator(".option.checked .label").allInnerTexts()).toEqual([
+				question.options[0].label,
+				question.options[2].label,
+			]);
+			expect(await ranks()).toEqual(["2", "1"]);
+			await expect(choiceOption(page, question, 1)).toHaveAttribute("aria-disabled", "true");
+			await choiceOption(page, question, 2).click();
+			expect(await ranks()).toEqual(["1"]);
+			await choiceOption(page, question, 0).click();
+			await expect(next).toBeDisabled();
+			await expect(answerInput(page)).toHaveAttribute("data-mode", "unanswered");
+			break;
+		}
 		case "multiple": {
 			// 下限に届くまで「次へ」は無効、上限に達すると選んでいない選択肢は押せない。
 			const picks = Array.from({ length: question.maxSelections }, (_, index) => index);
@@ -148,6 +174,18 @@ async function exploreInput(page: Page, question: Question) {
 					"aria-disabled",
 					"true",
 				);
+			// 単独選択の選択肢（「どれとも決められない」）は上限でも押せ、ほかの選択を置き換える。
+			const exclusive = question.options.findIndex((option) => option.exclusive);
+			if (exclusive !== -1) {
+				await expect(choiceOption(page, question, exclusive)).not.toHaveAttribute("aria-disabled", "true");
+				await choiceOption(page, question, exclusive).click();
+				await expect(page.locator(".option.checked")).toHaveCount(1);
+				await expect(choiceOption(page, question, exclusive)).toHaveAttribute("aria-checked", "true");
+				// ほかの選択肢を押すと、単独選択の選択肢は外れる。
+				await choiceOption(page, question, picks[0]).click();
+				await expect(choiceOption(page, question, exclusive)).toHaveAttribute("aria-checked", "false");
+				await choiceOption(page, question, picks[1]).click();
+			}
 			// すべて外すと未回答へ戻る。
 			for (const index of picks) await choiceOption(page, question, index).click();
 			await expect(next).toBeDisabled();
@@ -175,11 +213,20 @@ for (const displayCount of [1, 3]) {
 		for (const [index, question] of QUESTIONS.entries()) {
 			await expectQuestion(page, index);
 			await expect(page.getByRole("heading", { name: question.prompt })).toBeVisible();
+			await expect(page.getByText(question.guide)).toBeVisible();
 			const next = page.getByRole("button", { name: "次へ" });
-			// 初めて開いた質問では「次へ」が無効で、入力は未回答の表示。
-			await expect(next).toBeDisabled();
 			await expect(answerInput(page)).toHaveAttribute("data-answer-input", question.kind);
-			await expect(answerInput(page)).toHaveAttribute("data-mode", "unanswered");
+			if (question.kind === "slider" || question.kind === "map") {
+				// スライダーと2Dマップは真ん中から始まり、そのまま「次へ」で送れる。
+				await expect(next).toBeEnabled();
+				await expect(answerInput(page)).toHaveAttribute("data-mode", "active");
+				if (question.kind === "slider") expect(await sliderValue(page)).toBe(0.5);
+				else expect(await mapValue(page)).toEqual({ x: 0.5, y: 0.5 });
+			} else {
+				// 初めて開いた選択式の質問では「次へ」が無効で、入力は未回答の表示。
+				await expect(next).toBeDisabled();
+				await expect(answerInput(page)).toHaveAttribute("data-mode", "unanswered");
+			}
 
 			const before = await revisionOf(displays[0]);
 			if (!explored.has(question.kind)) {
@@ -200,7 +247,7 @@ for (const displayCount of [1, 3]) {
 			}
 			if (index === 1) {
 				// 戻ると直前の回答が復元され、変更して再確定できる。
-				expect(question.kind).toBe("single");
+				expect(question.kind).toBe("multiple");
 				await page.getByRole("button", { name: "戻る" }).click();
 				await expectQuestion(page, 1);
 				await expect(choiceOption(page, question, 1)).toHaveAttribute("aria-checked", "true");
@@ -216,42 +263,47 @@ for (const displayCount of [1, 3]) {
 		for (const display of displays)
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
 
-		// 全画面が同じ結果色へ切り替わる。
+		// iPadに色名と二色を表示し、展示ディスプレイは二色を画面の順に交互に見せる。
 		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 5_000 });
-		const name = await page.locator(".color-name").innerText();
-		const color = RESULT_COLORS.find((candidate) => candidate.name === name);
-		expect(color).toBeDefined();
-		for (const display of displays) {
-			await expect(display.page.locator("main.display")).toHaveAttribute("data-result-color", color?.id ?? "");
+		await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name);
+		await expect(page.locator(".palette-names")).toHaveText(
+			`${stubScreenColor(0).name} と ${stubScreenColor(1).name}`,
+		);
+		for (const [displayOrder, display] of displays.entries()) {
+			await expect(display.page.locator("main.display")).toHaveAttribute(
+				"data-result-color",
+				stubScreenColor(displayOrder).id,
+			);
 		}
 		await displays[0].page.waitForTimeout(4_500);
 		const shown: string[] = [];
 		for (const [displayOrder, display] of displays.entries()) {
-			expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(color?.backgroundColor);
-			// 写真がある画面は写真、足りない画面は複製せずに色名のタイポグラフィ。
-			const assigned = color ? resultPhotoFor(PHOTOS, color.id, displayOrder) : null;
+			expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(displayOrder)));
+			// 写真がある画面は選定した写真の displayOrder 番目、足りない画面は複製せずに色名のタイポグラフィ。
+			const assigned = resultPhotoFor(PHOTOS, STUB_RESULT.photoIds, displayOrder);
 			if (assigned) {
 				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "photo");
-				const photo = display.page.locator(`.photo[data-result-color="${color?.id}"] img`);
-				await expect(photo).toBeVisible();
-				await expect(photo).toHaveAttribute("data-photo-id", assigned.id);
+				await expect(display.page.locator(`.photo[data-result-photo="${assigned.id}"] img`)).toBeVisible();
 				shown.push(assigned.id);
 			} else {
 				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "typography");
-				await expect(display.page.locator(".color-name")).toHaveText(name);
+				await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 			}
 		}
 		// 同じ写真を複数の画面へ割り当てない。
 		expect(new Set(shown).size).toBe(shown.length);
 
-		// QRコードと結果URL。
+		// QRコードと結果URL。結果ページのIDは16桁の16進数。
 		await expect(page.getByRole("img", { name: "結果ページのQRコード" })).toBeVisible();
-		await expect(page.locator(".url")).toHaveText(new RegExp(`^https://.+/result/${color?.id}$`));
+		await expect(page.locator(".url")).toHaveText(/^https:\/\/.+\/result\/[0-9a-f]{16}$/);
 
 		// 結果表示中に再読み込みした画面は、演出を再生せず完了状態を表示する。
 		await displays[0].page.reload();
-		await expect(displays[0].page.locator("main.display")).toHaveAttribute("data-result-color", color?.id ?? "");
-		expect(await canvasPixel(displays[0].page, 0.01, 0.01)).toBe(color?.backgroundColor);
+		await expect(displays[0].page.locator("main.display")).toHaveAttribute(
+			"data-result-color",
+			stubScreenColor(0).id,
+		);
+		expect(await canvasPixel(displays[0].page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(0)));
 
 		await page.getByRole("button", { name: "最初に戻る" }).click();
 		await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();

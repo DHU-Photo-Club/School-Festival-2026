@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { RESULT_COLORS } from "../../src/data/colors.ts";
+import { PALETTE } from "../../src/data/palette.ts";
 import { ExhibitHarness } from "./fixtures.ts";
 
 const PANELS = ["展示状態", "結果色の表示確認", "端末"];
@@ -45,9 +45,9 @@ test("管理画面は展示状態を受信する前から全パネルを表示�
 		await expect(page.getByTestId("admin-loading")).toHaveCount(4);
 		await expect(page.getByRole("button", { name: "強制リセット" })).toBeDisabled();
 		await expect(page.getByRole("button", { name: "受付状態を取得中" })).toBeDisabled();
-		// 結果色は固定のデータのため先に表示するが、展示状態を受信するまで操作できない。
-		for (const color of RESULT_COLORS) {
-			await expect(page.getByRole("button", { name: color.name })).toBeDisabled();
+		// パレットは固定のデータのため先に表示するが、展示状態を受信するまで操作できない。
+		for (const color of PALETTE.colors) {
+			await expect(page.getByRole("button", { name: color.name, exact: true })).toBeDisabled();
 		}
 	} finally {
 		await context.close();

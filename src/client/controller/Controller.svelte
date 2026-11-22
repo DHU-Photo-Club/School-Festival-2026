@@ -1,17 +1,18 @@
 <script lang="ts">
 import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
 import { onDestroy, onMount } from "svelte";
-import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
+import { PALETTE } from "../../data/palette.ts";
 import { QUESTIONS } from "../../data/questions.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
-import { isMapPoint, isValidAnswer, sameAnswer } from "../../shared/answer.ts";
+import { INITIAL_POSITION, isMapPoint, isValidAnswer, sameAnswer } from "../../shared/answer.ts";
 import type { Command } from "../../shared/machine.ts";
 import { easeOutCubic } from "../../shared/motion.ts";
 import { NICKNAME_MAX_LENGTH, normalizeNickname } from "../../shared/nickname.ts";
+import { backgroundColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
 import { resultUrl } from "../../shared/result-url.ts";
 import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
-import type { Answer, ExhibitState } from "../../shared/types.ts";
+import type { Answer, ExhibitState, PaletteColor, Question } from "../../shared/types.ts";
 import { createQrModel } from "../lib/qr.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
@@ -55,7 +56,13 @@ const question = $derived(
 const answered = $derived(question && exhibit ? (exhibit.answers[question.id] ?? null) : null);
 /** 「次へ」で送れる回答がそろっているか。複数選択は選択数が下限に届くまで送れない。 */
 const canSubmit = $derived(question !== null && isValidAnswer(question, draft));
-const color = $derived(RESULT_COLORS.find((candidate) => candidate.id === exhibit?.resultColorId) ?? null);
+/** 結果の二色（AIの出力順）。 */
+const resultColors = $derived.by((): [PaletteColor, PaletteColor] | null => {
+	const result = exhibit?.phase === "result" ? exhibit.result : null;
+	if (!result) return null;
+	const [a, b] = result.colors.map((id) => paletteColor(PALETTE.colors, id));
+	return a && b ? [a, b] : null;
+});
 const sequence = $derived(exhibit?.phase === "sequence" ? findSequence(SEQUENCES, exhibit.sequenceId) : null);
 const SequenceView = $derived(sequence ? controllerSequence(sequence.id) : null);
 const sequenceMs = $derived(sequence && exhibit ? sequenceDuration(sequence, exhibit) : 0);
@@ -65,6 +72,16 @@ const nicknameTooLong = $derived(Array.from(nicknameDraft.trim()).length > NICKN
 /** 進捗バーの区画数。`intro` と各質問に一区画ずつ割り当てる。 */
 const progressTotal = 1 + QUESTIONS.length;
 
+/**
+ * 質問の最初の下書き。スライダーと2Dマップは真ん中から始め、そのまま「次へ」で送れる（案内文の
+ * 「真ん中でも大丈夫です」）。選択式は未選択から始める。
+ */
+function initialDraft(question: Question): Answer | null {
+	if (question.kind === "slider") return INITIAL_POSITION;
+	if (question.kind === "map") return { x: INITIAL_POSITION, y: INITIAL_POSITION };
+	return null;
+}
+
 function onState(next: ExhibitState) {
 	exhibit = next;
 	pending = null;
@@ -73,7 +90,7 @@ function onState(next: ExhibitState) {
 		questionKey = key;
 		// 新しい質問は未回答から、戻った質問は既存回答から始める（仕様書5章、6.1節）。
 		const q = next.phase === "question" && next.questionIndex !== null ? QUESTIONS[next.questionIndex] : null;
-		draft = q ? (next.answers[q.id] ?? null) : null;
+		draft = q ? (next.answers[q.id] ?? initialDraft(q)) : null;
 		interacting = false;
 		// 新しいセッションの `intro` は空欄から始める。
 		if (next.phase === "intro") nicknameDraft = "";
@@ -116,10 +133,10 @@ function next() {
 
 /** 結果ページのURLとQRコード。生成できなければQRコードの代わりにURLだけを表示する。 */
 const qr = $derived.by(() => {
-	if (exhibit?.phase !== "result" || !exhibit.resultColorId) return null;
-	const url = `${__PUBLIC_ORIGIN__}/result/${encodeURIComponent(exhibit.resultColorId)}`;
+	if (exhibit?.phase !== "result" || !exhibit.result) return null;
+	const url = `${__PUBLIC_ORIGIN__}/result/${encodeURIComponent(exhibit.result.id)}`;
 	try {
-		return { url, model: createQrModel(resultUrl(__PUBLIC_ORIGIN__, exhibit.resultColorId)) };
+		return { url, model: createQrModel(resultUrl(__PUBLIC_ORIGIN__, exhibit.result.id)) };
 	} catch (error) {
 		console.error("QRコードを生成できませんでした", error instanceof Error ? error.name : "Error");
 		return { url, model: null };
@@ -199,8 +216,8 @@ const discScale = $derived(
 	<main
 		class="screen"
 		data-phase={exhibit.phase}
-		style:background={exhibit.phase === "result" && color ? color.backgroundColor : undefined}
-		style:color={exhibit.phase === "result" && color ? color.foregroundColor : undefined}
+		style:background={exhibit.phase === "result" && resultColors ? backgroundColor(resultColors[0]) : undefined}
+		style:color={exhibit.phase === "result" && resultColors ? foregroundColor(resultColors[0]) : undefined}
 	>
 		{#if exhibit.phase === "idle" && !exhibit.accepting}
 			<section class="center stack top">
@@ -276,7 +293,15 @@ const discScale = $derived(
 					label="質問 {exhibit.questionIndex + 1} / {QUESTIONS.length}"
 				/>
 				<div class="body" class:split={question.kind === "slider"}>
-					<h1 class="prompt">{question.prompt}</h1>
+					<div class="heading">
+						<h1 class="prompt">{question.prompt}</h1>
+						<p class="guide">{question.guide}</p>
+						{#if exhibit.judgeFailed}
+							<p class="retry" role="alert">
+								色をうまく選べませんでした。もう一度「次へ」を押してください
+							</p>
+						{/if}
+					</div>
 					{#key question.id}
 						{#if question.kind === "slider"}
 							<Slider
@@ -331,15 +356,20 @@ const discScale = $derived(
 			<section class="center stack">
 				<p class="lead">あなたの色を選んでいます</p>
 			</section>
-		{:else if exhibit.phase === "result" && color}
+		{:else if exhibit.phase === "result" && exhibit.result && resultColors}
 			<section class="result">
 				<div class="identity">
 					<div class="disc-box">
-						<div class="disc" style:background={color.baseColor} style:transform="scale({discScale})"></div>
+						<div
+							class="disc"
+							style:background={gradientCss(resultColors[0], resultColors[1])}
+							style:transform="scale({discScale})"
+						></div>
 					</div>
 					<p class="caption">あなたの色は</p>
-					<h1 class="color-name">{color.name}</h1>
-					<p class="message">{color.message}</p>
+					<h1 class="color-name">{exhibit.result.name}</h1>
+					<p class="palette-names">{resultColors[0].name} と {resultColors[1].name}</p>
+					<p class="message">{exhibit.result.reading}</p>
 				</div>
 				<div class="takeaway">
 					{#if qr?.model}
@@ -355,8 +385,8 @@ const discScale = $derived(
 					<button
 						type="button"
 						class="primary-button return"
-						style:background={color.foregroundColor}
-						style:color={color.backgroundColor}
+						style:background={foregroundColor(resultColors[0])}
+						style:color={backgroundColor(resultColors[0])}
 						disabled={!online || pending !== null}
 						onclick={() => send({ name: "returnToIdle" })}
 					>
@@ -504,9 +534,24 @@ p {
 	justify-items: center;
 	width: 100%;
 }
+.heading {
+	display: grid;
+	gap: 12px;
+	justify-items: center;
+	text-align: center;
+}
 .prompt {
 	text-align: center;
 	font-size: clamp(26px, 5vmin, 40px);
+}
+.guide {
+	font-size: 17px;
+	color: var(--muted);
+}
+.retry {
+	padding: 8px 16px;
+	border: 1.5px solid var(--text);
+	font-size: 17px;
 }
 /* スライダーは画面全体を左右に分けるため、質問文と補助文を上部に寄せる。 */
 .question .body.split {
@@ -551,7 +596,12 @@ p {
 .color-name {
 	font-size: clamp(32px, 6vmin, 48px);
 }
+.palette-names {
+	font-size: 15px;
+	opacity: 0.8;
+}
 .message {
+	max-width: 32em;
 	font-size: 18px;
 }
 .url {

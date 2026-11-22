@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "jsonc-parser";
 import type { Plugin } from "vite";
-import { RESULT_COLORS } from "../src/data/colors.ts";
+import { PALETTE } from "../src/data/palette.ts";
 import { PHOTOS } from "../src/data/photos.ts";
 import { QUESTIONS } from "../src/data/questions.ts";
 import { SEQUENCES } from "../src/data/sequences.ts";
@@ -42,7 +42,7 @@ export function exhibitChecks(): Plugin {
 				...validatePublicOrigin(wrangler.vars.PUBLIC_ORIGIN, wrangler.name),
 				...validatePublishedUntil(wrangler.vars.RESULTS_PUBLISHED_UNTIL),
 				...validateExhibitData({
-					colors: RESULT_COLORS,
+					palette: PALETTE,
 					questions: QUESTIONS,
 					photos: PHOTOS,
 				}),

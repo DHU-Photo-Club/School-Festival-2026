@@ -1,14 +1,57 @@
 import { DurableObject } from "cloudflare:workers";
-import { RESULT_COLORS } from "../data/colors.ts";
-import { QUESTIONS } from "../data/questions.ts";
+import { AI_SETTINGS } from "../data/ai.ts";
+import { PALETTE } from "../data/palette.ts";
+import { PHOTOS } from "../data/photos.ts";
+import { QUESTION_VERSION, QUESTIONS } from "../data/questions.ts";
 import { SEQUENCES } from "../data/sequences.ts";
 import type { ServerMessage } from "../shared/protocol.ts";
+import type { PublicResult } from "../shared/result.ts";
 import { parseScreenNumber } from "../shared/screens.ts";
 import type { Role } from "../shared/types.ts";
+import type { Judge } from "./ai/judge.ts";
+import { createJudge, createStubJudge } from "./ai/judge.ts";
 import type { Connection, ConnectionMeta } from "./core.ts";
 import { ExhibitCore } from "./core.ts";
+import { DEFAULT_MISTRAL_MODEL, sendPrompt } from "./mistral.ts";
 
 const ROLES: readonly Role[] = ["controller", "display", "photo", "admin"];
+
+/** 推測されにくい結果ID（16桁の16進数）。 */
+function newResultId(): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(8));
+	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * 結果を決める `Judge`（refs/handoff 実装仕様書2章）。`MISTRAL_API_KEY` があれば Mistral AI で選ぶ。
+ * `AI_STUB=1` なら開発用の仮の結果を返す。どちらもなければ `undefined`（結果を決められない）。
+ */
+function judgeFor(env: Env): Judge | undefined {
+	const common = {
+		questionVersion: QUESTION_VERSION,
+		palette: PALETTE,
+		photos: PHOTOS,
+		now: () => Date.now(),
+		newResultId,
+	};
+	// E2Eテストは `.dev.vars` にAPIキーがあってもAIへ接続しないよう、仮の選定を優先する。本番では設定しない。
+	if (env.AI_STUB === "1") return createStubJudge(common);
+	const apiKey = env.MISTRAL_API_KEY?.trim();
+	if (apiKey) {
+		const config = {
+			apiKey,
+			model: env.MISTRAL_MODEL?.trim() || DEFAULT_MISTRAL_MODEL,
+			baseUrl: env.MISTRAL_BASE_URL?.trim() || undefined,
+		};
+		return createJudge({
+			...common,
+			send: (request) => sendPrompt(config, request),
+			model: config.model,
+			questions: QUESTIONS,
+		});
+	}
+	return undefined;
+}
 
 /** 展示全体で一つのDurable Object。展示状態を保存し、接続した全端末へ配信する。 */
 export class Exhibit extends DurableObject<Env> {
@@ -29,8 +72,10 @@ export class Exhibit extends DurableObject<Env> {
 					.filter((socket) => socket.readyState === WebSocket.OPEN)
 					.map((socket) => this.wrap(socket)),
 			questions: QUESTIONS,
-			colors: RESULT_COLORS,
 			sequences: SEQUENCES,
+			photos: PHOTOS,
+			judge: judgeFor(env),
+			judgingMaxMs: AI_SETTINGS.judgingMaxMs,
 		});
 	}
 
@@ -77,7 +122,16 @@ export class Exhibit extends DurableObject<Env> {
 	}
 
 	async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
-		this.core.handleMessage(this.wrap(socket), message);
+		const pending = this.core.handleMessage(this.wrap(socket), message);
+		await this.schedule();
+		if (!pending) return;
+		// AIの選定を待つ間も、他の端末のメッセージは処理される。
+		// 選定で `judging` の終了時刻が変わったら、alarmを設定し直す。
+		try {
+			await pending;
+		} catch (error) {
+			console.error("AIの選定の反映に失敗しました", error);
+		}
 		await this.schedule();
 	}
 
@@ -87,6 +141,11 @@ export class Exhibit extends DurableObject<Env> {
 
 	async webSocketError(): Promise<void> {
 		this.core.handleClose();
+	}
+
+	/** 結果ページへ公開する部分。Workerから RPC で呼ぶ。なければ `null`。 */
+	publicResult(id: string): PublicResult | null {
+		return this.core.publicResult(id);
 	}
 
 	async alarm(): Promise<void> {

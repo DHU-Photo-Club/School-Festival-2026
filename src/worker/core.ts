@@ -1,8 +1,19 @@
 import type { Command } from "../shared/machine.ts";
-import { advanceDeadlines, applyCommand, initialState, ROLE_COMMANDS, reconcileState } from "../shared/machine.ts";
+import {
+	advanceDeadlines,
+	applyCommand,
+	DEFAULT_JUDGING_MAX_MS,
+	initialState,
+	ROLE_COMMANDS,
+	reconcileState,
+	settleJudging,
+} from "../shared/machine.ts";
 import type { AdminState, DeviceStatus, RoleState, ServerMessage } from "../shared/protocol.ts";
 import { parseClientMessage, toDisplayState } from "../shared/protocol.ts";
-import type { ExhibitState, Question, ResultColor, Role, Sequence } from "../shared/types.ts";
+import type { PublicResult, ResultRecord } from "../shared/result.ts";
+import { RESULT_ID_PATTERN } from "../shared/result.ts";
+import type { Answer, ExhibitState, Question, QuestionId, Role, Sequence, SessionResult } from "../shared/types.ts";
+import type { Judge } from "./ai/judge.ts";
 
 /** 最後の受信からこの時間を過ぎた端末を、管理画面で切断と表示する。端末は5秒ごとに `ping` を送る。 */
 export const STALE_AFTER_MS = 15_000;
@@ -35,11 +46,22 @@ export interface CoreOptions {
 	randomId: () => string;
 	connections: () => Connection[];
 	questions: readonly Question[];
-	colors: readonly ResultColor[];
 	sequences: readonly Sequence[];
+	/** 写真の配布許可を引くためのカタログ。 */
+	photos: readonly { id: string; shareAllowed: boolean }[];
+	/**
+	 * 回答から結果を決める関数（refs/handoff 実装仕様書2章）。省略すると結果を決められないため、
+	 * 最終問の回答のたびに選定失敗として最終問へ戻る（固定計算で代わりの結果を作らない）。
+	 */
+	judge?: Judge;
+	/** `judging` の最長の長さ。省略すると `DEFAULT_JUDGING_MAX_MS`。 */
+	judgingMaxMs?: number;
+	log?: (message: string) => void;
 }
 
 const KEY_STATE = "state";
+/** 結果の記録のキー。 */
+const resultKey = (id: string) => `result:${id}`;
 const ROLE_ORDER: Readonly<Record<DeviceStatus["role"], number>> = { controller: 0, display: 1, photo: 2 };
 
 /**
@@ -53,9 +75,20 @@ export class ExhibitCore {
 
 	private load(): ExhibitState {
 		const stored = this.options.store.get<ExhibitState>(KEY_STATE);
-		// `nickname` を追加する前に保存した状態には、このフィールドがない。
+		// 8色の配点判定の版で保存した状態（`judgeFailed` がない）は、セッションを捨てて待機から始める。
+		// `accepting` と `revision` は引き継ぐ。
+		if (stored && !("judgeFailed" in stored)) {
+			const legacy = stored as Partial<ExhibitState>;
+			const migrated = {
+				...initialState(this.options.now()),
+				accepting: legacy.accepting ?? true,
+				revision: (legacy.revision ?? 0) + 1,
+			};
+			this.options.store.put(KEY_STATE, migrated);
+			return migrated;
+		}
 		// 質問定義を変えてデプロイする前に保存した回答は、現在の定義に合わせて除く。
-		if (stored) return reconcileState({ ...stored, nickname: stored.nickname ?? null }, this.options.questions);
+		if (stored) return reconcileState(stored, this.options.questions);
 		const created = initialState(this.options.now());
 		this.options.store.put(KEY_STATE, created);
 		return created;
@@ -134,39 +167,120 @@ export class ExhibitCore {
 		this.refreshAdmins(state);
 	}
 
-	handleMessage(connection: Connection, raw: string | ArrayBuffer): void {
+	/**
+	 * メッセージを処理する。AIの選定を待ち始めた場合は、結果を反映し終えたら解決する
+	 * Promise を返す（Durable Objectは解決後にalarmを設定し直す）。それ以外は `null`。
+	 */
+	handleMessage(connection: Connection, raw: string | ArrayBuffer): Promise<void> | null {
 		const state = this.current();
 		const now = this.options.now();
 		connection.setMeta({ ...connection.meta, lastReceivedAt: now });
-		if (typeof raw !== "string") return;
+		if (typeof raw !== "string") return null;
 		const message = parseClientMessage(raw);
-		if (!message) return;
+		if (!message) return null;
 
 		if (message.type === "ping") {
 			connection.send({ type: "pong", clientSentAt: message.clientSentAt, serverTime: now });
 			if (now - this.lastAdminRefreshAt >= ADMIN_REFRESH_MS) this.refreshAdmins(state);
-			return;
+			return null;
 		}
-		this.handleCommand(connection, message.command, state);
+		return this.handleCommand(connection, message.command, state);
 	}
 
 	/**
 	 * コマンドを適用する。受理したら全接続へ配信する。拒否したら送信元へ現在状態を送り直し、
 	 * 送信元が確定待ちの表示を解除できるようにする。
 	 */
-	private handleCommand(connection: Connection, command: Command, state: ExhibitState): void {
+	private handleCommand(connection: Connection, command: Command, state: ExhibitState): Promise<void> | null {
 		const allowed = ROLE_COMMANDS[connection.meta.role].includes(command.name);
 		const outcome = allowed
 			? applyCommand(state, command, {
 					now: this.options.now(),
 					questions: this.options.questions,
-					colors: this.options.colors,
 					sequences: this.options.sequences,
 					newSessionId: this.options.randomId,
+					judgingMaxMs: this.judgingMaxMs(),
 				})
 			: null;
-		if (outcome?.ok) this.commit(outcome.state);
-		else this.sendState(connection, state);
+		if (!outcome?.ok) {
+			this.sendState(connection, state);
+			return null;
+		}
+		this.commit(outcome.state);
+		const { sessionId } = outcome.state;
+		if (!outcome.judgedAnswers || sessionId === null) return null;
+		return this.runJudge(sessionId, outcome.judgedAnswers);
+	}
+
+	private judgingMaxMs(): number {
+		return this.options.judgingMaxMs ?? DEFAULT_JUDGING_MAX_MS;
+	}
+
+	/**
+	 * AIで結果を決め、`judging` を締める（refs/handoff 実装仕様書2章）。結果は記録として保存してから配信する。
+	 * `judging` の期限までに決まらなければ打ち切り、期限の処理で最終問へ戻す。
+	 */
+	private async runJudge(sessionId: string, answers: Readonly<Record<QuestionId, Answer>>): Promise<void> {
+		const { judge } = this.options;
+		let record: ResultRecord | null = null;
+		if (judge) {
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), this.judgingMaxMs());
+			try {
+				record = await judge(answers, controller.signal);
+			} catch (error) {
+				// `Judge` は例外を投げない約束だが、投げても `judging` に取り残さず最終問へ戻す。
+				(this.options.log ?? console.error)(
+					`AIの選定で予期しない例外が起きました: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			} finally {
+				clearTimeout(timer);
+			}
+		} else {
+			(this.options.log ?? console.error)("AIの選定が設定されていないため、結果を決められません");
+		}
+		const state = this.current();
+		// 期限の処理や強制リセットで、待っていたセッションの `judging` が終わっていれば何もしない。
+		if (state.phase !== "judging" || state.sessionId !== sessionId) return;
+		let result: SessionResult | null = null;
+		if (record) {
+			this.options.store.put(resultKey(record.id), record);
+			result = {
+				id: record.id,
+				name: record.color.name,
+				reading: record.color.reading,
+				colors: [record.color.colors[0].id, record.color.colors[1].id],
+				photoIds: record.photos.selected.map((pick) => pick.photoId),
+			};
+		}
+		const settled = settleJudging(state, sessionId, result, this.options.now());
+		if (settled) this.commit(settled);
+	}
+
+	/** 保存した結果の記録。 */
+	resultRecord(id: string): ResultRecord | null {
+		if (!RESULT_ID_PATTERN.test(id)) return null;
+		return this.options.store.get<ResultRecord>(resultKey(id)) ?? null;
+	}
+
+	/** 結果ページへ公開する部分（refs/handoff 実装仕様書8章）。回答と写真の根拠は含めない。 */
+	publicResult(id: string): PublicResult | null {
+		const record = this.resultRecord(id);
+		if (!record) return null;
+		const shareable = new Set(this.options.photos.filter((photo) => photo.shareAllowed).map((photo) => photo.id));
+		const { color } = record;
+		return {
+			id: record.id,
+			name: color.name,
+			nameReason: color.nameReason,
+			reading: color.reading,
+			relationship: color.relationship,
+			colors: [
+				{ id: color.colors[0].id, reason: color.colors[0].reason },
+				{ id: color.colors[1].id, reason: color.colors[1].reason },
+			],
+			photoIds: record.photos.selected.map((pick) => pick.photoId).filter((id) => shareable.has(id)),
+		};
 	}
 
 	handleClose(): void {

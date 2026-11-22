@@ -1,11 +1,51 @@
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { splitAt } from "../../src/client/controller/split.ts";
+import { PHOTO_POLICY } from "../../src/data/ai.ts";
+import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
-import type { ColorId, DeviceRole, Question } from "../../src/shared/types.ts";
+import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
+import { selectPhotos } from "../../src/shared/photo-selection.ts";
+import type { DeviceRole, PaletteColor, PaletteId, Question } from "../../src/shared/types.ts";
 import { MAP_SIZE } from "../../src/shared/types.ts";
+import { STUB_COLORS, STUB_NAME } from "../../src/worker/ai/judge.ts";
+
+/**
+ * E2Eテストの開発サーバーは `AI_STUB=1` で動く（vite.config.ts）。AIへ接続せず、決まった色名と二色、
+ * 色の適合だけで選んだ写真を返す（src/worker/ai/judge.ts の `createStubJudge`）。
+ */
+export const STUB_RESULT = {
+	name: STUB_NAME,
+	colors: STUB_COLORS,
+	photoIds: selectPhotos({
+		photos: PHOTOS,
+		colors: STUB_COLORS,
+		contentMatches: null,
+		count: PHOTO_POLICY.sessionPhotoCount,
+		policyVersion: PHOTO_POLICY.version,
+	}).selected.map((pick) => pick.photoId),
+};
+
+/** パレットの色。 */
+export function palette(id: PaletteId): PaletteColor {
+	const color = paletteColor(PALETTE.colors, id);
+	if (!color) throw new Error(`パレットに ${id} がありません`);
+	return color;
+}
+
+/** 画面 `displayOrder` が仮の結果で見せる色（二色を画面の順に交互に割り当てる）。 */
+export const stubScreenColor = (displayOrder: number) => palette(STUB_COLORS[displayOrder % 2]);
+
+/** canvasの画素と比べられる形（大文字の `#RRGGBB`）の背景色。 */
+export const backgroundHex = (color: PaletteColor) => backgroundColor(color).toUpperCase();
+
+/** CSSの計算値と比べられる形（`rgb(r, g, b)`）の文字色。 */
+export function foregroundRgb(color: PaletteColor): string {
+	const n = Number.parseInt(foregroundColor(color).slice(1), 16);
+	return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
 
 export interface Device {
 	context: BrowserContext;
@@ -137,6 +177,18 @@ export async function canvasDigest(page: Page): Promise<string> {
 	return String(hash);
 }
 
+/** 「はじめる」から全問に答え、結果が表示されるまで待つ。 */
+export async function answerAllQuestions(page: Page): Promise<void> {
+	await page.getByRole("button", { name: "はじめる" }).click();
+	await enterNickname(page);
+	for (const [index, question] of QUESTIONS.entries()) {
+		await expectQuestion(page, index);
+		await answerQuestion(page, question, index * 3);
+		await page.getByRole("button", { name: "次へ" }).click();
+	}
+	await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 6_000 });
+}
+
 /** `intro` でニックネームを入力して質問へ進む。 */
 export async function enterNickname(page: Page, nickname = "テスト"): Promise<void> {
 	await page.getByRole("textbox", { name: "ニックネームを入力して下さい" }).fill(nickname);
@@ -251,9 +303,9 @@ export function answerInput(page: Page) {
 	return page.locator("[data-answer-input]");
 }
 
-/** 単選択または複数選択の選択肢。 */
+/** 単選択、複数選択、順位つき選択の選択肢。 */
 export function choiceOption(page: Page, question: Question, index: number) {
-	if (question.kind !== "single" && question.kind !== "multiple")
+	if (question.kind !== "single" && question.kind !== "multiple" && question.kind !== "ranked")
 		throw new Error(`${question.id} は選択式ではありません`);
 	return page.getByRole(question.kind === "single" ? "radio" : "checkbox", {
 		name: question.options[index].label,
@@ -263,7 +315,8 @@ export function choiceOption(page: Page, question: Question, index: number) {
 
 /**
  * 表示中の質問へ、入力方式に合わせて `variant` 番目の回答を入力する（「次へ」は押さない）。
- * 複数選択は `variant` 番目の選択肢から順に、下限の個数だけ選ぶ。未回答の状態から呼ぶ。
+ * 複数選択と順位つき選択は `variant` 番目の選択肢から順に、下限の個数だけ選ぶ（単独選択の選択肢は除く）。
+ * 選択式は未回答の状態から呼ぶ。
  */
 export async function answerQuestion(page: Page, question: Question, variant = 0): Promise<void> {
 	switch (question.kind) {
@@ -274,8 +327,11 @@ export async function answerQuestion(page: Page, question: Question, variant = 0
 		case "single":
 			return choiceOption(page, question, variant % question.options.length).click();
 		case "multiple":
+		case "ranked": {
+			const choices = question.options.flatMap((option, index) => (option.exclusive ? [] : [index]));
 			for (let offset = 0; offset < question.minSelections; offset += 1)
-				await choiceOption(page, question, (variant + offset) % question.options.length).click();
+				await choiceOption(page, question, choices[(variant + offset) % choices.length]).click();
+		}
 	}
 }
 
@@ -284,7 +340,7 @@ export async function waitForResultPhotos(page: Page): Promise<void> {
 	await expect
 		.poll(() =>
 			page.evaluate(() =>
-				[...document.querySelectorAll<HTMLImageElement>(".photo[data-result-color] img")].every(
+				[...document.querySelectorAll<HTMLImageElement>(".photo[data-result-photo] img")].every(
 					(image) => image.complete && image.naturalWidth > 0,
 				),
 			),
@@ -292,9 +348,9 @@ export async function waitForResultPhotos(page: Page): Promise<void> {
 		.toBe(true);
 }
 
-/** 写真定義から決まる結果表示の種類。写真が足りない画面はタイポグラフィ。 */
-export function expectedResultView(colorId: ColorId, displayOrder: number): "photo" | "typography" {
-	return resultPhotoFor(PHOTOS, colorId, displayOrder) ? "photo" : "typography";
+/** 選定した写真から決まる結果表示の種類。写真が足りない画面はタイポグラフィ。 */
+export function expectedResultView(photoIds: readonly string[], displayOrder: number): "photo" | "typography" {
+	return resultPhotoFor(PHOTOS, photoIds, displayOrder) ? "photo" : "typography";
 }
 
 /**

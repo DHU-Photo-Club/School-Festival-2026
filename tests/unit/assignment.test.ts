@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { PHOTOS } from "../../src/data/photos.ts";
-import { idlePhotoFor, idlePlaylist, resultPhotoFor, resultPhotos } from "../../src/shared/assignment.ts";
+import { idlePhotoFor, idlePlaylist, resultPhotoFor } from "../../src/shared/assignment.ts";
 import type { Photo } from "../../src/shared/types.ts";
-import { COLOR_IDS } from "../../src/shared/types.ts";
 
 /** 三画面構成（仕様書9.3節）。 */
 const DISPLAY_ORDERS = [0, 1, 2];
 
 const photo = (id: string, patch: Partial<Photo> = {}): Photo => ({
 	id,
-	resultColorId: "red",
-	resultOrder: 0,
+	width: 1600,
+	height: 1200,
 	idleEnabled: true,
 	idleOrder: 0,
 	shareAllowed: false,
 	creditName: "x",
+	colorTags: { overall: [], partial: [] },
+	contentTags: [],
+	moodTags: [],
+	description: "x",
+	tagStatus: "provisional",
 	...patch,
 });
 
@@ -47,27 +51,19 @@ describe("待機プレイリスト", () => {
 });
 
 describe("結果写真の割り当て", () => {
-	it("resultOrder 昇順、同値は写真ID昇順で並べ、displayOrder と同じ番号を割り当てる", () => {
-		const photos = [
-			photo("r2", { resultOrder: 1 }),
-			photo("r1b", { resultOrder: 0 }),
-			photo("r1a", { resultOrder: 0 }),
-		];
-		expect(resultPhotos(photos, "red").map((entry) => entry.id)).toEqual(["r1a", "r1b", "r2"]);
-		expect(resultPhotoFor(photos, "red", 2)?.id).toBe("r2");
+	it("選定した写真の displayOrder 番目を、その画面に見せる", () => {
+		const photos = [photo("a"), photo("b"), photo("c")];
+		expect(DISPLAY_ORDERS.map((order) => resultPhotoFor(photos, ["c", "a", "b"], order)?.id)).toEqual([
+			"c",
+			"a",
+			"b",
+		]);
 	});
 
-	it("写真が足りない画面は複製せずタイポグラフィ表示（null）にする。P が0なら全画面", () => {
-		const photos = [photo("r1")];
-		expect(resultPhotoFor(photos, "red", 1)).toBeNull();
-		expect(resultPhotoFor(photos, "blue", 0)).toBeNull();
-	});
-
-	it("仮データでは全色で画面ごとに異なる写真が割り当たる", () => {
-		for (const colorId of COLOR_IDS) {
-			const shown = DISPLAY_ORDERS.map((order) => resultPhotoFor(PHOTOS, colorId, order)?.id ?? null);
-			const photos = shown.filter((id) => id !== null);
-			expect(new Set(photos).size).toBe(photos.length);
-		}
+	it("写真が足りない画面と、カタログにない写真IDは、複製せずタイポグラフィ表示（null）にする", () => {
+		const photos = [photo("a")];
+		expect(resultPhotoFor(photos, ["a"], 1)).toBeNull();
+		expect(resultPhotoFor(photos, [], 0)).toBeNull();
+		expect(resultPhotoFor(photos, ["missing"], 0)).toBeNull();
 	});
 });

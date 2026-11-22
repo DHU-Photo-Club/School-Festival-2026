@@ -1,16 +1,16 @@
 <script lang="ts">
 import { onDestroy, onMount } from "svelte";
-import { RESULT_COLORS } from "../../data/colors.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
+import { PALETTE } from "../../data/palette.ts";
 import { PHOTOS } from "../../data/photos.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
 import { idlePhotoFor, idlePlaylist, resultPhotoFor } from "../../shared/assignment.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
-import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex } from "../../shared/motion.ts";
+import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex, screenColorId } from "../../shared/motion.ts";
+import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
 import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses, spectrumColor } from "../../shared/shards.ts";
-import type { ColorId, DisplayState, Photo } from "../../shared/types.ts";
-import { COLOR_IDS } from "../../shared/types.ts";
+import type { DisplayState, PaletteId, Photo } from "../../shared/types.ts";
 import PhotoImage from "../common/PhotoImage.svelte";
 import { drawShards, hexToRgb } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
@@ -27,11 +27,11 @@ type LoadStatus = "loading" | "loaded" | "failed";
 // svelte-ignore state_referenced_locally
 const displayOrder = screen - 1;
 const playlist = idlePlaylist(PHOTOS);
-// 8色それぞれで自分に割り当てられる結果写真を先に読み込んでおく。写真がない色は読み込まない。
-const resultAssignments = COLOR_IDS.map((colorId) => ({
-	colorId,
-	photo: resultPhotoFor(PHOTOS, colorId, displayOrder),
-}));
+/**
+ * 結果写真はセッションごとにAIの選定で決まるため、どの写真になってもすぐ見せられるよう、全作品を
+ * 先に読み込んでおく（12点）。
+ */
+const resultCandidates = PHOTOS;
 
 let displayState = $state<DisplayState | null>(null);
 let reducedMotion = $state(false);
@@ -40,7 +40,7 @@ let cycle = $state(0);
 /** `sequence` の再生位置。再生中だけ毎フレーム更新する。 */
 let sequenceT = $state(0);
 /** 結果表示でこの画面が見せるもの。結果開始のフレームで決め、そのセッション中は変えない。 */
-let resultChoice = $state<{ sessionId: string | null; colorId: ColorId; photo: Photo | null } | null>(null);
+let resultChoice = $state<{ sessionId: string | null; colorId: PaletteId; photo: Photo | null } | null>(null);
 
 let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
@@ -58,14 +58,15 @@ let animateSessionId: string | null = null;
 let previousBackground: string | null = null;
 let stopWatching = () => {};
 
-const colorOf = (id: ColorId | null) => RESULT_COLORS.find((color) => color.id === id) ?? null;
+const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
 function onState(next: DisplayState) {
 	const previous = displayState;
 	if (next.phase === "idle") {
 		idleReference = next.phaseStartedAt;
 		if (previous && previous.phase !== "idle" && resultChoice) {
-			previousBackground = colorOf(resultChoice.colorId)?.backgroundColor ?? null;
+			const color = colorOf(resultChoice.colorId);
+			previousBackground = color ? backgroundColor(color) : null;
 		}
 		if (previous?.phase !== "idle") resultChoice = null;
 	} else if (idleReference === null) {
@@ -133,12 +134,17 @@ function drawShardLayer(layer: ShardLayer | null) {
 }
 
 /**
- * 結果表示で見せるもの。結果開始のフレームで写真を読み込めていなければタイポグラフィ表示に決め、
- * そのセッション中は変えない。結果開始後に接続した画面は演出を再生しないため、
- * 割り当て写真の読み込みが終わった時点で決める。
+ * 結果表示で見せるもの。この画面の写真は選定された写真の `displayOrder` 番目（足りなければ写真なし）。
+ * 結果開始のフレームで写真を読み込めていなければタイポグラフィ表示に決め、そのセッション中は変えない。
+ * 結果開始後に接続した画面は演出を再生しないため、割り当て写真の読み込みが終わった時点で決める。
  */
-function chooseResult(sessionId: string | null, colorId: ColorId, waitForLoad: boolean) {
-	const photo = resultPhotoFor(PHOTOS, colorId, displayOrder);
+function chooseResult(
+	sessionId: string | null,
+	result: NonNullable<DisplayState["result"]>,
+	colorId: PaletteId,
+	waitForLoad: boolean,
+) {
+	const photo = resultPhotoFor(PHOTOS, result.photoIds, displayOrder);
 	const status = photo ? resultStatus[photo.id] : "failed";
 	if (waitForLoad && status !== "loaded" && status !== "failed") return;
 	resultChoice = { sessionId, colorId, photo: status === "loaded" ? photo : null };
@@ -187,20 +193,19 @@ function tick(timestamp: number) {
 	}
 
 	// 結果開始のフレーム。`judging` の `phaseEndsAt` を全画面が補正済みサーバー時刻で待つ。
-	const resultColor = state.phase === "judging" || state.phase === "result" ? state.resultColorId : null;
+	const result = state.phase === "judging" || state.phase === "result" ? state.result : null;
+	const resultColor = screenColorId(result, displayOrder);
 	const startAt =
 		state.phase === "judging" ? state.phaseEndsAt : state.phase === "result" ? state.phaseStartedAt : null;
 	const resultMode = animateSessionId !== null && animateSessionId === state.sessionId ? "animate" : "complete";
-	if (resultColor && startAt !== null && now >= startAt) {
+	if (result && resultColor && startAt !== null && now >= startAt) {
 		if (!resultChoice || resultChoice.sessionId !== state.sessionId) {
-			chooseResult(state.sessionId, resultColor, resultMode === "complete");
+			chooseResult(state.sessionId, result, resultColor, resultMode === "complete");
 		}
 	} else if (state.phase === "idle" && state.previewColorId) {
-		// 管理画面の表示確認は読み込みが終わり次第写真へ切り替える。
-		const photo = resultPhotoFor(PHOTOS, state.previewColorId, displayOrder);
-		const shown = photo && resultStatus[photo.id] === "loaded" ? photo : null;
-		if (resultChoice?.colorId !== state.previewColorId || resultChoice.photo?.id !== shown?.id) {
-			resultChoice = { sessionId: null, colorId: state.previewColorId, photo: shown };
+		// 管理画面の表示確認は色だけを見せる（写真はセッションごとに選ぶため、色に決まった写真はない）。
+		if (resultChoice?.colorId !== state.previewColorId) {
+			resultChoice = { sessionId: null, colorId: state.previewColorId, photo: null };
 		}
 	} else if (state.phase === "idle" && resultChoice && !state.previewColorId) {
 		resultChoice = null;
@@ -213,7 +218,7 @@ function tick(timestamp: number) {
 		width: canvas.width,
 		height: canvas.height,
 		reducedMotion,
-		colors: RESULT_COLORS,
+		colors: PALETTE.colors,
 		resultMode,
 		previousBackground,
 	});
@@ -293,20 +298,18 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
 		<div class="frame">
-			{#each resultAssignments as { colorId, photo } (colorId)}
-				{#if photo}
-					<div
-						class="photo"
-						data-result-color={colorId}
-						style:opacity={resultChoice?.photo?.id === photo.id ? 1 : 0}
-					>
-						<PhotoImage {photo} onstatus={(status) => setResultStatus(photo.id, status)} />
-					</div>
-				{/if}
+			{#each resultCandidates as photo (photo.id)}
+				<div
+					class="photo"
+					data-result-photo={photo.id}
+					style:opacity={resultChoice?.photo?.id === photo.id ? 1 : 0}
+				>
+					<PhotoImage {photo} onstatus={(status) => setResultStatus(photo.id, status)} />
+				</div>
 			{/each}
 		</div>
 		{#if shownColor && resultChoice && !resultChoice.photo}
-			<p class="color-name" style:color={shownColor.foregroundColor}>{shownColor.name}</p>
+			<p class="color-name" style:color={foregroundColor(shownColor)}>{shownColor.name}</p>
 		{/if}
 	</div>
 

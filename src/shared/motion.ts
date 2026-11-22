@@ -1,6 +1,8 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
 import { INACTIVITY_MS } from "./machine.ts";
-import type { ColorId, DisplayState, ResultColor } from "./types.ts";
+import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
+import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
+import { PALETTE_IDS } from "./types.ts";
 
 // ---- 時間（docs/visual-language.md 3章） ----
 
@@ -17,7 +19,8 @@ export const RESULT_PHOTO_DELAY_MS = 400;
 export const RESULT_PHOTO_FADE_MS = 1_200;
 export const RESULT_REDUCED_HOLD_MS = 1_600;
 export const IDLE_RETURN_MS = 1_000;
-const SECTOR_DEGREES = 45;
+/** 輪の一区画の角度。パレットの13色で一巡する。 */
+const SECTOR_DEGREES = 360 / PALETTE_IDS.length;
 
 export const COLORS = {
 	idle: "#0B0B0B",
@@ -27,16 +30,24 @@ export const COLORS = {
 	line: "#3A3836",
 } as const;
 
-/** 結果色ごとの広がり方と所要時間（docs/visual-language.md 3.4節）。 */
-export const RESULT_FORMS: Readonly<Record<ColorId, { form: ResultForm; durationMs: number }>> = {
-	red: { form: "openingBand", durationMs: 1_600 },
+/**
+ * パレットの色ごとの広がり方と所要時間（docs/visual-language.md 3.4節）。8種類の広がり方を、
+ * 色相の近い色どうしが同じにならないよう割り当てる（仮の割り当て。docs/progress.md）。
+ */
+export const RESULT_FORMS: Readonly<Record<PaletteId, { form: ResultForm; durationMs: number }>> = {
+	vermilion: { form: "openingBand", durationMs: 1_600 },
 	orange: { form: "risingSlant", durationMs: 1_800 },
-	yellow: { form: "fallingTide", durationMs: 1_600 },
-	green: { form: "risingTide", durationMs: 2_200 },
-	cyan: { form: "sweepingTide", durationMs: 1_600 },
+	amber: { form: "meetingTides", durationMs: 1_400 },
+	gold: { form: "fallingTide", durationMs: 1_600 },
+	leaf: { form: "risingTide", durationMs: 2_200 },
+	forest: { form: "closingFrame", durationMs: 2_000 },
+	emerald: { form: "sweepingTide", durationMs: 1_600 },
+	jade: { form: "diagonalTide", durationMs: 2_600 },
+	sky: { form: "fallingTide", durationMs: 1_600 },
 	blue: { form: "closingFrame", durationMs: 2_000 },
-	violet: { form: "diagonalTide", durationMs: 2_600 },
-	magenta: { form: "meetingTides", durationMs: 1_400 },
+	indigo: { form: "risingTide", durationMs: 2_200 },
+	wisteria: { form: "diagonalTide", durationMs: 2_600 },
+	rose: { form: "sweepingTide", durationMs: 1_600 },
 };
 
 export type ResultForm =
@@ -59,17 +70,10 @@ export const BLOOM_FEATHER_END = 0.75;
 /** ノイズによる縁の揺れ幅（ぼけ幅に対する割合）。描画側の `BLOOM_WARP` と同じ値にする。 */
 export const BLOOM_WARP = 0.6;
 
-/** 色相が隣り合わない固定順（docs/visual-language.md 2.2節）。 */
-export const NEUTRAL_ORDER: readonly ColorId[] = [
-	"red",
-	"cyan",
-	"yellow",
-	"violet",
-	"green",
-	"magenta",
-	"blue",
-	"orange",
-];
+/**
+ * 色相が隣り合わない固定順（docs/visual-language.md 2.2節）。色相順に並ぶパレットを5つずつ飛ばして巡る。
+ */
+export const NEUTRAL_ORDER: readonly PaletteId[] = PALETTE_IDS.map((_, i) => PALETTE_IDS[(i * 5) % PALETTE_IDS.length]);
 
 // ---- 補助関数 ----
 
@@ -104,8 +108,8 @@ function seededRandom(seed: number) {
 	};
 }
 
-/** 輪の8区画の並び順。セッションの間は全画面で同じ（docs/visual-language.md 2.2節）。 */
-export function ringOrder(sessionId: string | null): ColorId[] {
+/** 輪の13区画の並び順。セッションの間は全画面で同じ（docs/visual-language.md 2.2節）。 */
+export function ringOrder(sessionId: string | null): PaletteId[] {
 	if (!sessionId) return [...NEUTRAL_ORDER];
 	const order = [...NEUTRAL_ORDER];
 	const random = seededRandom(hash32(sessionId));
@@ -118,7 +122,7 @@ export function ringOrder(sessionId: string | null): ColorId[] {
 
 /** 輪の基準角（度）。 */
 export function ringBaseAngle(sessionId: string | null): number {
-	return sessionId ? (hash32(`${sessionId}:angle`) % 4500) / 100 : 0;
+	return sessionId ? ((hash32(`${sessionId}:angle`) % 10_000) / 10_000) * SECTOR_DEGREES : 0;
 }
 
 /** サーバーが最後にiPad操作を受理した時刻（`question` の `phaseEndsAt` は最終操作から5分後）。 */
@@ -191,7 +195,7 @@ export type Primitive =
 /**
  * 質問中の三角形の破片（docs/visual-language.md 3.2節）。配置と動きは `shardPoses` で求め、
  * 破片の色は重心の横位置で決まる。`colors[i]` は位置 `x / 幅 × span - offset` が `i` から
- * `i + 1` までの区画を占める（8区画で一巡する）。
+ * `i + 1` までの区画を占める（13区画で一巡する）。
  */
 export interface ShardLayer {
 	/** `shardPoses` に渡す経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
@@ -227,7 +231,8 @@ export interface SceneInput {
 	width: number;
 	height: number;
 	reducedMotion: boolean;
-	colors: readonly ResultColor[];
+	/** 風景色パレットの色。 */
+	colors: readonly PaletteColor[];
 	/**
 	 * 結果の見せ方。`animate` は `judging` から接続していた画面、`complete` は結果開始後に接続した画面。
 	 */
@@ -236,7 +241,16 @@ export interface SceneInput {
 	previousBackground: string | null;
 }
 
-const colorOf = (colors: readonly ResultColor[], id: ColorId | null) => colors.find((color) => color.id === id) ?? null;
+/**
+ * この画面が結果で見せる色。二色を画面の順に交互に割り当てる（画面 k は `colors[k % 2]`）。
+ * 結果がなければ `null`。
+ */
+export function screenColorId(
+	result: Pick<NonNullable<DisplayState["result"]>, "colors"> | null,
+	displayOrder: number,
+): PaletteId | null {
+	return result ? result.colors[displayOrder % 2] : null;
+}
 
 /** 状態の開始時刻からの経過秒。reduced-motionではノイズを流さない。 */
 const driftOf = (now: number, since: number, reducedMotion: boolean) =>
@@ -251,7 +265,10 @@ function questionShards(input: SceneInput, intensity: number, steps: number, swe
 		offset: spectrumOffset(state.sessionId, steps, input.displayOrder),
 		span: SPECTRUM_SPAN,
 		blend: SPECTRUM_BLEND,
-		colors: ringOrder(state.sessionId).map((id) => colorOf(colors, id)?.baseColor ?? COLORS.line),
+		colors: ringOrder(state.sessionId).map((id) => {
+			const color = paletteColor(colors, id);
+			return color ? baseColor(color) : COLORS.line;
+		}),
 		intensity: clamp01(intensity),
 	};
 }
@@ -261,7 +278,7 @@ function questionShards(input: SceneInput, intensity: number, steps: number, swe
  * `progress` が1のとき、縁がノイズで揺れても画面全体を塗りつぶす。
  */
 export function resultFormPrimitives(
-	colorId: ColorId,
+	colorId: PaletteId,
 	color: string,
 	progress: number,
 	width: number,
@@ -331,8 +348,9 @@ export function resultFormPrimitives(
 
 function resultScene(input: SceneInput): Scene {
 	const { state, now, colors, reducedMotion, width, height, displayOrder } = input;
-	const color = colorOf(colors, state.resultColorId);
-	if (!color || !state.resultColorId) {
+	const colorId = screenColorId(state.result, displayOrder);
+	const color = paletteColor(colors, colorId);
+	if (!color || !colorId) {
 		return {
 			primitives: [{ type: "fill", color: COLORS.dark }],
 			shards: null,
@@ -343,7 +361,7 @@ function resultScene(input: SceneInput): Scene {
 		};
 	}
 	const complete: Scene = {
-		primitives: [{ type: "fill", color: color.backgroundColor }],
+		primitives: [{ type: "fill", color: backgroundColor(color) }],
 		shards: null,
 		idleLayer: 0,
 		resultLayer: 1,
@@ -358,7 +376,7 @@ function resultScene(input: SceneInput): Scene {
 	if (reducedMotion) {
 		if (elapsed < RESULT_REDUCED_HOLD_MS) {
 			return {
-				primitives: [{ type: "fill", color: color.baseColor }],
+				primitives: [{ type: "fill", color: baseColor(color) }],
 				shards: null,
 				idleLayer: 0,
 				resultLayer: 0,
@@ -369,7 +387,7 @@ function resultScene(input: SceneInput): Scene {
 		return complete;
 	}
 
-	const { durationMs } = RESULT_FORMS[state.resultColorId];
+	const { durationMs } = RESULT_FORMS[colorId];
 	const settleEnd = durationMs + RESULT_SETTLE_MS;
 	const photoEnd = durationMs + RESULT_PHOTO_DELAY_MS + RESULT_PHOTO_FADE_MS;
 	if (elapsed >= Math.max(settleEnd, photoEnd)) return complete;
@@ -379,8 +397,8 @@ function resultScene(input: SceneInput): Scene {
 		const drift = driftOf(now, startAt, false);
 		primitives.push(
 			...resultFormPrimitives(
-				state.resultColorId,
-				color.baseColor,
+				colorId,
+				baseColor(color),
 				elapsed / durationMs,
 				width,
 				height,
@@ -389,10 +407,10 @@ function resultScene(input: SceneInput): Scene {
 			),
 		);
 	} else {
-		primitives.push({ type: "fill", color: color.baseColor });
+		primitives.push({ type: "fill", color: baseColor(color) });
 		primitives.push({
 			type: "fill",
-			color: color.backgroundColor,
+			color: backgroundColor(color),
 			alpha: easeInOutSine((elapsed - durationMs) / RESULT_SETTLE_MS),
 		});
 	}
@@ -412,10 +430,10 @@ export function computeScene(input: SceneInput): Scene {
 
 	// `sequence` の演出はシーケンスのコンポーネントが上に重ねて描く。下には待機写真の巡回を続ける。
 	if (state.phase === "idle" || state.phase === "sequence" || state.phase === "intro") {
-		const preview = state.phase === "idle" ? colorOf(colors, state.previewColorId) : null;
+		const preview = state.phase === "idle" ? paletteColor(colors, state.previewColorId) : null;
 		if (preview) {
 			return {
-				primitives: [{ type: "fill", color: preview.backgroundColor }],
+				primitives: [{ type: "fill", color: backgroundColor(preview) }],
 				shards: null,
 				idleLayer: 0,
 				resultLayer: 1,

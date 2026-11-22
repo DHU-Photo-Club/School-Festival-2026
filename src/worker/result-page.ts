@@ -1,28 +1,21 @@
 import { EXHIBIT } from "../data/exhibit.ts";
-import type { ColorId } from "../shared/types.ts";
-import { COLOR_IDS } from "../shared/types.ts";
+import { RESULT_ID_PATTERN } from "../shared/result.ts";
 
-export type ResultAvailability = { status: 200; colorId: ColorId } | { status: 404 } | { status: 410 };
+export type ResultRoute = { kind: "page" | "data"; id: string };
+
+export type ResultAvailability = ({ status: 200 } & ResultRoute) | { status: 404 } | { status: 410 };
 
 /**
- * `/result/{colorId}` の公開判定（仕様書10.1節）。
- * 存在しない `colorId` は期間にかかわらず404、`RESULTS_PUBLISHED_UNTIL` 以降は410とする。
- * 終了日時を解釈できない場合は公開しない。
+ * `/result/{id}`（結果ページ）と `/result/{id}/data`（結果ページが読むJSON）の公開判定（仕様書10.1節）。
+ * 形式の合わないIDは期間にかかわらず404、`RESULTS_PUBLISHED_UNTIL` 以降は410とする。
+ * 終了日時を解釈できない場合は公開しない。IDの結果が保存されているかは呼び出し側で確かめる。
  */
 export function resultAvailability(pathname: string, now: number, publishedUntil: string): ResultAvailability {
-	const match = pathname.match(/^\/result\/([^/]+)\/?$/);
-	let colorId: string | null = null;
-	if (match) {
-		try {
-			colorId = decodeURIComponent(match[1]);
-		} catch {
-			colorId = null;
-		}
-	}
-	if (!colorId || !COLOR_IDS.includes(colorId as ColorId)) return { status: 404 };
+	const match = pathname.match(/^\/result\/([^/]+)(\/data)?\/?$/);
+	if (!match || !RESULT_ID_PATTERN.test(match[1])) return { status: 404 };
 	const until = Date.parse(publishedUntil);
 	if (Number.isNaN(until) || now >= until) return { status: 410 };
-	return { status: 200, colorId: colorId as ColorId };
+	return { status: 200, kind: match[2] ? "data" : "page", id: match[1] };
 }
 
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);

@@ -1,23 +1,5 @@
-import type { Answer, MapPoint, MultipleChoiceQuestion, Question, Scores } from "./types.ts";
+import type { Answer, ChoiceQuestion, MapPoint, Question } from "./types.ts";
 import { MAP_SIZE, SLIDER_STOP_IDS } from "./types.ts";
-
-interface ScoredItem {
-	id: string;
-	scores: Scores;
-}
-
-/** 質問で配点を持つ項目。単選択と複数選択は選択肢、スライダーは回答位置、2Dマップは区画。 */
-export function answerItems(question: Question): readonly ScoredItem[] {
-	switch (question.kind) {
-		case "single":
-		case "multiple":
-			return question.options;
-		case "slider":
-			return question.stops;
-		case "map":
-			return question.cells;
-	}
-}
 
 /** `readonly` の配列にも効く `Array.isArray`。 */
 const isList = (value: unknown): value is readonly unknown[] => Array.isArray(value);
@@ -36,63 +18,70 @@ export function isMapPoint(value: unknown): value is MapPoint {
 /** 位置を小数第3位までに丸める。iPadから送る回答の値をそろえる。 */
 export const roundPosition = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
 
+/** スライダーと2Dマップの初期位置（refs/handoff 実装仕様書3章。初期位置のままでも回答として有効）。 */
+export const INITIAL_POSITION = 0.5;
+
 /**
- * 回答が質問の形式に合っているか。単選択は定義済みの選択肢ID、複数選択は定義済みの選択肢IDを重複なく
- * 定義順に並べ、個数が下限以上かつ上限以下の配列、スライダーは0〜1の数、2Dマップは各座標が0〜1の位置。
+ * 選択肢IDの配列が、複数選択または順位つき選択の回答として正しいか。定義済みのIDを重複なく、
+ * 個数が下限以上かつ上限以下で並べる。単独選択の選択肢（`exclusive`）は一つだけで選ぶ。
+ * 複数選択は選択肢の定義順に並べる。順位つき選択の並びは順位なので、順序は問わない。
+ */
+function isValidSelection(question: Exclude<ChoiceQuestion, { kind: "single" }>, answer: unknown): boolean {
+	if (!isList(answer)) return false;
+	if (answer.length < question.minSelections || answer.length > question.maxSelections) return false;
+	const ids = question.options.map((option) => option.id);
+	const indices = answer.map((id) => (typeof id === "string" ? ids.indexOf(id) : -1));
+	if (indices.some((index) => index < 0)) return false;
+	if (new Set(indices).size !== indices.length) return false;
+	if (answer.length > 1 && indices.some((index) => question.options[index].exclusive)) return false;
+	if (question.kind === "multiple") return indices.every((index, i) => i === 0 || indices[i - 1] < index);
+	return true;
+}
+
+/**
+ * 回答が質問の形式に合っているか（refs/handoff 実装仕様書3章「入力完了」）。単選択は定義済みの選択肢ID、
+ * 複数選択と順位つき選択は `isValidSelection`、スライダーは0〜1の数、2Dマップは各座標が0〜1の位置。
  */
 export function isValidAnswer(question: Question, answer: unknown): answer is Answer {
 	switch (question.kind) {
 		case "single":
 			return typeof answer === "string" && question.options.some((option) => option.id === answer);
+		case "multiple":
+		case "ranked":
+			return isValidSelection(question, answer);
 		case "slider":
 			return isUnit(answer);
 		case "map":
 			return isMapPoint(answer);
-		case "multiple": {
-			if (!isList(answer)) return false;
-			if (answer.length < question.minSelections || answer.length > question.maxSelections) return false;
-			const ids = question.options.map((option) => option.id);
-			let previous = -1;
-			for (const id of answer) {
-				const index = typeof id === "string" ? ids.indexOf(id) : -1;
-				if (index <= previous) return false;
-				previous = index;
-			}
-			return true;
-		}
 	}
 }
 
-/** 隣り合う2点の間の位置 `u`（0〜`count - 1`）を、左右の点の番号と重みにする。 */
-function between(u: number, count: number): [number, number][] {
-	const clamped = Math.min(count - 1, Math.max(0, u));
-	const index = Math.min(Math.floor(clamped), count - 2);
-	const fraction = clamped - index;
-	return [
-		[index, 1 - fraction],
-		[index + 1, fraction],
-	];
-}
-
-/** スライダーの位置 `x`（0〜1）に効く回答位置の番号と重み。重みの合計は1。 */
-export function sliderWeights(x: number): [number, number][] {
-	return between(x * (SLIDER_STOP_IDS.length - 1), SLIDER_STOP_IDS.length).filter(([, weight]) => weight > 0);
-}
-
 /**
- * 2Dマップの位置に効く区画の番号と重み。重みの合計は1。区画の中心の間は縦横それぞれ距離で混ぜる
- * （双線形補間）。横または縦の位置が外周の区画の中心より外側にあるときは、その向きの位置を外周の
- * 区画の中心とみなす。辺の近くでは外周の2区画を混ぜ、四隅の近くではその隅の区画だけを使う。
+ * 複数選択と順位つき選択で、選択肢 `id` を押したときの次の回答（refs/handoff 実装仕様書3章）。
+ * - 選択済みなら外す。順位つき選択では残りが繰り上がる。
+ * - 単独選択の選択肢を押すと、ほかをすべて外してそれだけにする。ほかの選択肢を押すと単独選択の選択肢を外す。
+ * - 上限まで選んでいると、選択済みの解除と単独選択の選択肢への切り替えだけを受け付け、それ以外は `null`。
+ * 複数選択は定義順、順位つき選択は選んだ順に並べる。
  */
-export function mapWeights(point: MapPoint): [number, number][] {
-	const axis = (value: number) => between(value * MAP_SIZE - 0.5, MAP_SIZE);
-	const result: [number, number][] = [];
-	for (const [row, rowWeight] of axis(point.y))
-		for (const [column, columnWeight] of axis(point.x)) {
-			const weight = rowWeight * columnWeight;
-			if (weight > 0) result.push([row * MAP_SIZE + column, weight]);
-		}
-	return result;
+export function toggleSelection(
+	question: Exclude<ChoiceQuestion, { kind: "single" }>,
+	selected: readonly string[],
+	id: string,
+): string[] | null {
+	const option = question.options.find((candidate) => candidate.id === id);
+	if (!option) return null;
+	let next: string[];
+	if (selected.includes(id)) next = selected.filter((candidate) => candidate !== id);
+	else if (option.exclusive) next = [id];
+	else {
+		const kept = selected.filter((candidate) => !question.options.find((o) => o.id === candidate)?.exclusive);
+		if (kept.length >= question.maxSelections) return null;
+		next = [...kept, id];
+	}
+	if (question.kind === "multiple") {
+		return question.options.filter((candidate) => next.includes(candidate.id)).map((candidate) => candidate.id);
+	}
+	return next;
 }
 
 /** スライダーの位置に最も近い回答位置の番号。画面の補助文に使う。 */
@@ -112,28 +101,8 @@ export function cellCenter(index: number): MapPoint {
 	};
 }
 
-const scale = (scores: Scores, weight: number): Scores =>
-	Object.fromEntries(Object.entries(scores).map(([colorId, points]) => [colorId, (points ?? 0) * weight]));
-
-/**
- * 回答で加点する配点の一覧。単選択と複数選択は選んだ選択肢の配点、スライダーと2Dマップは近くの
- * 回答位置や区画の配点に距離の重みを掛けたもの。回答の形式は `isValidAnswer` で確かめてから渡す。
- */
-export function answerScores(question: Question, answer: Answer): Scores[] {
-	switch (question.kind) {
-		case "single":
-		case "multiple": {
-			const selected = typeof answer === "string" ? [answer] : isList(answer) ? answer : [];
-			return question.options.filter((option) => selected.includes(option.id)).map((option) => option.scores);
-		}
-		case "slider":
-			return sliderWeights(answer as number).map(([index, weight]) =>
-				scale(question.stops[index].scores, weight),
-			);
-		case "map":
-			return mapWeights(answer as MapPoint).map(([index, weight]) => scale(question.cells[index].scores, weight));
-	}
-}
+/** 0〜1の位置を、AIへ渡す0〜100の整数にする（refs/handoff 実装仕様書3章。刻み1）。 */
+export const toPercent = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 100);
 
 /** 二つの回答が同じか。どちらかが未回答（`null` か `undefined`）なら `false`。 */
 export function sameAnswer(a: Answer | null | undefined, b: Answer | null | undefined): boolean {
@@ -146,51 +115,44 @@ export function sameAnswer(a: Answer | null | undefined, b: Answer | null | unde
 	return a.x === b.x && a.y === b.y;
 }
 
-/** 分布の集計で、スライダーと2Dマップの位置を区切る細かさ（一辺を等しい幅に分ける区間の数。1以上の整数）。 */
-export interface SampleResolution {
-	slider: number;
-	map: number;
-}
-
-/**
- * 既定の細かさ。スライダーは8区間、2Dマップは9×9区間。細かくしても各色の割合の変化が1ポイント前後に
- * 収まり、集計が数秒で終わる値にした。
- */
-export const DEFAULT_RESOLUTION: SampleResolution = { slider: 8, map: 9 };
-
-/**
- * 0から1までを `count` 個の等しい幅の区間に分け、各区間の中点を並べた配列。端を含めて等分すると、
- * 端の点が他の点の半分の幅しか表さないのに同じ1件として数えるため、中点を使って各点が同じ幅
- * （2Dマップでは面積）を表すようにする。
- */
-const steps = (count: number) => Array.from({ length: count }, (_, index) => (index + 0.5) / count);
-
-/** 複数選択で選べる組み合わせ。各組み合わせは選択肢の定義順に並べる。 */
-function selections(question: MultipleChoiceQuestion): string[][] {
+/** 複数選択と順位つき選択で選べる組み合わせ。複数選択は定義順、順位つき選択は全ての並びを含む。 */
+function selections(question: Exclude<ChoiceQuestion, { kind: "single" }>): string[][] {
 	const ids = question.options.map((option) => option.id);
 	const result: string[][] = [];
-	const visit = (start: number, picked: string[]) => {
-		if (picked.length >= question.minSelections) result.push([...picked]);
+	const visit = (picked: string[]) => {
+		if (picked.length >= question.minSelections && isValidSelection(question, picked)) result.push([...picked]);
 		if (picked.length === question.maxSelections) return;
-		for (let index = start; index < ids.length; index += 1) visit(index + 1, [...picked, ids[index]]);
+		for (const id of ids) {
+			if (picked.includes(id)) continue;
+			if (question.kind === "multiple" && picked.length > 0 && ids.indexOf(id) < ids.indexOf(picked.at(-1) ?? ""))
+				continue;
+			visit([...picked, id]);
+		}
 	};
-	visit(0, []);
+	visit([]);
 	return result;
 }
 
 /**
- * 分布の集計に使う回答の一覧。単選択と複数選択は取りうる回答のすべて、スライダーと2Dマップは
- * `resolution` で指定した数の区間に分けた各区間の中点（2Dマップは縦横それぞれ分割した組）（連続値のため、すべては数えられない）。
+ * テストと確認用の回答の候補。単選択、複数選択、順位つき選択は取りうる回答のすべて、
+ * スライダーは両端と中央、2Dマップは四隅と中央。
  */
-export function answerCandidates(question: Question, resolution = DEFAULT_RESOLUTION): Answer[] {
+export function answerCandidates(question: Question): Answer[] {
 	switch (question.kind) {
 		case "single":
 			return question.options.map((option) => option.id);
 		case "multiple":
+		case "ranked":
 			return selections(question);
 		case "slider":
-			return steps(resolution.slider);
+			return [0.5, 0, 1, 0.25, 0.75];
 		case "map":
-			return steps(resolution.map).flatMap((y) => steps(resolution.map).map((x) => ({ x, y })));
+			return [
+				{ x: 0.5, y: 0.5 },
+				{ x: 0, y: 0 },
+				{ x: 1, y: 1 },
+				{ x: 0, y: 1 },
+				{ x: 1, y: 0 },
+			];
 	}
 }

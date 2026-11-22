@@ -37,8 +37,8 @@ describe("parseClientMessage", () => {
 		expect(command({ name: "setAccepting", accepting: false })).toMatchObject({
 			command: { name: "setAccepting", accepting: false },
 		});
-		expect(command({ name: "previewColor", colorId: "red" })).toMatchObject({
-			command: { name: "previewColor", colorId: "red" },
+		expect(command({ name: "previewColor", colorId: "jade" })).toMatchObject({
+			command: { name: "previewColor", colorId: "jade" },
 		});
 		expect(command({ name: "continue", nickname: " ゆき " })).toEqual({
 			type: "command",
@@ -58,6 +58,7 @@ describe("parseClientMessage", () => {
 		expect(command({ name: "answer", questionId: "", answer: "left" })).toBeNull();
 		expect(command({ name: "setAccepting", accepting: "no" })).toBeNull();
 		expect(command({ name: "previewColor", colorId: "black" })).toBeNull();
+		expect(command({ name: "previewColor", colorId: "red" })).toBeNull();
 		expect(command({ name: "releaseController" })).toBeNull();
 		expect(command("start")).toBeNull();
 	});
@@ -91,11 +92,30 @@ describe("toDisplayState", () => {
 			sessionId: null,
 			phase: "idle",
 			sequenceId: null,
-			resultColorId: null,
+			result: null,
 			previewColorId: null,
 			phaseStartedAt: 1,
 			phaseEndsAt: null,
 			revision: 0,
+		});
+	});
+
+	it("結果は色名、二色、写真IDだけを渡し、結果ページのIDと読み取りは渡さない", () => {
+		const state = {
+			...initialState(1),
+			phase: "result" as const,
+			result: {
+				id: "0123456789abcdef",
+				name: "ミドリノヒカリ",
+				reading: "読み取り",
+				colors: ["emerald", "amber"] as const,
+				photoIds: ["sdi0225"],
+			},
+		};
+		expect(toDisplayState(state).result).toEqual({
+			name: "ミドリノヒカリ",
+			colors: ["emerald", "amber"],
+			photoIds: ["sdi0225"],
 		});
 	});
 });
