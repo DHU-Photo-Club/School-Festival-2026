@@ -1,13 +1,11 @@
 import type { Palette } from "../shared/types.ts";
 
 /**
- * 風景色パレット `scenery-v2`（refs/handoff config/palette.json、実装仕様書4章）。
+ * 風景色パレット
  *
- * 写真から抽出した色ではなく、自然や都市風景の写真につながる展示用の候補色。写真収集後に見直す場合は
- * `version` を変えて更新する（AIの出力は `paletteVersion` が一致するものだけを受け付ける）。
+ * 自然や都市風景の写真につながる展示用の候補色。
  */
 export const PALETTE: Palette = {
-	version: "scenery-v2",
 	colors: [
 		{ id: "vermilion", name: "朱色", h: 12, s: 76, l: 53, scene: "紅葉、鳥居、赤い外壁" },
 		{ id: "orange", name: "夕映えオレンジ", h: 28, s: 79, l: 57, scene: "夕日、柑橘、街の灯り" },

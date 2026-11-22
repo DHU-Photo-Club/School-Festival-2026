@@ -32,7 +32,6 @@ export function checkColorOutput(
 	const fail = (error: string): Checked<ColorOutput> => ({ ok: false, error });
 	const limits = COLOR_OUTPUT_LIMITS;
 	if (!isObject(value)) return fail("JSONのオブジェクトではありません");
-	if (value.paletteVersion !== palette.version) return fail(`paletteVersion が ${palette.version} ではありません`);
 	if (!text(value.name, limits.name)) return fail(`name は${limits.name}文字以内の色名にします`);
 	if (ENUMERATION.test(value.name) || /\n/.test(value.name)) return fail("name に二色の列挙や改行があります");
 	if (!text(value.nameReason, limits.nameReason)) return fail(`nameReason は${limits.nameReason}文字以内にします`);

@@ -109,7 +109,6 @@ export function validateExhibitData(input: {
 	const errors: string[] = [];
 	const { palette, questions, photos } = input;
 
-	if (!filled(palette.version)) errors.push("パレットの版がありません");
 	const colorIds = palette.colors.map((color) => color.id);
 	if (colorIds.join(",") !== PALETTE_IDS.join(","))
 		errors.push(`パレットの色IDは ${PALETTE_IDS.join("、")} の順にします`);

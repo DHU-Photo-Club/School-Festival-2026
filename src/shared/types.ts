@@ -31,8 +31,7 @@ export interface PaletteColor {
 }
 
 export interface Palette {
-	version: string;
-	colors: readonly PaletteColor[];
+	colors: readonly Color[];
 }
 
 /**
