@@ -1,6 +1,4 @@
-/**
- * AIへの指示（refs/handoff prompts/）。指示を変えたら `src/data/ai.ts` の版を上げる。
- */
+/** AIへの指示（refs/handoff prompts/）。 */
 
 /**
  * 色の選定の指示（refs/handoff prompts/color-selection.txt の原文）。この後にパレットと回答データを渡す。

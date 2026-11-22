@@ -227,7 +227,7 @@ describe("AIで結果を決める", () => {
 		return { judge: createJudge(options), requests, log, send };
 	}
 
-	it("二色を選んでから写真を選び、版とモデルを含む記録を返す", async () => {
+	it("二色を選んでから写真を選び、モデルを含む記録を返す", async () => {
 		const { judge, requests } = setup([JSON.stringify(colorOutput()), photoReply]);
 		const record = await judge(ANSWERS, new AbortController().signal);
 		expect(record).toMatchObject({
@@ -236,8 +236,6 @@ describe("AIで結果を決める", () => {
 			createdAt: 1_000,
 			questionVersion: "questions-v0.3",
 			paletteVersion: "scenery-v2",
-			colorPromptVersion: "color-selection-v1",
-			photoPromptVersion: "photo-selection-v1",
 			model: "mistral-small-latest",
 			answers: ANSWERS,
 			color: { name: "アンバーグリーン" },

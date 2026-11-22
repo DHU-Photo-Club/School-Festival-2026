@@ -53,8 +53,6 @@ export interface ResultRecord {
 	createdAt: number;
 	questionVersion: string;
 	paletteVersion: string;
-	colorPromptVersion: string;
-	photoPromptVersion: string;
 	model: string;
 	answers: Readonly<Record<QuestionId, Answer>>;
 	color: ColorOutput;

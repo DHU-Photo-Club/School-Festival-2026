@@ -6,10 +6,6 @@
  * - 一回の体験で選ぶ写真の枚数（11章 4。handoff の最低目標10枚を暫定値にした）
  */
 export const AI_SETTINGS = {
-	/** 色の選定の指示の版。指示を変えたら版を上げる。 */
-	colorPromptVersion: "color-selection-v1",
-	/** 写真の選定の指示の版。 */
-	photoPromptVersion: "photo-selection-v1",
 	/** 一回の呼び出しに失敗したとき、同じ呼び出しをやり直す回数。 */
 	retries: 1,
 	/** 一回の呼び出しの時間切れ（ミリ秒）。 */

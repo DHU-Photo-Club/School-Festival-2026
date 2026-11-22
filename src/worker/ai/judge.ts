@@ -115,8 +115,6 @@ export function createJudge(options: JudgeOptions): Judge {
 			createdAt: options.now(),
 			questionVersion: options.questionVersion,
 			paletteVersion: options.palette.version,
-			colorPromptVersion: AI_SETTINGS.colorPromptVersion,
-			photoPromptVersion: AI_SETTINGS.photoPromptVersion,
 			model: options.model,
 			answers,
 			color,
@@ -142,8 +140,6 @@ export function createStubJudge(
 		createdAt: options.now(),
 		questionVersion: options.questionVersion,
 		paletteVersion: options.palette.version,
-		colorPromptVersion: "stub",
-		photoPromptVersion: "stub",
 		model: "stub",
 		answers,
 		color: {
