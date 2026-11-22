@@ -5,6 +5,7 @@ import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
 import PhotoDisplay from "./photo/PhotoDisplay.svelte";
 import ResultPage from "./result/ResultPage.svelte";
+import ArchiveHome from "./archive/ArchiveHome.svelte";
 
 // ルート数が固定で少ないため、起動時のパスで最上位コンポーネントを決める。
 const path = location.pathname.replace(/\/+$/, "") || "/";
@@ -19,7 +20,9 @@ const pageLabel = display
 			? "診断用iPad"
 			: path === "/admin"
 				? "運営管理"
-				: "ページが見つかりません";
+				: path === "/archive"
+					? "アーカイブ"
+					: "ページが見つかりません";
 </script>
 
 <svelte:head>
@@ -45,6 +48,8 @@ const pageLabel = display
 	{/await}
 {:else if result}
 	<ResultPage resultId={decodeURIComponent(result[1])} />
+{:else if path === "/archive"}
+	<ArchiveHome />
 {:else}
 	<main class="not-found">ページが見つかりません</main>
 {/if}
