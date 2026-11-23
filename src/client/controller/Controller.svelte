@@ -38,6 +38,8 @@ let now = $state(0);
 let draft = $state<Answer | null>(null);
 /** スライダーと2Dマップを指で動かしている間は `true`。 */
 let interacting = $state(false);
+/** 待機画面の「はじめる」を指で押している間は `true`。 */
+let startPressed = $state(false);
 /** `intro` で入力中のニックネーム。 */
 let nicknameDraft = $state("");
 let nicknameInput = $state<HTMLInputElement | null>(null);
@@ -208,6 +210,14 @@ const discScale = $derived(
 		? 0.2 + 0.8 * easeOutCubic((now - exhibit.phaseStartedAt) / RESULT_GROW_MS)
 		: 1,
 );
+/**
+ * 押下中にボタンが消えると `pointerup` が届かず、待機画面へ戻ったときに押下の表示が復帰する。
+ * ボタンを表示しない状態では押下の表示を解除する。受付停止では `phase` が `idle` のままで
+ * ボタンだけが消えるため、`accepting` も条件に入れる。
+ */
+$effect(() => {
+	if (exhibit?.phase !== "idle" || !exhibit.accepting || !online || pending !== null) startPressed = false;
+});
 </script>
 
 {#if !exhibit}
@@ -226,15 +236,23 @@ const discScale = $derived(
 				<p class="muted">しばらくお待ちください</p>
 			</section>
 		{:else if exhibit.phase === "idle"}
-			<section class="center stack top">
+			<section class="center top welcome">
 				<h1>{EXHIBIT.welcomeMessage}</h1>
 				<button
 					type="button"
-					class="primary-button"
+					class="primary-button welcome-start"
+					data-pressed={startPressed}
 					disabled={!online || pending !== null}
+					onpointerdown={() => (startPressed = true)}
+					onpointerup={() => (startPressed = false)}
+					onpointercancel={() => (startPressed = false)}
+					onpointerleave={() => (startPressed = false)}
 					onclick={() => send({ name: "start" })}
 				>
-					{pending === "start" ? "準備しています" : "はじめる"}
+					<span class="welcome-label">{pending === "start" ? "準備しています" : "はじめる"}</span>
+					<span class="welcome-arrow">
+						<ArrowRightIcon aria-hidden="true" size={24} strokeWidth={2} />
+					</span>
 				</button>
 			</section>
 		{:else if exhibit.phase === "sequence"}
@@ -430,6 +448,39 @@ const discScale = $derived(
 }
 .top .muted {
 	font-size: 15px;
+}
+/* h1 の文字サイズが vmin に比例するため、間隔も同じ vmin 基準で 40〜72px の範囲にする。 */
+.top.welcome {
+	gap: clamp(40px, 7vmin, 72px);
+}
+/* .primary-button は min-width で内容より広い箱になり、既定の寄せではラベルと矢印が左端へ寄るため、中央揃えと縦位置を指定する。 */
+.welcome-start {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	/* 送信中の「準備しています」（実測245.6px）を表示しても幅が変わらないよう、長い方のラベルに合わせる。 */
+	min-width: 246px;
+	transition: transform 120ms;
+	/* iOSの既定のタップ表示は、押下の応答と重ねない。 */
+	-webkit-tap-highlight-color: transparent;
+}
+/* タップの応答は、色を変えずに縮小と矢印の移動で返す。 */
+.welcome-start[data-pressed="true"] {
+	transform: scale(0.96);
+}
+.welcome-arrow {
+	display: flex;
+	transition: transform 120ms;
+}
+.welcome-start[data-pressed="true"] .welcome-arrow {
+	transform: translateX(6px);
+}
+@media (prefers-reduced-motion: reduce) {
+	.welcome-start,
+	.welcome-arrow {
+		transition: none;
+	}
 }
 h1 {
 	margin: 0;
