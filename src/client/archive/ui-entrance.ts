@@ -5,7 +5,7 @@ export type UiGroup = "sound" | "view" | "camera" | "search";
 export interface UiPart { group: UiGroup; layer: number; item?: number }
 const GROUP_ORDER: Record<UiGroup, number> = { sound: 0, view: 1, camera: 2, search: 3 };
 const STYLE_PROPERTIES = ["opacity", "transform-origin", "will-change"];
-export const UI_ENTRANCE_START_MS = ENTRANCE_DURATION_MS - 200;
+export const UI_ENTRANCE_START_MS = ENTRANCE_DURATION_MS - 400;
 export const UI_ENTRANCE_END_MS = UI_ENTRANCE_START_MS + GROUP_ORDER.search * 120 + 2 * 80 + ENTRANCE_DURATION_MS;
 
 export function uiEntranceDelay({ group, layer, item = 0 }: UiPart): number {

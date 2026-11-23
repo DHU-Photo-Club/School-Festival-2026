@@ -44,7 +44,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("layered UI page entrance", () => {
 	it("overlaps the end of the logo/orbs and orders backgrounds before foreground layers", () => {
-		expect(uiEntranceDelay({ group: "sound", layer: 0 })).toBe(ENTRANCE_DURATION_MS - 200);
+		expect(uiEntranceDelay({ group: "sound", layer: 0 })).toBe(ENTRANCE_DURATION_MS - 400);
 		for (const group of ["sound", "view", "camera", "search"] as const) {
 			expect(uiEntranceDelay({ group, layer: 0 })).toBeLessThan(uiEntranceDelay({ group, layer: 1 }));
 			expect(uiEntranceDelay({ group, layer: 1, item: 1 })).toBeLessThan(uiEntranceDelay({ group, layer: 2 }));
@@ -64,7 +64,7 @@ describe("layered UI page entrance", () => {
 		controller.part(element(background), { group: "sound", layer: 0 });
 		expect(background.style.getPropertyValue("opacity")).toBe("0"); expect(background.animate).not.toHaveBeenCalled();
 		controller.start(); flush(); expect(controller.elapsed()).toBe(0);
-		expect(background.animate.mock.calls[0][1]).toEqual({ duration: 900, delay: 700, easing: "linear", fill: "both" });
+		expect(background.animate.mock.calls[0][1]).toEqual({ duration: 900, delay: 500, easing: "linear", fill: "both" });
 		expect(background.animate.mock.calls[0][0][0].transform).toBe("translate(-233.25px, -577.5px) scale(2.5)");
 		setTime(1250); const icon = new Node(); controller.part(element(icon), { group: "sound", layer: 1 });
 		expect(icon.motions[0].currentTime).toBe(250);
