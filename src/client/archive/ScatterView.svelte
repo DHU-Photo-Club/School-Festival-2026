@@ -8,7 +8,7 @@
 	const uiIntro = getContext<UiEntranceController>(UI_ENTRANCE_CONTEXT);
 	import { ScatterCamera, MIN_SCALE, MAX_SCALE, floatingLagSeconds, limitVector, stepFloating, centeredPose, type FloatingState } from "./scatter-camera";
 
-	let { entries, children, targetId = null, searchRequest = 0, intro = false, onIntroComplete = () => {} }: { entries: ArchiveEntry[]; children: Snippet; targetId?: string | null; searchRequest?: number; intro?: boolean; onIntroComplete?: (interrupted: boolean) => void } = $props();
+	let { entries, children, targetId = null, searchRequest = 0, onSelect = () => {}, intro = false, onIntroComplete = () => {} }: { entries: ArchiveEntry[]; children: Snippet; targetId?: string | null; searchRequest?: number; onSelect?: (id: string) => void; intro?: boolean; onIntroComplete?: (interrupted: boolean) => void } = $props();
 	let introActive = $state(untrack(() => intro));
 	let logoArrival: HTMLDivElement;
 	const camera = new ScatterCamera([]);
@@ -20,6 +20,8 @@
 	let lastFrame = 0;
 	let renderedPose = camera.pose;
 	let lastMove = 0;
+	let tapStart = { x: 0, y: 0 };
+	let moved = false;
 	const pointers = new Map<number, { x: number; y: number }>();
 	type FloatingOrb = { node: HTMLElement; arrival: HTMLElement; anchor: HTMLElement; visible: boolean; lag: number; state: FloatingState };
 	const floating = new Map<string, FloatingOrb>();
@@ -116,6 +118,7 @@
 	function down(event: PointerEvent) {
 		if (event.pointerType === "mouse" && event.button !== 0) return;
 		finishIntro();
+		if (!pointers.size) { tapStart = { x: event.clientX, y: event.clientY }; moved = false; } else moved = true;
 		viewport.setPointerCapture(event.pointerId);
 		pointers.set(event.pointerId, point(event));
 		camera.beginInteraction(pointers.size > 1 ? "pinching" : "dragging");
@@ -124,6 +127,7 @@
 
 	function move(event: PointerEvent) {
 		if (!pointers.has(event.pointerId)) return;
+		if (Math.hypot(event.clientX - tapStart.x, event.clientY - tapStart.y) > 8) moved = true;
 		const before = [...pointers.values()];
 		pointers.set(event.pointerId, point(event));
 		const after = [...pointers.values()];
@@ -145,6 +149,16 @@
 		if (!pointers.delete(event.pointerId)) return;
 		dragging = pointers.size > 0;
 		if (pointers.size) { camera.beginInteraction(pointers.size > 1 ? "pinching" : "dragging"); lastMove = performance.now(); return; }
+		if (!moved && event.type === "pointerup") {
+			let hit: string | null = null, best = Infinity;
+			for (const [id, item] of floating) {
+				const rect = item.node.querySelector(".orb-image")?.getBoundingClientRect();
+				if (!rect) continue;
+				const distance = Math.hypot(event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2);
+				if (distance < Math.min(rect.width, rect.height) / 2 + 8 && distance < best) { hit = id; best = distance; }
+			}
+			if (hit) { camera.endInteraction(false); ensureFrame(); onSelect(hit); return; }
+		}
 		camera.endInteraction(mode === "dragging" && event.type === "pointerup" && performance.now() - lastMove < 100);
 		ensureFrame();
 	}
@@ -247,10 +261,10 @@
 		{#each entries as entry (entry.id)}
 			<div class="orb-anchor" style:--intro-x={`${entry.x * 1.5}px`} style:--intro-y={`${entry.y * 1.5}px`} style:left={`calc(50% + ${entry.x}px)`} style:top={`calc(50% + ${entry.y}px)`}>
 				<div class="orb-arrival">
-				<figure class="floating-body" class:is-target={targetId === entry.id} use:registerFloat={entry.id}>
+				<div role="button" tabindex="0" aria-label={`${entry.nickname}の詳細を開く`} onclick={() => onSelect(entry.id)} onkeydown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onSelect(entry.id); } }} class="floating-body" class:is-target={targetId === entry.id} use:registerFloat={entry.id}>
 					<OrbImage src={entry.scatterImage} motionKey={entry.id} />
-					<figcaption>{entry.nickname}</figcaption>
-				</figure>
+					<p class="orb-caption">{entry.nickname}</p>
+				</div>
 				</div>
 			</div>
 		{/each}
@@ -290,9 +304,9 @@
 		.scatter-viewport[data-entering="true"] .logo-arrival, .scatter-viewport[data-entering="true"] .orb-arrival { transform: none; opacity: 1; --logo-intro-filter: none; --orb-intro-filter: none; }
 		.scatter-viewport[data-entering="true"] .orb-anchor { transform: translate(-50%, -69.1055px); }
 	}
-	figure { margin: 0; }
-	figcaption { position: relative; z-index: 1; margin-top: 7px; font: 12.781px/1.45 "Hiragino Mincho ProN", "Yu Mincho", serif; color: #fff; }
-	figure.is-target figcaption { text-decoration: underline; text-underline-offset: 5px; }
+	.floating-body { margin: 0; }
+	.orb-caption { margin-bottom: 0; position: relative; z-index: 1; margin-top: 7px; font: 12.781px/1.45 "Hiragino Mincho ProN", "Yu Mincho", serif; color: #fff; }
+	.floating-body.is-target .orb-caption { text-decoration: underline; text-underline-offset: 5px; }
 	.map-controls { position: absolute; z-index: 4; top: max(90px, calc(env(safe-area-inset-top) + 66px)); right: var(--side-gap, 20px); height: 44px; display: flex; gap: 2px; padding: 4px; background: transparent; border-radius: 8px; }
 	.ui-surface { position: absolute; inset: 0; z-index: 0; background: #242424b3; border-radius: inherit; backdrop-filter: blur(5px); pointer-events: none; }
 	.ui-label { display: inline-block; }

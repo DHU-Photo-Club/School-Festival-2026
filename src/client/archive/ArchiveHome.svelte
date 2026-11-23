@@ -8,8 +8,18 @@
 	import ScatterView from "./ScatterView.svelte";
 	import ArchiveLogo from "./ArchiveLogo.svelte";
 	import OrbImage from "./OrbImage.svelte";
+	import ArchiveDetail from "./ArchiveDetail.svelte";
+	import { previewDetail } from "./detail";
+	let detailId = $state<string | null>(null);
+	function openEntry(id: string) { location.hash = `entry=${encodeURIComponent(id)}`; }
+	function closeEntry() { history.replaceState(null, "", location.pathname + location.search); detailId = null; }
+	onMount(() => {
+		const sync = () => { const match = location.hash.match(/^#entry=(.+)$/); try { detailId = match ? decodeURIComponent(match[1]) : null; } catch { detailId = null; } };
+		sync(); window.addEventListener("hashchange", sync); return () => window.removeEventListener("hashchange", sync);
+	});
 
 	let { entries = previewEntries }: { entries?: ArchiveEntry[] } = $props();
+	let selectedEntry = $derived(entries.find((entry) => entry.id === detailId));
 	let nickname = $state("");
 	let bgm: HTMLAudioElement;
 	let player: BgmPlayer | undefined;
@@ -97,7 +107,7 @@
 	</div>
 {/snippet}
 
-<main class="archive-page" data-layout={viewMode}>
+<main class="archive-page" data-layout={viewMode} inert={!!selectedEntry} aria-hidden={!!selectedEntry}>
 	<div bind:this={canvas} class="archive-canvas">
 
 	{#if viewMode === "grid"}
@@ -106,10 +116,10 @@
 			<header class="grid-header">{@render brand()}</header>
 			<div class="photo-grid">
 				{#each entries as entry (entry.id)}
-					<figure class="grid-card" class:is-target={targetId === entry.id} data-entry-id={entry.id}>
+					<div class="grid-card" class:is-target={targetId === entry.id} data-entry-id={entry.id} role="button" tabindex="0" aria-label={`${entry.nickname}の詳細を開く`} onclick={() => openEntry(entry.id)} onkeydown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openEntry(entry.id); } }}>
 						<div class="grid-orb"><OrbImage src={entry.gridImage} motionKey={entry.id} /></div>
-						<figcaption>{entry.nickname}</figcaption>
-					</figure>
+						<p class="grid-caption">{entry.nickname}</p>
+					</div>
 				{:else}
 					<p class="empty-results" role="status">該当するニックネームが見つかりません</p>
 				{/each}
@@ -118,7 +128,7 @@
 		</div>
 	{:else}
 		<div class="mode-layer" transition:blur={viewTransition} inert={viewMode !== "scatter"} aria-hidden={viewMode !== "scatter"}>
-			<ScatterView {entries} {targetId} {searchRequest} intro={initialEntrance} onIntroComplete={(interrupted) => { initialEntrance = false; if (interrupted) uiIntro.finish(true); }}>{@render brand()}</ScatterView>
+			<ScatterView onSelect={openEntry} {entries} {targetId} {searchRequest} intro={initialEntrance} onIntroComplete={(interrupted) => { initialEntrance = false; if (interrupted) uiIntro.finish(true); }}>{@render brand()}</ScatterView>
 		</div>
 	{/if}
 
@@ -183,6 +193,7 @@
 		</div>
 	</div>
 </main>
+{#if selectedEntry}<ArchiveDetail entry={selectedEntry} detail={previewDetail(selectedEntry.id)} playing={sound.state === "playing"} toggleSound={() => player?.toggle()} close={closeEntry} {reducedMotion} />{/if}
 
 <style>
 	.archive-page {
@@ -429,6 +440,7 @@
 	}
 
 	.grid-card {
+		cursor: pointer;
 		min-width: 0;
 		margin: 0;
 		text-align: center;
@@ -444,7 +456,8 @@
 	}
 
 
-	.grid-card figcaption {
+	.grid-card .grid-caption {
+		margin: 0;
 		position: relative;
 		z-index: 1;
 		margin-top: 4px;
@@ -478,7 +491,8 @@
 	@media (prefers-reduced-motion: reduce) {
 		.ui-surface, .view-switch button, .search-clear, .search-results button { transition: none; }
 	}
-	.grid-card.is-target figcaption { color: #fff; text-decoration: underline; text-underline-offset: 5px; }
+	.grid-card:focus-visible { outline: 1px solid #fff; outline-offset: 4px; }
+	.grid-card.is-target .grid-caption { color: #fff; text-decoration: underline; text-underline-offset: 5px; }
 
 	.archive-canvas::after {
 		content: "";
