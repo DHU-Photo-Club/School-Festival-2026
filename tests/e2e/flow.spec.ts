@@ -20,6 +20,7 @@ import {
 	enterNickname,
 	expectQuestion,
 	mapValue,
+	recordQuestionOverlap,
 	STUB_RESULT,
 	sliderValue,
 	stubScreenColor,
@@ -239,7 +240,13 @@ for (const displayCount of [1, 3]) {
 			await answerQuestion(page, question, index);
 			await expect(next).toBeEnabled();
 			const digest = await canvasDigest(displays[0].page);
+			// 最初の質問から次の質問へ移るときに、前後の質問が重なって入れ替わることを確かめる（docs/visual-language.md 4.5節）。
+			const overlap = index === 0 ? await recordQuestionOverlap(page) : null;
 			await next.click();
+			if (overlap) {
+				await expectQuestion(page, 1);
+				expect(await overlap()).toBe(2);
+			}
 			if (index < QUESTIONS.length - 1) {
 				// 一問確定するたびに全画面の revision が増え、破片の色が回り始める。
 				for (const display of displays) await expect.poll(() => revisionOf(display)).toBe(before + 1);

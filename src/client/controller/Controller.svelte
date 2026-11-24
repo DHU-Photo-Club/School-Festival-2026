@@ -23,6 +23,14 @@ import type { InputMode } from "./input-mode.ts";
 import MapPad from "./MapPad.svelte";
 import ProgressBar from "./ProgressBar.svelte";
 import QrCode from "./QrCode.svelte";
+import {
+	QUESTION_TRANSITION_MS,
+	type QuestionPart,
+	questionDirectionOf,
+	questionEnter,
+	questionLeave,
+	questionMotion,
+} from "./question-transition.ts";
 import Slider from "./Slider.svelte";
 
 /** 結果の色面が広がる時間（docs/visual-language.md 4.2節）。 */
@@ -43,6 +51,19 @@ let startPressed = $state(false);
 /** `intro` で入力中のニックネーム。 */
 let nicknameDraft = $state("");
 let nicknameInput = $state<HTMLInputElement | null>(null);
+/** 直前の質問の切り替えの向き。`1` は次の質問へ進んだとき、`-1` は前の質問へ戻ったとき。 */
+let questionDirection: 1 | -1 = 1;
+/**
+ * 去る質問の入力方式。去る質問の入れ替えの設定を求める時点では `question` がすでに次の質問を指すため、
+ * 切り替える前に控える。
+ */
+let leavingKind: Question["kind"] | null = null;
+/**
+ * 質問の入れ替えの間は `true`。入れ替えの途中で次の切り替えが起きると、入りかけの質問が去る動きの始めに
+ * 不透明へ戻って見えるため、入れ替えが終わるまで下部のボタンを無効にする。
+ */
+let transitioning = $state(false);
+let transitionTimer: ReturnType<typeof setTimeout> | undefined;
 /** 日本語入力の変換中なら `true`。 */
 let composing = false;
 
@@ -85,6 +106,19 @@ function initialDraft(question: Question): Answer | null {
 }
 
 function onState(next: ExhibitState) {
+	const previousIndex = exhibit?.phase === "question" ? exhibit.questionIndex : null;
+	const direction = questionDirectionOf(previousIndex, next.phase === "question" ? next.questionIndex : null);
+	// `direction` が値を持てば `previousIndex` も値を持つが、型の絞り込みのために両方を確かめる。
+	if (previousIndex !== null && direction !== null) {
+		questionDirection = direction;
+		leavingKind = QUESTIONS[previousIndex].kind;
+		if (!reducedMotion) {
+			transitioning = true;
+			clearTimeout(transitionTimer);
+			// 入る質問の最後のフレームより先に解除しないよう、1フレーム分（約17ms）待ってから解除する。
+			transitionTimer = setTimeout(() => (transitioning = false), QUESTION_TRANSITION_MS + 17);
+		}
+	}
 	exhibit = next;
 	pending = null;
 	const key = `${next.sessionId}:${next.phase}:${next.questionIndex}`;
@@ -97,6 +131,18 @@ function onState(next: ExhibitState) {
 		// 新しいセッションの `intro` は空欄から始める。
 		if (next.phase === "intro") nicknameDraft = "";
 	}
+}
+
+/** 次の質問の入り方。入る質問は表示中の `question`。 */
+function enterQuestion(node: Element, part: QuestionPart) {
+	if (!question) return { duration: 0 };
+	return questionEnter(node, questionMotion(part, question.kind, questionDirection, reducedMotion));
+}
+
+/** 前の質問の去り方。去る質問は切り替える前に控えた `leavingKind`。 */
+function leaveQuestion(node: Element, part: QuestionPart) {
+	if (!leavingKind) return { duration: 0 };
+	return questionLeave(node, questionMotion(part, leavingKind, questionDirection, reducedMotion));
 }
 
 function send(command: Command) {
@@ -163,6 +209,7 @@ onMount(() => {
 });
 
 onDestroy(() => {
+	clearTimeout(transitionTimer);
 	client?.stop();
 	stopWatching();
 });
@@ -310,41 +357,54 @@ $effect(() => {
 					current={exhibit.questionIndex + 1}
 					label="質問 {exhibit.questionIndex + 1} / {QUESTIONS.length}"
 				/>
-				<div class="body" class:split={question.kind === "slider"}>
-					<div class="heading">
-						<h1 class="prompt">{question.prompt}</h1>
-						<p class="guide">{question.guide}</p>
-						{#if exhibit.judgeFailed}
-							<p class="retry" role="alert">
-								色をうまく選べませんでした。もう一度「次へ」を押してください
-							</p>
-						{/if}
-					</div>
-					{#key question.id}
-						{#if question.kind === "slider"}
-							<Slider
-								{question}
-								value={typeof draft === "number" ? draft : null}
-								mode={inputMode}
-								onselect={(position) => (draft = position)}
-								oninteract={(value) => (interacting = value)}
-							/>
-						{:else if question.kind === "map"}
-							<MapPad
-								{question}
-								value={isMapPoint(draft) ? draft : null}
-								mode={inputMode}
-								onselect={(point) => (draft = point)}
-								oninteract={(value) => (interacting = value)}
-							/>
-						{:else}
-							<ChoiceList
-								{question}
-								value={draft}
-								mode={inputMode}
-								onselect={(answer) => (draft = answer)}
-							/>
-						{/if}
+				<!--
+					前後の質問を同じ区画に重ねて入れ替える（docs/visual-language.md 4.5節）。次の動きはSvelte 5の
+					仕組みに頼る: `{#key}` は去る質問の `out:` が終わるまで旧DOMを残し、`out:` は旧要素を `inert` にする。
+					`in:` / `out:` はローカル（`|global` なし）のため、`{#if}` の分岐ごと作り直す `intro` から最初の質問、
+					最後の質問から `judging` では動かない。重なりはE2Eテスト（flow.spec.ts）で確かめる。
+				-->
+				<div class="stage" data-transitioning={transitioning}>
+					{#key exhibit.questionIndex}
+						<div
+							class="body"
+							class:split={question.kind === "slider"}
+							in:enterQuestion={"body"}
+							out:leaveQuestion={"body"}
+						>
+							<div class="heading" in:enterQuestion={"heading"} out:leaveQuestion={"heading"}>
+								<h1 class="prompt">{question.prompt}</h1>
+								<p class="guide">{question.guide}</p>
+								{#if exhibit.judgeFailed}
+									<p class="retry" role="alert">
+										色をうまく選べませんでした。もう一度「次へ」を押してください
+									</p>
+								{/if}
+							</div>
+							{#if question.kind === "slider"}
+								<Slider
+									{question}
+									value={typeof draft === "number" ? draft : null}
+									mode={inputMode}
+									onselect={(position) => (draft = position)}
+									oninteract={(value) => (interacting = value)}
+								/>
+							{:else if question.kind === "map"}
+								<MapPad
+									{question}
+									value={isMapPoint(draft) ? draft : null}
+									mode={inputMode}
+									onselect={(point) => (draft = point)}
+									oninteract={(value) => (interacting = value)}
+								/>
+							{:else}
+								<ChoiceList
+									{question}
+									value={draft}
+									mode={inputMode}
+									onselect={(answer) => (draft = answer)}
+								/>
+							{/if}
+						</div>
 					{/key}
 				</div>
 				<footer>
@@ -352,7 +412,7 @@ $effect(() => {
 						<button
 							type="button"
 							class="secondary-button"
-							disabled={!online || pending !== null}
+							disabled={!online || pending !== null || transitioning}
 							onclick={() => send({ name: "back" })}
 						>
 							戻る
@@ -363,7 +423,7 @@ $effect(() => {
 					<button
 						type="button"
 						class="primary-button"
-						disabled={!online || pending !== null || !canSubmit}
+						disabled={!online || pending !== null || transitioning || !canSubmit}
 						onclick={next}
 					>
 						{pending === "answer" ? "送信しています" : "次へ"}
@@ -578,6 +638,22 @@ p {
 	justify-items: center;
 	align-items: center;
 	margin: 0 auto;
+}
+/* 入れ替えの間は前後の質問が同時にあるため、同じ区画に重ねて、質問の位置とフッターを動かさない。 */
+.stage {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-self: stretch;
+	justify-self: stretch;
+	align-items: center;
+	justify-items: center;
+}
+.stage > .body {
+	grid-area: 1 / 1;
+}
+/* 入れ替えの間は、ずれて半透明の質問に触れて回答が変わらないよう、下部のボタンと同じく入力も受け付けない。 */
+.stage[data-transitioning="true"] > .body {
+	pointer-events: none;
 }
 .question .body {
 	display: grid;

@@ -195,12 +195,41 @@ export async function enterNickname(page: Page, nickname = "テスト"): Promise
 	await page.getByRole("button", { name: "進む" }).click();
 }
 
-/** 質問 `index`（0始まり）を表示していることを、進捗バーで確かめる。 */
+/**
+ * 質問 `index`（0始まり）を表示していることを、進捗バーで確かめる。質問の入れ替えの間は前の質問が
+ * DOMに残って `.body` が2つになり、次の質問は動いているため、入れ替えが終わるまで待つ
+ * （`data-transitioning` は入れ替えの間に下部のボタンを無効にするための属性で、テストもこれを使う）。
+ */
 export async function expectQuestion(page: Page, index: number): Promise<void> {
 	await expect(page.getByRole("progressbar")).toHaveAttribute(
 		"aria-valuetext",
 		`質問 ${index + 1} / ${QUESTIONS.length}`,
 	);
+	await expect(page.locator(".question .stage")).toHaveAttribute("data-transitioning", "false");
+	await expect(page.locator(".question .stage > .body")).toHaveCount(1);
+}
+
+/**
+ * iPadの質問画面で、同時に表示された質問の数の最大値を記録し始める。返す関数で記録を止めて最大値を得る。
+ * 質問の入れ替えでは、前後の質問が重なる間だけ2つになる。
+ */
+export async function recordQuestionOverlap(page: Page): Promise<() => Promise<number>> {
+	await page.evaluate(() => {
+		const count = () => document.querySelectorAll(".question .stage > .body").length;
+		const state = {
+			max: count(),
+			observer: new MutationObserver(() => (state.max = Math.max(state.max, count()))),
+		};
+		state.observer.observe(document.body, { childList: true, subtree: true });
+		(window as unknown as { __questionOverlap: typeof state }).__questionOverlap = state;
+	});
+	return () =>
+		page.evaluate(() => {
+			const state = (window as unknown as { __questionOverlap: { max: number; observer: MutationObserver } })
+				.__questionOverlap;
+			state.observer.disconnect();
+			return state.max;
+		});
 }
 
 /** iPadの質問画面で、スライダーの位置（0〜4）をタップする。 */
