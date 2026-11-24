@@ -126,10 +126,16 @@ export function shardPoses(width: number, height: number, elapsed: number, swell
 	return ringPoses(width, height, elapsed, swell);
 }
 
-type Rgb = readonly [number, number, number];
+/** 0〜255の三成分の色。 */
+export type Rgb = readonly [number, number, number];
 
 /** 色づけた破片を白へ寄せる最大の割合。明るい破片ほど白へ寄せる。 */
 const TINT_LIGHTEN = 0.35;
+/**
+ * アウトライン用に破片の塗りの色を白へ寄せる割合。ハードライト合成は暗い背景の上で明るさの差を広げるので、
+ * 小さく取る（docs/visual-language.md 4.4節）。
+ */
+const OUTLINE_LIGHTEN = 0.12;
 /** 破片の明るさ `shade` の最小値。 */
 const SHADE_MIN = 150 / 255;
 
@@ -148,4 +154,10 @@ export function shardColor(
 	const lighten = ((shade - SHADE_MIN) / (1 - SHADE_MIN)) * TINT_LIGHTEN;
 	const mix = (value: number) => gray + (value + (255 - value) * lighten - gray) * tint.amount;
 	return [mix(base[0]), mix(base[1]), mix(base[2])];
+}
+
+/** 破片のアウトラインの色（0〜255の三成分）。塗りの色 `fill`（各成分0〜255）を白へ `OUTLINE_LIGHTEN` だけ寄せる。 */
+export function shardOutlineColor(fill: Rgb): [number, number, number] {
+	const lift = (value: number) => value + (255 - value) * OUTLINE_LIGHTEN;
+	return [lift(fill[0]), lift(fill[1]), lift(fill[2])];
 }

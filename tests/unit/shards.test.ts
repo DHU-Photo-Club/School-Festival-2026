@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ShardPose } from "../../src/shared/shards.ts";
-import { SHARD_RING_RADIUS, shardColor, shardPoses } from "../../src/shared/shards.ts";
+import { SHARD_RING_RADIUS, shardColor, shardOutlineColor, shardPoses } from "../../src/shared/shards.ts";
 
 describe("破片の配置", () => {
 	it("同じ大きさと時刻からは同じ配置を返す", () => {
@@ -142,5 +142,40 @@ describe("破片の色", () => {
 		expect(r).toBeCloseTo((150 + 255) / 2);
 		expect(g).toBeCloseTo(150 / 2);
 		expect(b).toBeCloseTo(150 / 2);
+	});
+});
+
+describe("破片のアウトライン", () => {
+	it("塗りの色を白へ12%寄せる", () => {
+		const [r, g, b] = shardOutlineColor([150, 150, 150]);
+		expect(r).toBeCloseTo(150 + 105 * 0.12);
+		expect(g).toBeCloseTo(r);
+		expect(b).toBeCloseTo(r);
+	});
+
+	it("各成分を塗りの値以上255以下にし、白は白のままにする", () => {
+		const tinted = shardColor(200 / 255, 0, {
+			colors: [
+				[20, 40, 200],
+				[0, 0, 0],
+			],
+			amount: 1,
+		});
+		for (const fill of [[0, 0, 0], [20, 40, 200], tinted, [255, 255, 255]] as const) {
+			const outline = shardOutlineColor(fill);
+			outline.forEach((value, channel) => {
+				expect(value).toBeGreaterThanOrEqual(fill[channel]);
+				expect(value).toBeLessThanOrEqual(255);
+			});
+		}
+		expect(shardOutlineColor([255, 255, 255])).toEqual([255, 255, 255]);
+	});
+
+	it("色づけた破片では色相を保ち、白へ少し寄せる", () => {
+		const [r, g, b] = shardOutlineColor([20, 40, 200]);
+		expect(r).toBeCloseTo(20 + 235 * 0.12);
+		expect(g).toBeCloseTo(40 + 215 * 0.12);
+		expect(b).toBeCloseTo(200 + 55 * 0.12);
+		expect(b > g && g > r).toBe(true);
 	});
 });
