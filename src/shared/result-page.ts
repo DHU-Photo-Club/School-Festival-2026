@@ -1,5 +1,5 @@
 import { EXHIBIT } from "../data/exhibit.ts";
-import { RESULT_ID_PATTERN } from "../shared/result.ts";
+import { RESULT_ID_PATTERN } from "./result.ts";
 
 export type ResultRoute = { kind: "page" | "data"; id: string };
 

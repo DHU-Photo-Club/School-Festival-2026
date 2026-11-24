@@ -1,21 +1,24 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
+	// 結果ページのWorker（仕様書10章）。展示の本体は会場サーバーで動かし、このWorkerは来場者がQRコードで開く
+	// 結果ページだけを配信する。会場サーバーも、このファイルの PUBLIC_ORIGIN と RESULTS_PUBLISHED_UNTIL を読む。
 	"name": "dpc-school-festival",
-	"main": "src/worker/index.ts",
+	"main": "src/results/index.ts",
 	"compatibility_date": "2026-10-01",
-	// 認証は Cloudflare Access で行う（docs/README.md 14章）。Access の外から入れる入口を増やさないため、
-	// バージョンごとのプレビューURLは使わない。
+	// 結果の受け取り口（`PUT /api/results/{id}`）を持つため、入口を増やさないよう、バージョンごとのプレビューURLは使わない。
 	"workers_dev": true,
 	"preview_urls": false,
 	"assets": {
+		// `pnpm build:results` が dist/ から結果ページに要るファイルだけを集める（scripts/build-results.ts）。
+		"directory": "./dist-results",
 		"binding": "ASSETS",
-		"not_found_handling": "single-page-application",
-		"run_worker_first": ["/api/*", "/result/*"]
+		"not_found_handling": "none",
+		"run_worker_first": true
 	},
-	"durable_objects": {
-		"bindings": [{ "name": "EXHIBIT", "class_name": "Exhibit" }]
-	},
-	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Exhibit"] }],
+	"kv_namespaces": [
+		// 結果ページへ公開する部分を、結果IDをキーにして公開終了日時まで保存する。
+		{ "binding": "RESULTS" }
+	],
 	"vars": {
 		// 仮: 仕様書16章「Cloudflareアカウントのsubdomainと公開終了日時」の決定前の値。
 		// 初回デプロイ後、確定したworkers.devのURLを末尾スラッシュなしで設定する（仕様書10.1節）。

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import type { Judge } from "../../src/server/ai/judge.ts";
+import { STALE_AFTER_MS } from "../../src/server/core.ts";
 import { INACTIVITY_MS, JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
 import type { ResultRecord } from "../../src/shared/result.ts";
 import type { DisplayState, ExhibitState, Sequence } from "../../src/shared/types.ts";
-import type { Judge } from "../../src/worker/ai/judge.ts";
-import { STALE_AFTER_MS } from "../../src/worker/core.ts";
 import type { FakeConnection } from "./helpers.ts";
 import { Harness, lastAdminState, sampleAnswer } from "./helpers.ts";
 

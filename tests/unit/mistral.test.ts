@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MistralError, sendPrompt } from "../../src/worker/mistral.ts";
+import { MistralError, sendPrompt } from "../../src/server/mistral.ts";
 
 interface Captured {
 	url: string;

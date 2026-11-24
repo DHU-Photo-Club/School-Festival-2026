@@ -69,7 +69,7 @@ export type CommandOutcome =
 	  }
 	| { ok: false; code: RejectCode };
 
-/** Durable Objectを初めて作成したときの状態（仕様書8.1節）。 */
+/** 保存した状態がないときの初期状態（仕様書8.1節）。 */
 export function initialState(now: number): ExhibitState {
 	return {
 		sessionId: null,

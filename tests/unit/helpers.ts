@@ -1,13 +1,13 @@
 import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTION_VERSION, QUESTIONS } from "../../src/data/questions.ts";
+import type { Judge } from "../../src/server/ai/judge.ts";
+import { createStubJudge } from "../../src/server/ai/judge.ts";
+import type { Connection, ConnectionMeta, Store } from "../../src/server/core.ts";
+import { ExhibitCore } from "../../src/server/core.ts";
 import { answerCandidates } from "../../src/shared/answer.ts";
 import type { AdminState, RoleState, ServerMessage } from "../../src/shared/protocol.ts";
 import type { Answer, Question, Role, Sequence } from "../../src/shared/types.ts";
-import type { Judge } from "../../src/worker/ai/judge.ts";
-import { createStubJudge } from "../../src/worker/ai/judge.ts";
-import type { Connection, ConnectionMeta, Store } from "../../src/worker/core.ts";
-import { ExhibitCore } from "../../src/worker/core.ts";
 
 export class MemoryStore implements Store {
 	readonly data = new Map<string, string>();
@@ -45,8 +45,8 @@ export class FakeConnection {
 export const lastAdminState = (connection: FakeConnection) => connection.lastState<AdminState>();
 
 /**
- * Durable Objectの `wrap(socket)` と同じく、呼び出しごとに新しい接続オブジェクトを返す。
- * meta も deserializeAttachment() と同じく複製を返し、直接の書き換えを反映しない。
+ * 会場サーバー（src/server/exhibit.ts）と同じく、呼び出しごとに新しい接続オブジェクトを返す。
+ * meta は複製を返し、直接の書き換えを反映しない。
  */
 function wrap(connection: FakeConnection): Connection {
 	return {
@@ -60,7 +60,7 @@ function wrap(connection: FakeConnection): Connection {
 	};
 }
 
-/** Durable Objectの外側を模したテスト用の環境。時刻は手動で進める。 */
+/** 会場サーバーの外側を模したテスト用の環境。時刻は手動で進める。 */
 /** 質問の取りうる回答のうち `n` 番目（候補の数で割った余り）。入力方式によらず有効な回答を作る。 */
 export function sampleAnswer(question: Question, n = 0): Answer {
 	const candidates = answerCandidates(question);

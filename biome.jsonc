@@ -9,7 +9,7 @@
 			"!.claude",
 			"!**/.omc",
 			// wrangler types が生成するファイル（scripts.check で再生成されるため編集しない）
-			"!src/worker/worker-configuration.d.ts",
+			"!src/results/worker-configuration.d.ts",
 			// shadcn-svelte の CLI が生成するコンポーネント（CLI で更新するため編集しない）
 			"!src/client/lib/components/ui"
 		]

@@ -5,16 +5,16 @@ import { PHOTO_POLICY } from "../../src/data/ai.ts";
 import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import { STUB_COLORS, STUB_NAME } from "../../src/server/ai/judge.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
 import { selectPhotos } from "../../src/shared/photo-selection.ts";
 import type { PaletteColor, PaletteId, Question, ScreenRole } from "../../src/shared/types.ts";
 import { MAP_SIZE } from "../../src/shared/types.ts";
-import { STUB_COLORS, STUB_NAME } from "../../src/worker/ai/judge.ts";
 
 /**
  * E2Eテストの開発サーバーは `AI_STUB=1` で動く（vite.config.ts）。AIへ接続せず、決まった色名と二色、
- * 色の適合だけで選んだ写真を返す（src/worker/ai/judge.ts の `createStubJudge`）。
+ * 色の適合だけで選んだ写真を返す（src/server/ai/judge.ts の `createStubJudge`）。
  */
 export const STUB_RESULT = {
 	name: STUB_NAME,

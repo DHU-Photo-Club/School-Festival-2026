@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ES2023"],
+		"types": ["node"],
+		// 会場サーバーはビルドせず、Node.jsの型の除去で直接実行する（`pnpm start`）。
+		"erasableSyntaxOnly": true
+	},
+	"include": ["src/server/**/*", "src/shared/**/*", "src/data/**/*"]
+}

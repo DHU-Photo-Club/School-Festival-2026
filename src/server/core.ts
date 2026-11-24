@@ -20,13 +20,13 @@ export const STALE_AFTER_MS = 15_000;
 /** 端末の最終受信時刻だけが変わったときに管理画面へ送る間隔。 */
 const ADMIN_REFRESH_MS = 5_000;
 
-/** 展示状態を保存するキー・値ストア。Durable Objectでは `ctx.storage.kv` を使う。 */
+/** 展示状態を保存するキー・値ストア。会場サーバーではSQLiteのファイルを使う（src/server/store.ts）。 */
 export interface Store {
 	get<T>(key: string): T | undefined;
 	put(key: string, value: unknown): void;
 }
 
-/** 接続ごとの情報。Durable ObjectではWebSocketのattachmentへ保存する。 */
+/** 接続ごとの情報。会場サーバーではWebSocketごとに持つ（src/server/exhibit.ts）。 */
 export interface ConnectionMeta {
 	role: Role;
 	/** 展示ディスプレイと写真用の画面番号（1始まり）。それ以外は `null`。 */
@@ -56,6 +56,8 @@ export interface CoreOptions {
 	judge?: Judge;
 	/** `judging` の最長の長さ。省略すると `DEFAULT_JUDGING_MAX_MS`。 */
 	judgingMaxMs?: number;
+	/** 結果の記録を保存した直後に呼ぶ。会場サーバーはここで結果ページへ公開する部分を外部へ送る。 */
+	onResult?: (result: PublicResult) => void;
 	log?: (message: string) => void;
 }
 
@@ -65,13 +67,16 @@ const resultKey = (id: string) => `result:${id}`;
 const ROLE_ORDER: Readonly<Record<DeviceStatus["role"], number>> = { controller: 0, display: 1, photo: 2, light: 3 };
 
 /**
- * 展示状態の正本。Durable Objectは要求を一件ずつ処理するため、状態の読み書きに競合はない。
+ * 展示状態の正本。Node.jsはメッセージを一件ずつ処理し、状態の読み書きは同期処理のため、競合はない。
  * 状態が変わったら保存し、全接続へ役割別の状態を配信する。
  */
 export class ExhibitCore {
 	private lastAdminRefreshAt = 0;
+	private readonly options: CoreOptions;
 
-	constructor(private readonly options: CoreOptions) {}
+	constructor(options: CoreOptions) {
+		this.options = options;
+	}
 
 	private load(): ExhibitState {
 		const stored = this.options.store.get<ExhibitState>(KEY_STATE);
@@ -170,7 +175,7 @@ export class ExhibitCore {
 
 	/**
 	 * メッセージを処理する。AIの選定を待ち始めた場合は、結果を反映し終えたら解決する
-	 * Promise を返す（Durable Objectは解決後にalarmを設定し直す）。それ以外は `null`。
+	 * Promise を返す（会場サーバーは解決後に期限のタイマーを設定し直す）。それ以外は `null`。
 	 */
 	handleMessage(connection: Connection, raw: string | ArrayBuffer): Promise<void> | null {
 		const state = this.current();
@@ -246,6 +251,8 @@ export class ExhibitCore {
 		let result: SessionResult | null = null;
 		if (record) {
 			this.options.store.put(resultKey(record.id), record);
+			const published = this.publicResult(record.id);
+			if (published) this.options.onResult?.(published);
 			result = {
 				id: record.id,
 				name: record.color.name,
@@ -288,12 +295,12 @@ export class ExhibitCore {
 		this.refreshAdmins();
 	}
 
-	/** 期限の処理。alarmから呼ぶ。 */
+	/** 期限の処理。期限のタイマーから呼ぶ。 */
 	handleAlarm(): void {
 		this.current();
 	}
 
-	/** 次にalarmを実行する時刻。期限がなければ `null`。 */
+	/** 次に期限のタイマーを実行する時刻。期限がなければ `null`。 */
 	nextWakeAt(): number | null {
 		return this.load().phaseEndsAt;
 	}

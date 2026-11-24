@@ -1,12 +1,12 @@
 // スマート電球（Matter）の中継スクリプト。会場のPCで動かす。
-// Workerの `/api/realtime?role=light` から展示状態を受け取り、電球の色を変える。
+// 会場サーバーの `/api/realtime?role=light` から展示状態を受け取り、電球の色を変える。
 // 通常は白色、結果の表示中はAIが選んだ二色を電球の並び順に交互に割り当てる（`src/shared/lights.ts`）。
 //
 //   pnpm lights pair <ペアリングコード>   電球を登録する（登録した順が電球の並び順）
 //   pnpm lights list                      登録した電球の一覧
 //   pnpm lights identify <番号>           電球を点滅させて、どれが何番かを確かめる
 //   pnpm lights remove <番号>             電球の登録を外す
-//   pnpm lights                           展示状態に合わせて電球を動かす（`LIGHT_ORIGIN` が必要）
+//   pnpm lights                           展示状態に合わせて電球を動かす
 //
 // 設定は環境変数か `.env.lights` で渡す（`.env.lights.example`）。
 import { join } from "node:path";
@@ -33,6 +33,8 @@ import type { ServerMessage } from "../src/shared/protocol.ts";
 import type { DisplayState } from "../src/shared/types.ts";
 
 const ROOT = join(import.meta.dirname, "..");
+/** `LIGHT_ORIGIN` を省略したときの接続先。同じPCで動かす会場サーバー（`pnpm start` の既定のポート）。 */
+const DEFAULT_LIGHT_ORIGIN = "http://localhost:8787";
 /** 生存確認の `ping` の間隔と、`pong` が途絶えたとみなす時間。iPadや展示ディスプレイと同じ値。 */
 const PING_INTERVAL_MS = 5_000;
 const PONG_TIMEOUT_MS = 15_000;
@@ -292,19 +294,11 @@ class LightSync {
 	}
 }
 
-/** Workerの展示状態を受け取る。切れたら待ち時間を倍にしながら接続し直す。 */
+/** 会場サーバーの展示状態を受け取る。切れたら待ち時間を倍にしながら接続し直す。 */
 function connectExhibit(origin: string, onState: (state: DisplayState) => void): void {
 	const url = new URL("/api/realtime", origin);
 	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 	url.searchParams.set("role", "light");
-	// Cloudflare Access のサービストークン（仕様書14章）。開発サーバーでは不要。
-	const headers: Record<string, string> = {};
-	const clientId = process.env.CF_ACCESS_CLIENT_ID?.trim();
-	const clientSecret = process.env.CF_ACCESS_CLIENT_SECRET?.trim();
-	if (clientId && clientSecret) {
-		headers["CF-Access-Client-Id"] = clientId;
-		headers["CF-Access-Client-Secret"] = clientSecret;
-	}
 
 	let attempt = 0;
 	let lastPongAt = 0;
@@ -322,7 +316,7 @@ function connectExhibit(origin: string, onState: (state: DisplayState) => void):
 
 	const open = () => {
 		// Node.js の WebSocket（undici）は第2引数でリクエストヘッダーを受け付ける。
-		const next = new WebSocket(url, { headers } as unknown as string[]);
+		const next = new WebSocket(url);
 		socket = next;
 		lastPongAt = Date.now();
 		// 応答のない回線では `open` も `close` も届かないため、待つ上限を設ける。
@@ -370,9 +364,8 @@ function connectExhibit(origin: string, onState: (state: DisplayState) => void):
 }
 
 async function run(controller: ServerNode): Promise<void> {
-	const origin = process.env.LIGHT_ORIGIN?.trim();
-	if (!origin)
-		die("LIGHT_ORIGIN に展示のURL（例: https://dpc-school-festival.<subdomain>.workers.dev）を設定してください。");
+	// 中継スクリプトは会場サーバーと同じPCで動かすため、省略すると同じPCの会場サーバーへ接続する。
+	const origin = process.env.LIGHT_ORIGIN?.trim() || DEFAULT_LIGHT_ORIGIN;
 
 	await controller.start();
 	const bulbs = await collectBulbs(controller);

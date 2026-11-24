@@ -7,10 +7,17 @@ node_modules/
 # Artifacts
 .wrangler/
 dist/
+dist-results/
 test-results/
 playwright-report/
 
+# Exhibit state (SQLite)
+data/
+
 # Secrets
+.env
+.env.*
+!.env.example
 .dev.vars
 .dev.vars.*
 .env.lights

@@ -72,7 +72,7 @@ export type Role = DeviceRole | "admin";
 
 /**
  * 一回の体験の結果のうち、各画面へ配信する部分。AIが選んだ二色と色名、選んだ写真。
- * 全文（読み取り、各色の理由、写真の根拠）は `ResultRecord` としてDurable Objectに保存する。
+ * 全文（読み取り、各色の理由、写真の根拠）は `ResultRecord` として会場サーバーに保存する。
  */
 export interface SessionResult {
 	/** 結果ページのID（`/result/{id}`）。 */

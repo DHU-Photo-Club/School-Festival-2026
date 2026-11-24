@@ -7,6 +7,7 @@ import { backgroundColor, baseColor, foregroundColor, gradientCss, paletteColor 
 import type { PublicResult } from "../../shared/result.ts";
 import type { PaletteColor, Photo } from "../../shared/types.ts";
 import PhotoImage from "../common/PhotoImage.svelte";
+import { retryDelay, shouldRetry } from "./retry.ts";
 
 /**
  * QRから開く公開結果ページ（仕様書10.2節）。リアルタイム状態へ接続せず、保存した結果を
@@ -14,7 +15,7 @@ import PhotoImage from "../common/PhotoImage.svelte";
  */
 let { resultId }: { resultId: string } = $props();
 
-let status = $state<"loading" | "loaded" | "missing" | "failed">("loading");
+let status = $state<"loading" | "waiting" | "loaded" | "missing" | "failed">("loading");
 let result = $state<PublicResult | null>(null);
 let failedPhotos = $state<Record<string, boolean>>({});
 
@@ -29,18 +30,32 @@ const photos = $derived(
 		.filter((photo): photo is Photo => photo?.shareAllowed === true),
 );
 
-onMount(async () => {
-	try {
-		const response = await fetch(`/result/${encodeURIComponent(resultId)}/data`, { cache: "no-store" });
-		if (!response.ok) {
-			status = response.status === 404 || response.status === 410 ? "missing" : "failed";
+onMount(() => {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let attempt = 0;
+	// まだ届いていない結果と一時的な失敗は、待ち時間をあけて読み直す（./retry.ts）。
+	const load = async () => {
+		let response: Response | null = null;
+		try {
+			response = await fetch(`/result/${encodeURIComponent(resultId)}/data`, { cache: "no-store" });
+			if (response.ok) {
+				result = (await response.json()) as PublicResult;
+				status = "loaded";
+				return;
+			}
+		} catch {
+			response = null;
+		}
+		const delay = shouldRetry(response?.status ?? null) ? retryDelay(attempt++) : null;
+		if (delay !== null) {
+			status = "waiting";
+			timer = setTimeout(load, delay);
 			return;
 		}
-		result = (await response.json()) as PublicResult;
-		status = "loaded";
-	} catch {
-		status = "failed";
-	}
+		status = response?.status === 404 || response?.status === 410 ? "missing" : "failed";
+	};
+	void load();
+	return () => clearTimeout(timer);
 });
 </script>
 
@@ -93,13 +108,29 @@ onMount(async () => {
 	</main>
 {:else if status === "loading"}
 	<main class="result"><p>読み込んでいます</p></main>
+{:else if status === "waiting"}
+	<main class="result"><p>結果を準備しています。このままお待ちください</p></main>
 {:else if status === "missing"}
-	<main class="result"><p>ページが見つかりません</p></main>
+	<main class="result">
+		<p>ページが見つかりません</p>
+		<button type="button" class="reload" onclick={() => location.reload()}>もう一度読み込む</button>
+	</main>
 {:else}
-	<main class="result"><p>結果を読み込めませんでした。ページを再読み込みしてください。</p></main>
+	<main class="result">
+		<p>結果を読み込めませんでした</p>
+		<button type="button" class="reload" onclick={() => location.reload()}>もう一度読み込む</button>
+	</main>
 {/if}
 
 <style>
+.reload {
+	padding: 10px 20px;
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	background: none;
+	color: inherit;
+	font: inherit;
+}
 .result {
 	min-height: 100vh;
 	display: grid;
