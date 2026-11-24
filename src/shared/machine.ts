@@ -46,6 +46,7 @@ export const ROLE_COMMANDS: Readonly<Record<Role, readonly CommandName[]>> = {
 	admin: ["setAccepting", "forceReset", "previewColor", "clearPreview"],
 	display: [],
 	photo: [],
+	light: [],
 };
 
 export interface MachineContext {

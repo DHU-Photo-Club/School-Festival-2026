@@ -62,7 +62,7 @@ export interface CoreOptions {
 const KEY_STATE = "state";
 /** 結果の記録のキー。 */
 const resultKey = (id: string) => `result:${id}`;
-const ROLE_ORDER: Readonly<Record<DeviceStatus["role"], number>> = { controller: 0, display: 1, photo: 2 };
+const ROLE_ORDER: Readonly<Record<DeviceStatus["role"], number>> = { controller: 0, display: 1, photo: 2, light: 3 };
 
 /**
  * 展示状態の正本。Durable Objectは要求を一件ずつ処理するため、状態の読み書きに競合はない。
@@ -112,13 +112,14 @@ export class ExhibitCore {
 		connection.send({ type: "state", serverTime: this.options.now(), state: this.viewFor(connection.meta, state) });
 	}
 
-	/** 役割別の配信範囲。回答内容とニックネームは診断用iPadにだけ送る。 */
+	/** 役割別の配信範囲。回答内容とニックネームは診断用iPadにだけ送る。電球の中継には展示ディスプレイと同じ範囲を送る。 */
 	private viewFor(meta: ConnectionMeta, state: ExhibitState): RoleState {
 		switch (meta.role) {
 			case "controller":
 				return state;
 			case "display":
 			case "photo":
+			case "light":
 				return toDisplayState(state);
 			case "admin":
 				return this.adminView(state);

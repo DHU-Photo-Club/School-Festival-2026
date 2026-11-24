@@ -4,6 +4,7 @@ import ActivityIcon from "@lucide/svelte/icons/activity";
 import EyeOffIcon from "@lucide/svelte/icons/eye-off";
 import ImageIcon from "@lucide/svelte/icons/image";
 import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
+import LightbulbIcon from "@lucide/svelte/icons/lightbulb";
 import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 import MonitorIcon from "@lucide/svelte/icons/monitor";
 import MonitorSmartphoneIcon from "@lucide/svelte/icons/monitor-smartphone";
@@ -26,11 +27,21 @@ import type { DeviceRole } from "../../shared/types.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 
-const DEVICE_ROLES = ["controller", "display", "photo"] as const;
-const DEVICE_LABELS = { controller: "診断用iPad", display: "展示ディスプレイ", photo: "写真用" } as const;
-const DEVICE_ICONS = { controller: TabletIcon, display: MonitorIcon, photo: ImageIcon } as const;
-/** 各端末で開くURL。展示ディスプレイは来場者から見た順に1から番号を振る。 */
-const DEVICE_PATHS = { controller: "/", display: "/display/1, /display/2…", photo: "/photo/1, /photo/2…" } as const;
+const DEVICE_ROLES = ["controller", "display", "photo", "light"] as const;
+const DEVICE_LABELS = {
+	controller: "診断用iPad",
+	display: "展示ディスプレイ",
+	photo: "写真用",
+	light: "電球の中継",
+} as const;
+const DEVICE_ICONS = { controller: TabletIcon, display: MonitorIcon, photo: ImageIcon, light: LightbulbIcon } as const;
+/** 各端末で開くURL。展示ディスプレイは来場者から見た順に1から番号を振る。電球の中継はURLではなくコマンドで動かす。 */
+const DEVICE_PATHS = {
+	controller: "/",
+	display: "/display/1, /display/2…",
+	photo: "/photo/1, /photo/2…",
+	light: "pnpm lights",
+} as const;
 const PHASE_LABELS = {
 	idle: "待機",
 	sequence: "演出",
@@ -308,7 +319,7 @@ onDestroy(() => client?.stop());
 						</Card.Header>
 						<Card.Content class="wide:min-h-0 wide:flex-1">
 							<div
-								class="device-columns grid gap-3 md:grid-cols-3 wide:h-full wide:grid-rows-[minmax(0,1fr)]"
+								class="device-columns grid gap-3 md:grid-cols-2 wide:h-full wide:grid-cols-4 wide:grid-rows-[minmax(0,1fr)]"
 							>
 								{#each DEVICE_ROLES as role (role)}
 									{@const devices = devicesOf(role)}

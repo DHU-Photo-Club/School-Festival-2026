@@ -65,9 +65,9 @@ export type Phase = (typeof PHASES)[number];
 
 export type QuestionId = string;
 
-/** 端末の役割。診断用iPadは `controller`。 */
+/** 端末の役割。診断用iPadは `controller`、スマート電球の中継スクリプト（`scripts/light-bridge.ts`）は `light`。 */
 export type ScreenRole = "display" | "photo";
-export type DeviceRole = "controller" | ScreenRole;
+export type DeviceRole = "controller" | ScreenRole | "light";
 export type Role = DeviceRole | "admin";
 
 /**

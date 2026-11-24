@@ -8,7 +8,7 @@ import { QUESTIONS } from "../../src/data/questions.ts";
 import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
 import { selectPhotos } from "../../src/shared/photo-selection.ts";
-import type { DeviceRole, PaletteColor, PaletteId, Question } from "../../src/shared/types.ts";
+import type { PaletteColor, PaletteId, Question, ScreenRole } from "../../src/shared/types.ts";
 import { MAP_SIZE } from "../../src/shared/types.ts";
 import { STUB_COLORS, STUB_NAME } from "../../src/worker/ai/judge.ts";
 
@@ -90,7 +90,7 @@ export class ExhibitHarness {
 	 * 1、2…の画面番号を使う。`beforeOpen` はページを開く前にコンテキストを設定するときに使う。
 	 */
 	async openDevice(
-		role: DeviceRole,
+		role: "controller" | ScreenRole,
 		options: BrowserContextOptions = {},
 		beforeOpen?: (context: BrowserContext) => Promise<unknown>,
 	): Promise<Device> {

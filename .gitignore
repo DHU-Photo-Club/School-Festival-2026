@@ -13,6 +13,10 @@ playwright-report/
 # Secrets
 .dev.vars
 .dev.vars.*
+.env.lights
+
+# スマート電球の中継スクリプトの保存先（コントローラーの鍵と登録した電球）
+.matter-lights/
 
 # Personal references
 refs/

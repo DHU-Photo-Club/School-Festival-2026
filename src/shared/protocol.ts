@@ -13,7 +13,7 @@ export type ServerMessage =
 /** 管理画面の端末一覧の一行。接続中のWebSocketごとに一行。 */
 export interface DeviceStatus {
 	role: DeviceRole;
-	/** 展示ディスプレイと写真用の画面番号（1始まり）。診断用iPadは `null`。 */
+	/** 展示ディスプレイと写真用の画面番号（1始まり）。診断用iPadと電球の中継は `null`。 */
 	screen: number | null;
 	/** 最後にメッセージを受信してから15秒以内なら `true`。 */
 	connected: boolean;

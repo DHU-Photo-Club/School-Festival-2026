@@ -14,7 +14,7 @@ import type { Connection, ConnectionMeta } from "./core.ts";
 import { ExhibitCore } from "./core.ts";
 import { DEFAULT_MISTRAL_MODEL, sendPrompt } from "./mistral.ts";
 
-const ROLES: readonly Role[] = ["controller", "display", "photo", "admin"];
+const ROLES: readonly Role[] = ["controller", "display", "photo", "light", "admin"];
 
 /** 推測されにくい結果ID（16桁の16進数）。 */
 function newResultId(): string {
