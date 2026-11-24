@@ -11,7 +11,6 @@ import {
 	answerInput,
 	answerQuestion,
 	backgroundHex,
-	canvasDigest,
 	canvasPixel,
 	choiceOption,
 	dragCell,
@@ -239,7 +238,6 @@ for (const displayCount of [1, 3]) {
 			}
 			await answerQuestion(page, question, index);
 			await expect(next).toBeEnabled();
-			const digest = await canvasDigest(displays[0].page);
 			// 最初の質問から次の質問へ移るときに、前後の質問が重なって入れ替わることを確かめる（docs/visual-language.md 4.5節）。
 			const overlap = index === 0 ? await recordQuestionOverlap(page) : null;
 			await next.click();
@@ -248,9 +246,8 @@ for (const displayCount of [1, 3]) {
 				expect(await overlap()).toBe(2);
 			}
 			if (index < QUESTIONS.length - 1) {
-				// 一問確定するたびに全画面の revision が増え、破片の色が回り始める。
+				// 一問確定するたびに全画面の revision が増える。破片の輪のふくらみは単体テスト（motion.test.ts）で確かめる。
 				for (const display of displays) await expect.poll(() => revisionOf(display)).toBe(before + 1);
-				await expect.poll(() => canvasDigest(displays[0].page), { timeout: 3_000 }).not.toBe(digest);
 			}
 			if (index === 1) {
 				// 戻ると直前の回答が復元され、変更して再確定できる。

@@ -4,6 +4,7 @@ import type { Device } from "./fixtures.ts";
 import {
 	answerQuestion,
 	backgroundHex,
+	bloomHasGraphics,
 	canvasDigest,
 	canvasHasGraphics,
 	canvasPixel,
@@ -114,32 +115,35 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	await page.getByRole("button", { name: "はじめる" }).click();
 	await enterNickname(page);
 
-	// 質問: 破片は静止して表示される。
+	// 質問: 灰色の破片が静止して表示される。
 	// 属性は状態の受信で、canvas は次の描画フレームで変わるため、描画を待ってから比べる。
 	await expect(displays[0].page.locator("main.display")).toHaveAttribute("data-phase", "question");
 	await expect.poll(() => canvasHasGraphics(displays[0].page)).toBe(true);
 	await expect.poll(() => canvasHasGraphics(displays[1].page)).toBe(true);
+	// 破片の周りにブルームが描かれる。
+	await expect.poll(() => bloomHasGraphics(displays[0].page)).toBe(true);
 	const still = await canvasDigest(displays[0].page);
 	await displays[0].page.waitForTimeout(1_000);
 	expect(await canvasDigest(displays[0].page)).toBe(still);
-	// 画面ごとに破片の色の区画がずれて見える。
-	expect(await canvasDigest(displays[1].page)).not.toBe(still);
+	// 破片に色を付けないので、全画面が同じ構図になる（どの画面も同じ大きさで開くので、画素のハッシュで比べられる）。
+	expect(await canvasDigest(displays[1].page)).toBe(still);
 
 	for (let index = 0; index < QUESTIONS.length; index += 1) {
 		await expectQuestion(page, index);
 		await answerQuestion(page, QUESTIONS[index], 2);
-		const before = await canvasDigest(displays[0].page);
+		const shown = displays[0].page.locator("main.display");
+		const revision = (await shown.getAttribute("data-revision")) ?? "";
 		await page.getByRole("button", { name: "次へ" }).click();
 		if (index < QUESTIONS.length - 1) {
-			// 一問確定すると、破片の色を一区画回した構図へ即時に切り替わり、その後は静止する。
-			await expect.poll(() => canvasDigest(displays[0].page), { timeout: 1_000 }).not.toBe(before);
-			const after = await canvasDigest(displays[0].page);
-			await displays[0].page.waitForTimeout(500);
-			expect(await canvasDigest(displays[0].page)).toBe(after);
+			// 一問確定しても、輪はふくらまず構図は変わらない。
+			await expect(shown).not.toHaveAttribute("data-revision", revision);
+			await displays[0].page.waitForTimeout(300);
+			expect(await canvasDigest(displays[0].page)).toBe(still);
 		}
 	}
 
 	// 判定: 即時に黒（判定は2秒なので、その間に黒になることを確かめる）。
+	// 画面中央は輪の内側で、破片のブルームも届かない（中央から最も近い破片まで、広い段のぼかし幅の約5倍ある）。
 	await expect
 		.poll(() => canvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
 		.toBe("#000000");
@@ -150,6 +154,8 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 		await expect
 			.poll(() => canvasPixel(display.page, 0.5, 0.01), { timeout: 5_000 })
 			.toBe(backgroundHex(stubScreenColor(displayOrder)));
+		// 結果では破片とともにブルームも消える。
+		await expect.poll(() => bloomHasGraphics(display.page)).toBe(false);
 		await expect(display.page.locator("main.display")).toHaveAttribute(
 			"data-result-view",
 			expectedResultView(STUB_RESULT.photoIds, displayOrder),

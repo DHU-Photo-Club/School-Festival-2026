@@ -9,10 +9,10 @@ import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex, screenColorId } from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
 import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
-import { shardPoses, spectrumColor } from "../../shared/shards.ts";
+import { shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId, Photo } from "../../shared/types.ts";
 import PhotoImage from "../common/PhotoImage.svelte";
-import { drawShards, hexToRgb } from "../common/shards.ts";
+import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import { watchReducedMotion } from "../lib/reduced-motion.ts";
 import { displaySequence } from "../sequences/displays.ts";
@@ -44,6 +44,7 @@ let resultChoice = $state<{ sessionId: string | null; colorId: PaletteId; photo:
 
 let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
+let bloomCanvas = $state<HTMLCanvasElement>();
 let idleLayer = $state<HTMLDivElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
@@ -107,30 +108,44 @@ function resize() {
 	canvas.width = Math.max(1, Math.round(window.innerWidth * CANVAS_SCALE));
 	canvas.height = Math.max(1, Math.round(window.innerHeight * CANVAS_SCALE));
 	lastDrawn = "";
+	lastShards = "";
 	if (shardCanvas) {
 		shardCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
 		shardCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
-		lastShards = "";
+	}
+	if (bloomCanvas) {
+		bloomCanvas.width = Math.max(1, Math.round(window.innerWidth * SHARD_BLOOM_SCALE));
+		bloomCanvas.height = Math.max(1, Math.round(window.innerHeight * SHARD_BLOOM_SCALE));
 	}
 }
 
-/** 質問中の破片を描く。破片の色は重心の横位置の区画で決まる（docs/visual-language.md 3.2節）。 */
+/**
+ * 質問中から結果色が広がり始めるまでの破片と、そのブルームを描く。結果の二色が決まると、破片を交互に二色へ
+ * 振り分けて色づける（docs/visual-language.md 3.2〜3.4節、4.4節）。
+ */
 function drawShardLayer(layer: ShardLayer | null) {
 	const context = shardCanvas?.getContext("2d");
 	if (!context) return;
 	const key = layer ? JSON.stringify(layer) : "";
 	if (key === lastShards) return;
 	lastShards = key;
+	// 破片のない間は `mix-blend-mode` を通常に戻し、空のcanvasを毎フレームハードライト合成させない。
+	context.canvas.style.mixBlendMode = layer ? "" : "normal";
+	const bloom = bloomCanvas?.getContext("2d");
 	if (!layer) {
 		drawShards(context, [], shardRatio(), 0);
+		if (bloom) drawShardBloom(bloom, [], 1, 0, 0);
 		return;
 	}
-	const width = window.innerWidth;
-	const height = window.innerHeight;
-	const colors = layer.colors.map(hexToRgb);
-	drawShards(context, shardPoses(width, height, layer.time, layer.swell), shardRatio(), layer.intensity, (x) =>
-		spectrumColor((x / width) * layer.span - layer.offset, colors, layer.blend),
-	);
+	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, layer.swell);
+	const tint = layer.colors
+		? { colors: [hexToRgb(layer.colors[0]), hexToRgb(layer.colors[1])] as const, amount: layer.tint }
+		: undefined;
+	drawShards(context, poses, shardRatio(), layer.intensity, tint);
+	if (bloom) {
+		const ratio = bloom.canvas.width / window.innerWidth;
+		drawShardBloom(bloom, poses, ratio, Math.min(window.innerWidth, window.innerHeight), layer.intensity, tint);
+	}
 }
 
 /**
@@ -280,7 +295,8 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	data-result-view={resultChoice ? (resultChoice.photo ? "photo" : "typography") : undefined}
 >
 	<canvas bind:this={canvas}></canvas>
-	<canvas bind:this={shardCanvas}></canvas>
+	<canvas class="shard-bloom" bind:this={bloomCanvas}></canvas>
+	<canvas class="shards" bind:this={shardCanvas}></canvas>
 
 	<div class="layer" bind:this={idleLayer} style="opacity: 0">
 		{#if displayOrder >= playlist.length}
@@ -335,6 +351,8 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	overflow: hidden;
 	background: #0b0b0b;
 	cursor: none;
+	/* 破片とブルームの合成先をこの要素の中に限る。 */
+	isolation: isolate;
 }
 canvas,
 .layer,
@@ -344,6 +362,15 @@ canvas,
 	inset: 0;
 	width: 100%;
 	height: 100%;
+}
+/* 破片のブルーム。色面と破片の間に置き、スクリーン合成で下の色面へ明るさを足す（docs/visual-language.md 4.4節、7章）。 */
+.shard-bloom {
+	opacity: 0.45;
+	mix-blend-mode: screen;
+}
+/* 破片。ハードライト合成で下の色面とブルームへ重ねる。破片のない間はスクリプトでハードライト合成をやめる（docs/visual-language.md 4.4節、7章）。 */
+.shards {
+	mix-blend-mode: hard-light;
 }
 .sequence {
 	overflow: hidden;

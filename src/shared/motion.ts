@@ -1,8 +1,7 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
-import { INACTIVITY_MS } from "./machine.ts";
+import { INACTIVITY_MS, SETTLE_MARGIN_MS } from "./machine.ts";
 import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
 import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
-import { PALETTE_IDS } from "./types.ts";
 
 // ---- 時間（docs/visual-language.md 3章） ----
 
@@ -14,20 +13,25 @@ export const GLOW_APPEAR_MS = 3_000;
 export const GLOW_TURN_MS = 6_000;
 export const GLOW_PULSE = 0.08;
 export const JUDGING_FADE_MS = 1_200;
+/** 判定中に灰色の破片を沈める不透明度。 */
+export const JUDGING_SHARD_DIM = 0.4;
+/**
+ * 破片が灰色から結果の二色へ色づく時間。結果の配信から結果開始までの最短の間隔
+ * （`SETTLE_MARGIN_MS`）に合わせ、結果開始の時刻に色づき終える。
+ */
+export const SHARD_TINT_MS = SETTLE_MARGIN_MS;
+/** 結果開始から、色づいた破片が消えるまでの時間。 */
+export const RESULT_SHARD_FADE_MS = 1_200;
 export const RESULT_SETTLE_MS = 1_000;
 export const RESULT_PHOTO_DELAY_MS = 400;
 export const RESULT_PHOTO_FADE_MS = 1_200;
 export const RESULT_REDUCED_HOLD_MS = 1_600;
 export const IDLE_RETURN_MS = 1_000;
-/** 輪の一区画の角度。パレットの13色で一巡する。 */
-const SECTOR_DEGREES = 360 / PALETTE_IDS.length;
-
 export const COLORS = {
 	idle: "#0B0B0B",
 	dark: "#000000",
 	text: "#E8E6E3",
 	muted: "#8A8784",
-	line: "#3A3836",
 } as const;
 
 /**
@@ -60,20 +64,11 @@ export type ResultForm =
 	| "diagonalTide"
 	| "meetingTides";
 
-/** 質問中の破片の色で、画面の幅に並ぶ区画の数（docs/visual-language.md 3.2節）。 */
-export const SPECTRUM_SPAN = 2.5;
-/** 隣り合う色が溶け合う幅（区画に対する割合）。 */
-export const SPECTRUM_BLEND = 0.9;
 /** 結果色の縁のぼけ幅（画面短辺に対する割合）。広がり始めから終わりへ広げる（docs/visual-language.md 3.4節）。 */
 export const BLOOM_FEATHER_START = 0.2;
 export const BLOOM_FEATHER_END = 0.75;
 /** ノイズによる縁の揺れ幅（ぼけ幅に対する割合）。描画側の `BLOOM_WARP` と同じ値にする。 */
 export const BLOOM_WARP = 0.6;
-
-/**
- * 色相が隣り合わない固定順（docs/visual-language.md 2.2節）。色相順に並ぶパレットを5つずつ飛ばして巡る。
- */
-export const NEUTRAL_ORDER: readonly PaletteId[] = PALETTE_IDS.map((_, i) => PALETTE_IDS[(i * 5) % PALETTE_IDS.length]);
 
 // ---- 補助関数 ----
 
@@ -88,80 +83,12 @@ export const easeOutCubic = eased((t) => 1 - (1 - t) ** 3);
 export const easeInSine = eased((t) => 1 - Math.cos((t * Math.PI) / 2));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/** FNV-1a 32bit。 */
-export function hash32(text: string): number {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < text.length; i += 1) {
-		h ^= text.charCodeAt(i);
-		h = Math.imul(h, 0x01000193);
-	}
-	return h >>> 0;
-}
-
-function seededRandom(seed: number) {
-	let a = seed;
-	return () => {
-		a = (a + 0x6d2b79f5) | 0;
-		let t = Math.imul(a ^ (a >>> 15), 1 | a);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-}
-
-/** 輪の13区画の並び順。セッションの間は全画面で同じ（docs/visual-language.md 2.2節）。 */
-export function ringOrder(sessionId: string | null): PaletteId[] {
-	if (!sessionId) return [...NEUTRAL_ORDER];
-	const order = [...NEUTRAL_ORDER];
-	const random = seededRandom(hash32(sessionId));
-	for (let i = order.length - 1; i > 0; i -= 1) {
-		const j = Math.floor(random() * (i + 1));
-		[order[i], order[j]] = [order[j], order[i]];
-	}
-	return order;
-}
-
-/** 輪の基準角（度）。 */
-export function ringBaseAngle(sessionId: string | null): number {
-	return sessionId ? ((hash32(`${sessionId}:angle`) % 10_000) / 10_000) * SECTOR_DEGREES : 0;
-}
-
 /** サーバーが最後にiPad操作を受理した時刻（`question` の `phaseEndsAt` は最終操作から5分後）。 */
 export function lastOperationAt(state: Pick<DisplayState, "phase" | "phaseStartedAt" | "phaseEndsAt">): number {
 	if ((state.phase === "question" || state.phase === "intro") && state.phaseEndsAt !== null) {
 		return state.phaseEndsAt - INACTIVITY_MS;
 	}
 	return state.phaseStartedAt;
-}
-
-/**
- * 輪の回転量（区画数）。`revision` が増えた時刻から `turnMs` かけて一区画回る。
- * `judging` では最終回答の確定として一区画回りながら消える。
- */
-export function ringSteps(
-	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "phaseEndsAt" | "revision">,
-	now: number,
-	turnMs: number,
-	reducedMotion: boolean,
-): number {
-	const changedAt = lastOperationAt(state);
-	const turning =
-		(state.phase === "judging" || (state.phase === "question" && changedAt > state.phaseStartedAt)) &&
-		now - changedAt < turnMs;
-	if (!turning || reducedMotion) return state.revision;
-	return state.revision - 1 + easeInOutSine((now - changedAt) / turnMs);
-}
-
-/** 輪の回転角（度、12時方向から時計回り）。画面が右へ一つ進むごとに一区画戻す。 */
-export function ringAngle(sessionId: string | null, steps: number, displayOrder: number): number {
-	return ringBaseAngle(sessionId) + (steps - displayOrder) * SECTOR_DEGREES;
-}
-
-/**
- * 質問中の破片の色のずれ（区画数）。輪の回転角を区画数で表した値で、画面の左端に
- * `-offset` 番目の区画の位置が来る。画面が右へ一つ進むごとに一区画戻し、一問確定すると一区画進む。
- */
-export function spectrumOffset(sessionId: string | null, steps: number, displayOrder: number): number {
-	return ringAngle(sessionId, steps, displayOrder) / SECTOR_DEGREES;
 }
 
 // ---- 描画内容 ----
@@ -193,19 +120,18 @@ export type Primitive =
 	  };
 
 /**
- * 質問中の三角形の破片（docs/visual-language.md 3.2節）。配置と動きは `shardPoses` で求め、
- * 破片の色は重心の横位置で決まる。`colors[i]` は位置 `x / 幅 × span - offset` が `i` から
- * `i + 1` までの区画を占める（13区画で一巡する）。
+ * 質問中から結果色が広がり始めるまでの三角形の破片（docs/visual-language.md 3.2〜3.4節）。配置と動きは `shardPoses` で求める。
+ * 破片は灰色で描き、結果の二色が決まると、破片を交互に二色へ振り分けて色づける。
  */
 export interface ShardLayer {
 	/** `shardPoses` に渡す経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
 	time: number;
 	/** 輪の半径の倍率。 */
 	swell: number;
-	offset: number;
-	span: number;
-	blend: number;
-	colors: string[];
+	/** 結果の二色の基準色。偶数番目の破片が一色目、奇数番目が二色目になる。結果が決まる前は `null`。 */
+	colors: readonly [string, string] | null;
+	/** 灰色から `colors` への進み具合（0〜1）。 */
+	tint: number;
 	/** 不透明度（0〜1）。 */
 	intensity: number;
 }
@@ -256,21 +182,52 @@ export function screenColorId(
 const driftOf = (now: number, since: number, reducedMotion: boolean) =>
 	reducedMotion ? 0 : Math.max(0, now - since) / 1000;
 
-/** 質問中の破片。reduced-motionでは時刻を進めず、初期配置のまま止める。 */
-function questionShards(input: SceneInput, intensity: number, steps: number, swell = 1): ShardLayer {
-	const { state, now, reducedMotion, colors } = input;
+/** 結果の二色の基準色。どちらかがパレットになければ `null`。 */
+function resultShardColors(input: SceneInput): readonly [string, string] | null {
+	const result = input.state.result;
+	if (!result) return null;
+	const [first, second] = result.colors.map((id) => paletteColor(input.colors, id));
+	return first && second ? [baseColor(first), baseColor(second)] : null;
+}
+
+/** 破片の層。reduced-motionでは時刻を進めず、初期配置のまま止める。 */
+function shardLayer(
+	input: SceneInput,
+	intensity: number,
+	options: { swell?: number; colors?: readonly [string, string] | null; tint?: number } = {},
+): ShardLayer {
+	const colors = options.colors ?? null;
 	return {
-		time: reducedMotion ? 0 : now,
-		swell,
-		offset: spectrumOffset(state.sessionId, steps, input.displayOrder),
-		span: SPECTRUM_SPAN,
-		blend: SPECTRUM_BLEND,
-		colors: ringOrder(state.sessionId).map((id) => {
-			const color = paletteColor(colors, id);
-			return color ? baseColor(color) : COLORS.line;
-		}),
+		time: input.reducedMotion ? 0 : input.now,
+		swell: options.swell ?? 1,
+		colors,
+		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
 	};
+}
+
+/**
+ * 判定中の破片。灰色のまま沈め、結果の二色が決まると結果開始までに二色へ色づける（docs/visual-language.md 3.3節）。
+ * 色づき始める時刻は `phaseEndsAt - SHARD_TINT_MS` とする。結果の配信時刻は全画面で共有できないが、
+ * サーバーは通常、配信から `SETTLE_MARGIN_MS` 以上あとを結果開始にするため、この時刻には全画面に結果が届いている。
+ * `judging` の期限の直前に結果が決まると間隔が短くなり、色づきは届いた時点の進み具合から始まる。
+ */
+function judgingShards(input: SceneInput): ShardLayer {
+	const { state, now, reducedMotion } = input;
+	const colors = resultShardColors(input);
+	// 暗転を終えてから色づける。`judgingMaxMs` が `JUDGING_MS` より短い設定でも暗転と重ねない。
+	const tintAt =
+		state.phaseEndsAt === null
+			? null
+			: Math.max(state.phaseStartedAt + JUDGING_FADE_MS, state.phaseEndsAt - SHARD_TINT_MS);
+	const tintProgress = colors && tintAt !== null ? (now - tintAt) / SHARD_TINT_MS : 0;
+	if (reducedMotion) {
+		const tinted = tintProgress >= 0 && colors !== null;
+		return shardLayer(input, tinted ? 1 : JUDGING_SHARD_DIM, { colors: tinted ? colors : null });
+	}
+	const tint = easeInOutSine(tintProgress);
+	const dim = lerp(1, JUDGING_SHARD_DIM, easeInSine((now - state.phaseStartedAt) / JUDGING_FADE_MS));
+	return shardLayer(input, lerp(dim, 1, tint), { colors, tint });
 }
 
 /**
@@ -414,9 +371,13 @@ function resultScene(input: SceneInput): Scene {
 			alpha: easeInOutSine((elapsed - durationMs) / RESULT_SETTLE_MS),
 		});
 	}
+	// 色づいた破片は、結果色が広がる間に消える。
+	const shardFade = elapsed / RESULT_SHARD_FADE_MS;
+	const shardColors = resultShardColors(input);
 	return {
 		primitives,
-		shards: null,
+		shards:
+			shardFade < 1 && shardColors ? shardLayer(input, 1 - easeInSine(shardFade), { colors: shardColors }) : null,
 		idleLayer: 0,
 		resultLayer: easeInOutSine((elapsed - durationMs - RESULT_PHOTO_DELAY_MS) / RESULT_PHOTO_FADE_MS),
 		veil: null,
@@ -465,10 +426,9 @@ export function computeScene(input: SceneInput): Scene {
 			!reducedMotion && changedAt > state.phaseStartedAt && turn < 1
 				? GLOW_PULSE * Math.sin(Math.PI * clamp01(turn))
 				: 0;
-		const steps = ringSteps(state, now, GLOW_TURN_MS, reducedMotion);
 		return {
 			primitives: [{ type: "fill", color: COLORS.idle }],
-			shards: questionShards(input, appear, steps, 1 + pulse),
+			shards: shardLayer(input, appear, { swell: 1 + pulse }),
 			idleLayer: reducedMotion ? 0 : 1 - easeInOutSine(sinceStart / QUESTION_PHOTO_FADE_MS),
 			resultLayer: 0,
 			veil: null,
@@ -481,11 +441,12 @@ export function computeScene(input: SceneInput): Scene {
 		if (reducedMotion) {
 			return {
 				primitives: [{ type: "fill", color: COLORS.dark }],
-				shards: null,
+				shards: judgingShards(input),
 				idleLayer: 0,
 				resultLayer: 0,
 				veil: null,
-				animating: false,
+				// 色づく時刻に一度だけ構図が切り替わる。
+				animating: true,
 			};
 		}
 		const fade = easeInSine((now - state.phaseStartedAt) / JUDGING_FADE_MS);
@@ -493,8 +454,7 @@ export function computeScene(input: SceneInput): Scene {
 			{ type: "fill", color: COLORS.idle },
 			{ type: "fill", color: COLORS.dark, alpha: fade },
 		];
-		const shards = fade < 1 ? questionShards(input, 1 - fade, ringSteps(state, now, GLOW_TURN_MS, false)) : null;
-		return { primitives, shards, idleLayer: 0, resultLayer: 0, veil: null, animating: true };
+		return { primitives, shards: judgingShards(input), idleLayer: 0, resultLayer: 0, veil: null, animating: true };
 	}
 
 	return resultScene(input);

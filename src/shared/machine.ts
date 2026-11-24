@@ -19,7 +19,8 @@ export const JUDGING_MS = 2_000;
 export const DEFAULT_JUDGING_MAX_MS = 30_000;
 /**
  * `judging` を早めに終えるとき、終了時刻を少なくともこの時間だけ先にする。全画面へ新しい
- * `phaseEndsAt` が届いてから同時に結果へ切り替えるため。
+ * `phaseEndsAt` が届いてから同時に結果へ切り替えるため。展示ディスプレイの破片が二色へ色づく時間
+ * （`src/shared/motion.ts` の `SHARD_TINT_MS`）もこの値に合わせる。
  */
 export const SETTLE_MARGIN_MS = 800;
 /** `result` の長さ（仕様書5章）。 */

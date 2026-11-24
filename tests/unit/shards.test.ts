@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ShardPose } from "../../src/shared/shards.ts";
-import { floorShardPoses, SHARD_RING_RADIUS, shardPoses, spectrumColor } from "../../src/shared/shards.ts";
-
-const COLORS = [
-	[255, 0, 0],
-	[0, 255, 0],
-	[0, 0, 255],
-	[255, 255, 0],
-	[0, 255, 255],
-	[255, 0, 255],
-	[128, 128, 128],
-	[255, 255, 255],
-] as const;
+import { SHARD_RING_RADIUS, shardColor, shardPoses } from "../../src/shared/shards.ts";
 
 describe("破片の配置", () => {
 	it("同じ大きさと時刻からは同じ配置を返す", () => {
@@ -36,7 +25,6 @@ describe("破片の配置", () => {
 		const radius = Math.min(width, height) * SHARD_RING_RADIUS;
 		for (const time of [0, 40_000, 90_000]) {
 			const near = shardPoses(width, height, time)
-				.filter((pose) => pose.y < height * 0.75)
 				.flatMap((pose) => pose.vertices)
 				.map(([x, y]) => Math.hypot(x - width / 2, y - height / 2));
 			expect(Math.min(...near)).toBeGreaterThan(radius * 0.2);
@@ -53,11 +41,16 @@ const rounded = (pose: ShardPose) => ({
 	alpha: Number(pose.alpha.toFixed(4)),
 });
 
-describe("輪と床の破片（展示ディスプレイ）", () => {
-	it("輪130枚、床110枚の順に並ぶ", () => {
-		const all = shardPoses(1180, 820, 40_000);
-		expect(all).toHaveLength(240);
-		expect(all.slice(130)).toEqual(floorShardPoses(1180, 820, 40_000));
+describe("輪の破片", () => {
+	it("130枚を画面中央の周りに置く", () => {
+		const [width, height] = [1180, 820];
+		const all = shardPoses(width, height, 40_000);
+		expect(all).toHaveLength(130);
+		// 重心は画面中央から輪の半径の1.25倍以内にある（半径の比の最大1.2と揺れの0.04）。
+		const reach = Math.min(width, height) * SHARD_RING_RADIUS * 1.25;
+		for (const pose of all) {
+			expect(Math.hypot(pose.x - width / 2, pose.y - height / 2)).toBeLessThan(reach);
+		}
 	});
 
 	it("配置と動きの値が変わらない", () => {
@@ -84,31 +77,31 @@ describe("輪と床の破片（展示ディスプレイ）", () => {
 			  "y": 91.5798,
 			}
 		`);
-		expect(rounded(all[239])).toMatchInlineSnapshot(`
+		expect(rounded(all[129])).toMatchInlineSnapshot(`
 			{
-			  "alpha": 0.5353,
-			  "shade": 0.8673,
+			  "alpha": 0.4711,
+			  "shade": 0.8255,
 			  "vertices": [
 			    [
-			      745.1358,
-			      586.1645,
+			      561.5894,
+			      323.9506,
 			    ],
 			    [
-			      811.4508,
-			      616.2057,
+			      636.1859,
+			      403.0188,
 			    ],
 			    [
-			      749.0604,
-			      619.1048,
+			      546.5917,
+			      409.6473,
 			    ],
 			  ],
-			  "x": 768.549,
-			  "y": 607.1583,
+			  "x": 581.4557,
+			  "y": 378.8722,
 			}
 		`);
 	});
 
-	it("`swell` は輪の半径だけを変え、床には掛けない", () => {
+	it("`swell` は輪の半径を変える", () => {
 		const [width, height, time] = [800, 600, 12_345];
 		const distance = (pose: ShardPose) => Math.hypot(pose.x - width / 2, pose.y - height / 2);
 		const normal = shardPoses(width, height, time);
@@ -116,43 +109,38 @@ describe("輪と床の破片（展示ディスプレイ）", () => {
 		for (let i = 0; i < 130; i += 1) {
 			expect(distance(half[i])).toBeCloseTo(distance(normal[i]) / 2);
 		}
-		expect(half.slice(130)).toEqual(floorShardPoses(width, height, time));
-	});
-});
-
-describe("床の破片（iPadの待機画面）", () => {
-	it("床の110枚だけを返す", () => {
-		expect(floorShardPoses(1180, 820, 40_000)).toHaveLength(110);
-	});
-
-	it("画面の下部だけに置く", () => {
-		const [width, height] = [1180, 820];
-		for (const time of [0, 40_000, 90_000]) {
-			for (const pose of floorShardPoses(width, height, time)) {
-				expect(pose.y).toBeGreaterThan(height * 0.7);
-			}
-		}
 	});
 });
 
 describe("破片の色", () => {
-	it("区画の中央ではその区画の色になる", () => {
-		expect(spectrumColor(0.5, COLORS, 0.9)).toEqual([255, 0, 0]);
-		expect(spectrumColor(2.5, COLORS, 0.9)).toEqual([0, 0, 255]);
+	const RED = [255, 0, 0] as const;
+	const BLUE = [0, 0, 255] as const;
+	const two = { colors: [RED, BLUE] as const, amount: 1 };
+
+	it("色づける前は明るさの灰色にする", () => {
+		expect(shardColor(0.8, 0)).toEqual([204, 204, 204]);
+		expect(shardColor(0.8, 1, { ...two, amount: 0 })).toEqual([204, 204, 204]);
 	});
 
-	it("8区画で一巡する", () => {
-		const [a, b] = [spectrumColor(1.3, COLORS, 0.9), spectrumColor(9.3, COLORS, 0.9)];
-		a.forEach((value, index) => {
-			expect(value).toBeCloseTo(b[index]);
-		});
-		expect(spectrumColor(-0.5, COLORS, 0.9)).toEqual([255, 255, 255]);
+	it("偶数番目の破片を一色目、奇数番目を二色目へ振り分ける", () => {
+		const dark = 150 / 255;
+		expect(shardColor(dark, 0, two)).toEqual([255, 0, 0]);
+		expect(shardColor(dark, 1, two)).toEqual([0, 0, 255]);
+		expect(shardColor(dark, 2, two)).toEqual([255, 0, 0]);
 	});
 
-	it("区画の境目では隣の色と半分ずつ混ざる", () => {
-		const [r, g, b] = spectrumColor(1, COLORS, 0.9);
-		expect(r).toBeCloseTo(127.5);
-		expect(g).toBeCloseTo(127.5);
-		expect(b).toBeCloseTo(0);
+	it("明るい破片ほど白へ寄せ、最大で35%寄せる", () => {
+		const [r, g, b] = shardColor(1, 1, two);
+		expect(r).toBeCloseTo(255 * 0.35);
+		expect(g).toBeCloseTo(255 * 0.35);
+		expect(b).toBeCloseTo(255);
+	});
+
+	it("灰色から色へ進み具合だけ寄せる", () => {
+		const dark = 150 / 255;
+		const [r, g, b] = shardColor(dark, 0, { ...two, amount: 0.5 });
+		expect(r).toBeCloseTo((150 + 255) / 2);
+		expect(g).toBeCloseTo(150 / 2);
+		expect(b).toBeCloseTo(150 / 2);
 	});
 });

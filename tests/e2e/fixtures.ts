@@ -125,8 +125,9 @@ export class ExhibitHarness {
 }
 
 /**
- * 展示ディスプレイのcanvasを読む。展示ディスプレイはWebGLで描き、描画結果を保持する設定にしているため、
- * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。破片のcanvasは重ねて写す。`stride` 画素ごとに一つ読む。
+ * 展示ディスプレイのcanvasを読む。色面のcanvasはWebGLで描き、描画結果を保持する設定にしているため、
+ * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。その上にブルームと破片のcanvasを重ねて写す。
+ * `stride` 画素ごとに一つ読む。
  */
 async function readCanvas(page: Page, x: number, y: number, w: number, h: number, stride: number): Promise<number[]> {
 	return page.evaluate(
@@ -137,7 +138,23 @@ async function readCanvas(page: Page, x: number, y: number, w: number, h: number
 			copy.height = source.height;
 			const context = copy.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
 			context.drawImage(source, 0, 0);
-			for (const overlay of overlays) context.drawImage(overlay, 0, 0, copy.width, copy.height);
+			for (const overlay of overlays) {
+				// 画面と同じ不透明度と合成方法で重ねる（ブルームはスクリーン、破片はハードライト）。
+				// canvas 2Dで同じ式になる合成方法だけに対応する。未対応の値は黙って別の合成になるため、エラーで止める。
+				const blends: Record<string, GlobalCompositeOperation> = {
+					normal: "source-over",
+					screen: "screen",
+					"hard-light": "hard-light",
+				};
+				const style = getComputedStyle(overlay);
+				const blend = blends[style.mixBlendMode];
+				if (!blend) throw new Error(`readCanvas が対応していない mix-blend-mode: ${style.mixBlendMode}`);
+				context.globalAlpha = Number(style.opacity);
+				context.globalCompositeOperation = blend;
+				context.drawImage(overlay, 0, 0, copy.width, copy.height);
+			}
+			context.globalAlpha = 1;
+			context.globalCompositeOperation = "source-over";
 			const left = Math.min(copy.width - 1, Math.floor(copy.width * px));
 			const top = Math.min(copy.height - 1, Math.floor(copy.height * py));
 			const { data } = context.getImageData(
@@ -167,6 +184,22 @@ export async function canvasHasGraphics(page: Page): Promise<boolean> {
 		if (samples[i] !== 0x0b || samples[i + 1] !== 0x0b || samples[i + 2] !== 0x0b) return true;
 	}
 	return false;
+}
+
+/** 破片のブルームのcanvasに何か描かれているか。 */
+export async function bloomHasGraphics(page: Page): Promise<boolean> {
+	return page.evaluate(() => {
+		const bloom = document.querySelector<HTMLCanvasElement>("main.display canvas.shard-bloom");
+		if (!bloom) return false;
+		const copy = document.createElement("canvas");
+		copy.width = bloom.width;
+		copy.height = bloom.height;
+		const context = copy.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+		context.drawImage(bloom, 0, 0);
+		const { data } = context.getImageData(0, 0, copy.width, copy.height);
+		for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
+		return false;
+	});
 }
 
 /** canvas全体の画素の要約（変化の検出に使う）。 */

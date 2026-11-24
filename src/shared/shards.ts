@@ -1,18 +1,13 @@
-// 三角形の破片の輪と床の配置と動き（docs/visual-language.md 3.2節、4.4節）。
-// 展示ディスプレイの質問中は輪と床を、iPadの待機画面は床だけを描く。配置は固定の種から作り、位置は経過時間だけから決まる。
+// 三角形の破片の輪の配置と動き（docs/visual-language.md 3.2〜3.4節、4.4節）。
+// 展示ディスプレイで、質問中から結果色が広がり始めるまで描く。配置は固定の種から作り、位置は経過時間だけから決まる。
 
 /** 輪の半径（画面短辺に対する比）。 */
 export const SHARD_RING_RADIUS = 0.38;
 /** 輪の半径方向の散らばり（輪の半径に対する比、片側）。 */
 const RING_SPREAD = 0.2;
 const RING_COUNT = 130;
-const FLOOR_COUNT = 110;
 /** 輪の一周の周期（ミリ秒）。 */
 const ORBIT_MS = 150_000;
-/** 床の破片が画面幅を一度流れる周期（ミリ秒）。 */
-const FLOOR_DRIFT_MS = 210_000;
-/** 床の上端（画面の高さに対する比）。 */
-const FLOOR_TOP = 0.78;
 const SEED = 0x5eedc0de;
 
 type Point = readonly [number, number];
@@ -25,20 +20,20 @@ interface Shard {
 	/** 明るさ（0〜1）。 */
 	shade: number;
 	alpha: number;
-	/** 自転の初期角（ラジアン）と角速度（ラジアン/ミリ秒）。 */
+	/** 自転の初期角（ラジアン）と角速度の基準値（ラジアン/ミリ秒）。輪では0.3倍して使う。 */
 	spin: number;
 	spinSpeed: number;
 	/** 揺れの位相（ラジアン）と角速度（ラジアン/ミリ秒）。 */
 	sway: number;
 	swaySpeed: number;
-	/** 輪: 初期角（ラジアン）、半径の比。床: 横位置の比、高さの比。 */
+	/** 初期角（ラジアン）と、輪の半径に対する比。 */
 	a: number;
 	b: number;
-	/** 公転または流れる速度の倍率。 */
+	/** 公転の速度の倍率。 */
 	speed: number;
 }
 
-/** 一枚の破片の描く位置。座標は画面の画素単位。 */
+/** 一枚の破片を描く位置。座標はCSS画素単位。 */
 export interface ShardPose {
 	/** 重心。 */
 	x: number;
@@ -97,12 +92,6 @@ const RING: readonly Shard[] = Array.from({ length: RING_COUNT }, () => {
 	const offset = (next() + next() - 1) * RING_SPREAD;
 	return shard(next, angle, 1 + offset, 0.14 + 0.2 * next());
 });
-const FLOOR: readonly Shard[] = Array.from({ length: FLOOR_COUNT }, () => {
-	const x = next();
-	// 下端ほど密にする。
-	const y = FLOOR_TOP + (1.04 - FLOOR_TOP) * Math.sqrt(next());
-	return shard(next, x, y, 0.07 + 0.11 * next());
-});
 
 function pose(item: Shard, x: number, y: number, rotation: number, unit: number): ShardPose {
 	const length = item.size * unit;
@@ -132,48 +121,31 @@ function ringPoses(width: number, height: number, elapsed: number, swell: number
 	});
 }
 
-/**
- * 経過時間 `elapsed`（ミリ秒）での床の破片の位置。輪の下端と同じ向き（左）へ流れ、画面の端で反対側へ回り込む。
- * iPadの待機画面は床だけを描く（docs/visual-language.md 4.4節）。
- */
-export function floorShardPoses(width: number, height: number, elapsed: number): ShardPose[] {
-	const unit = Math.min(width, height);
-	const margin = unit * 0.2;
-	const span = width + margin * 2;
-	return FLOOR.map((item) => {
-		const travel = (((elapsed * item.speed) % FLOOR_DRIFT_MS) / FLOOR_DRIFT_MS) * span;
-		const x = ((((item.a * span - travel) % span) + span) % span) - margin;
-		const y = height * item.b + unit * 0.012 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2)));
-		const rotation =
-			item.spin * 0.35 + 0.25 * Math.sin(item.sway * 0.5 + ((elapsed * item.spinSpeed) % (Math.PI * 2)));
-		return pose(item, x, y, rotation, unit);
-	});
-}
-
-/** 経過時間 `elapsed`（ミリ秒）での輪と床の全破片の位置。`swell` は輪の半径の倍率。 */
+/** 経過時間 `elapsed`（ミリ秒）での輪の全破片の位置。`swell` は輪の半径の倍率。 */
 export function shardPoses(width: number, height: number, elapsed: number, swell = 1): ShardPose[] {
-	return [...ringPoses(width, height, elapsed, swell), ...floorShardPoses(width, height, elapsed)];
+	return ringPoses(width, height, elapsed, swell);
 }
 
-const smoothstep = (edge0: number, edge1: number, x: number) => {
-	const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-	return t * t * (3 - 2 * t);
-};
+type Rgb = readonly [number, number, number];
+
+/** 色づけた破片を白へ寄せる最大の割合。明るい破片ほど白へ寄せる。 */
+const TINT_LIGHTEN = 0.35;
+/** 破片の明るさ `shade` の最小値。 */
+const SHADE_MIN = 150 / 255;
 
 /**
- * 8色の並びの区画番号 `position` での色。`colors[i]` は番号 `i` から `i + 1` を占め（8区画で一巡する）、
- * 隣の区画の中央へ向けて `blend` の幅で溶け合う（docs/visual-language.md 3.2節）。
+ * `index` 番目の破片の色（0〜255の三成分）。`tint` がなければ明るさ `shade` の灰色にする。`tint` があれば
+ * 偶数番目を `colors[0]`、奇数番目を `colors[1]` へ振り分け、灰色からその色へ `amount`（0〜1）だけ寄せる。
  */
-export function spectrumColor(
-	position: number,
-	colors: readonly (readonly [number, number, number])[],
-	blend: number,
+export function shardColor(
+	shade: number,
+	index: number,
+	tint?: { colors: readonly [Rgb, Rgb]; amount: number },
 ): [number, number, number] {
-	const s = position - 0.5;
-	const i0 = Math.floor(s);
-	const w = smoothstep(0.5 - blend / 2, 0.5 + blend / 2, s - i0);
-	const n = colors.length;
-	const a = colors[((i0 % n) + n) % n];
-	const b = colors[(((i0 + 1) % n) + n) % n];
-	return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w];
+	const gray = shade * 255;
+	if (!tint || tint.amount <= 0) return [gray, gray, gray];
+	const base = tint.colors[index % 2];
+	const lighten = ((shade - SHADE_MIN) / (1 - SHADE_MIN)) * TINT_LIGHTEN;
+	const mix = (value: number) => gray + (value + (255 - value) * lighten - gray) * tint.amount;
+	return [mix(base[0]), mix(base[1]), mix(base[2])];
 }
