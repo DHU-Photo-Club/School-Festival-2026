@@ -246,7 +246,7 @@ for (const displayCount of [1, 3]) {
 				expect(await overlap()).toBe(2);
 			}
 			if (index < QUESTIONS.length - 1) {
-				// 一問確定するたびに全画面の revision が増える。破片の輪のふくらみは単体テスト（motion.test.ts）で確かめる。
+				// 一問確定するたびに全画面の revision が増える。展示ディスプレイの演出が回答に反応しないことは単体テスト（motion.test.ts）で確かめる。
 				for (const display of displays) await expect.poll(() => revisionOf(display)).toBe(before + 1);
 			}
 			if (index === 1) {

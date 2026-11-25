@@ -1,5 +1,5 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
-import { INACTIVITY_MS, SETTLE_MARGIN_MS } from "./machine.ts";
+import { SETTLE_MARGIN_MS } from "./machine.ts";
 import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
 import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
 
@@ -10,8 +10,6 @@ export const IDLE_CROSSFADE_MS = 1_000;
 export const QUESTION_PHOTO_FADE_MS = 1_500;
 export const GLOW_APPEAR_DELAY_MS = 600;
 export const GLOW_APPEAR_MS = 3_000;
-export const GLOW_TURN_MS = 6_000;
-export const GLOW_PULSE = 0.08;
 export const JUDGING_FADE_MS = 1_200;
 /** 判定中に灰色の破片を沈める不透明度。 */
 export const JUDGING_SHARD_DIM = 0.4;
@@ -83,14 +81,6 @@ export const easeOutCubic = eased((t) => 1 - (1 - t) ** 3);
 export const easeInSine = eased((t) => 1 - Math.cos((t * Math.PI) / 2));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/** サーバーが最後にiPad操作を受理した時刻（`question` の `phaseEndsAt` は最終操作から5分後）。 */
-export function lastOperationAt(state: Pick<DisplayState, "phase" | "phaseStartedAt" | "phaseEndsAt">): number {
-	if ((state.phase === "question" || state.phase === "intro") && state.phaseEndsAt !== null) {
-		return state.phaseEndsAt - INACTIVITY_MS;
-	}
-	return state.phaseStartedAt;
-}
-
 // ---- 描画内容 ----
 
 /**
@@ -126,8 +116,6 @@ export type Primitive =
 export interface ShardLayer {
 	/** `shardPoses` に渡す経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
 	time: number;
-	/** 輪の半径の倍率。 */
-	swell: number;
 	/** 結果の二色の基準色。偶数番目の破片が一色目、奇数番目が二色目になる。結果が決まる前は `null`。 */
 	colors: readonly [string, string] | null;
 	/** 灰色から `colors` への進み具合（0〜1）。 */
@@ -194,12 +182,11 @@ function resultShardColors(input: SceneInput): readonly [string, string] | null 
 function shardLayer(
 	input: SceneInput,
 	intensity: number,
-	options: { swell?: number; colors?: readonly [string, string] | null; tint?: number } = {},
+	options: { colors?: readonly [string, string] | null; tint?: number } = {},
 ): ShardLayer {
 	const colors = options.colors ?? null;
 	return {
 		time: input.reducedMotion ? 0 : input.now,
-		swell: options.swell ?? 1,
 		colors,
 		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
@@ -420,15 +407,10 @@ export function computeScene(input: SceneInput): Scene {
 	if (state.phase === "question") {
 		const sinceStart = now - state.phaseStartedAt;
 		const appear = reducedMotion ? 1 : easeInOutSine((sinceStart - GLOW_APPEAR_DELAY_MS) / GLOW_APPEAR_MS);
-		const changedAt = lastOperationAt(state);
-		const turn = (now - changedAt) / GLOW_TURN_MS;
-		const pulse =
-			!reducedMotion && changedAt > state.phaseStartedAt && turn < 1
-				? GLOW_PULSE * Math.sin(Math.PI * clamp01(turn))
-				: 0;
+		// 回答の確定や「戻る」には反応しない。輪は常時の動き（4.4節）だけで動く。
 		return {
 			primitives: [{ type: "fill", color: COLORS.idle }],
-			shards: shardLayer(input, appear, { swell: 1 + pulse }),
+			shards: shardLayer(input, appear),
 			idleLayer: reducedMotion ? 0 : 1 - easeInOutSine(sinceStart / QUESTION_PHOTO_FADE_MS),
 			resultLayer: 0,
 			veil: null,

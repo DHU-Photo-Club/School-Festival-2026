@@ -135,7 +135,7 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 		const revision = (await shown.getAttribute("data-revision")) ?? "";
 		await page.getByRole("button", { name: "次へ" }).click();
 		if (index < QUESTIONS.length - 1) {
-			// 一問確定しても、輪はふくらまず構図は変わらない。
+			// 一問確定しても、構図は変わらない。
 			await expect(shown).not.toHaveAttribute("data-revision", revision);
 			await displays[0].page.waitForTimeout(300);
 			expect(await canvasDigest(displays[0].page)).toBe(still);

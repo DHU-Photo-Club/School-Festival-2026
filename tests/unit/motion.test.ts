@@ -56,10 +56,10 @@ const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): Sc
 	...patch,
 });
 
-const questionState = (lastOperationAt: number, revision = 12): Partial<DisplayState> => ({
+const questionState = (lastAcceptedAt: number, revision = 12): Partial<DisplayState> => ({
 	phase: "question",
 	phaseStartedAt: T0,
-	phaseEndsAt: lastOperationAt + INACTIVITY_MS,
+	phaseEndsAt: lastAcceptedAt + INACTIVITY_MS,
 	revision,
 });
 
@@ -82,7 +82,7 @@ describe("質問中の破片", () => {
 
 	it("破片は灰色で描き、色を付けない", () => {
 		const shards = shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
-		expect(shards).toMatchObject({ colors: null, tint: 0, intensity: 1, swell: 1 });
+		expect(shards).toMatchObject({ colors: null, tint: 0, intensity: 1 });
 	});
 
 	it("全画面が同じ破片を描く", () => {
@@ -98,11 +98,11 @@ describe("質問中の破片", () => {
 		expect(at(true)).toMatchObject({ time: 0 });
 	});
 
-	it("一問確定すると輪がふくらんで元へ戻る", () => {
-		const changedAt = T0 + 20_000;
-		const swell = (now: number) => shardsOf(computeScene(base(questionState(changedAt), { now })))?.swell;
-		expect(swell(changedAt + 3_000)).toBeCloseTo(1.08);
-		expect(swell(changedAt + 6_000)).toBe(1);
+	it("回答を確定しても描画内容は変わらない（時刻だけで動く）", () => {
+		const now = T0 + 23_000;
+		const before = computeScene(base(questionState(T0 + 1_000, 12), { now }));
+		const after = computeScene(base(questionState(T0 + 20_000, 13), { now }));
+		expect(after).toEqual(before);
 	});
 
 	it("reduced-motion では時刻が進んでも同じ構図のまま", () => {

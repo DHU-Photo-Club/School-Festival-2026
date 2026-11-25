@@ -137,7 +137,7 @@ function drawShardLayer(layer: ShardLayer | null) {
 		if (bloom) drawShardBloom(bloom, [], 1, 0, 0);
 		return;
 	}
-	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, layer.swell);
+	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time);
 	const tint = layer.colors
 		? { colors: [hexToRgb(layer.colors[0]), hexToRgb(layer.colors[1])] as const, amount: layer.tint }
 		: undefined;
