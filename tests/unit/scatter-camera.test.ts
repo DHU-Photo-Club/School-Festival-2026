@@ -10,6 +10,19 @@ function centered(camera: ScatterCamera, target: { x: number; y: number }) {
 }
 
 describe("scatter camera", () => {
+	it("retains the exact pose when a detail interrupts a pending snap or zoom", () => {
+		for (const mode of ["snap", "zoom"]) {
+			const camera = new ScatterCamera(targets);
+			camera.panBy(123, -87);
+			if (mode === "snap") camera.endInteraction(false); else camera.zoomBy(1.5);
+			const before = camera.pose;
+			camera.stopMotion();
+			for (let i = 0; i < 120; i++) camera.advance(1 / 60);
+			expect(camera.pose).toEqual(before);
+			expect(camera.running).toBe(false);
+			camera.focus("a"); run(camera); centered(camera, targets[0]);
+		}
+	});
 	it("centers every target including the logo at every supported zoom and orientation", () => {
 		for (const [width, height] of [[320, 568], [390, 844], [402, 874], [874, 402], [768, 1024], [1280, 800], [1920, 1080]]) for (const scale of [MIN_SCALE, 1, 1.5, MAX_SCALE]) {
 			const camera = new ScatterCamera(targets); camera.resize(width, height);

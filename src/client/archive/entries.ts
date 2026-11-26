@@ -54,4 +54,9 @@ export function createPreviewEntries(count = 50, random: () => number = Math.ran
 	});
 }
 
-export const previewEntries = createPreviewEntries();
+// Fixture IDs must keep the same colors when a mobile browser restores the page.
+let previewSeed = 20261127;
+export const previewEntries = createPreviewEntries(50, () => {
+	previewSeed = (Math.imul(previewSeed, 1664525) + 1013904223) >>> 0;
+	return previewSeed / 4294967296;
+});

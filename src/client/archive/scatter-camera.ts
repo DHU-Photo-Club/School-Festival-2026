@@ -145,6 +145,9 @@ export class ScatterCamera {
 		this.mode = "coasting"; this.elapsed = 0;
 	}
 
+	/** Freeze the exact view under a detail overlay; do not resume a pending snap on close. */
+	stopMotion() { this.mode = "idle"; this.lockedTarget = null; this.vx = this.vy = this.zoomVelocity = 0; this.elapsed = 0; }
+
 	queueSnap() { this.mode = "waiting"; this.lockedTarget = null; this.waitSeconds = 0.14; this.vx = this.vy = 0; }
 	snapNearest() { this.startSnap(this.nearest(), "snapping"); }
 	focus(id: string) {
