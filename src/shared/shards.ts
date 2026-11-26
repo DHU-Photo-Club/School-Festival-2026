@@ -5,6 +5,11 @@
 export const SHARD_RING_RADIUS = 0.38;
 /** 輪の半径方向の散らばり（輪の半径に対する比、片側）。 */
 const RING_SPREAD = 0.2;
+/**
+ * 散らばりを最大にしたとき、輪の外側へ広げる距離（輪の半径に対する比）。輪の内側の縁（`SHARD_RING_RADIUS`）は
+ * 動かさず、各破片をその散らばりの順位に応じて外側へ押し出す。輪の半径の2.6倍は、16:9の画面の隅までの距離に近い。
+ */
+export const SHARD_SCATTER_DEPTH = 1.6;
 const RING_COUNT = 130;
 /** 輪の一周の周期（ミリ秒）。 */
 const ORBIT_MS = 150_000;
@@ -75,6 +80,8 @@ export interface ShardStreak {
 	to: Point;
 	strength: number;
 }
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /** 32ビットの種から [0, 1) の擬似乱数列を作る（mulberry32）。 */
 function random(seed: number): () => number {
@@ -228,28 +235,63 @@ export function ringBreath(elapsed: number): number {
 	return 1 + BREATH_DEPTH * wave;
 }
 
-/** 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転し、輪全体が呼吸する。 */
-function ringPoses(width: number, height: number, elapsed: number): ShardPose[] {
-	const radius = Math.min(width, height) * SHARD_RING_RADIUS;
+/**
+ * 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転し、輪全体が呼吸する。
+ * `scale` は輪の半径だけにかける倍率、`size` は破片の大きさにかける倍率。`spread` は輪の太さの広がりで、
+ * 0なら輪、1なら輪の内側の縁を残したまま、画面いっぱいに散らばる（`SHARD_SCATTER_DEPTH`）。`density` は見せる破片の割合で、
+ * 先頭から数えた枚数だけ見せ、境の一枚は不透明度で出し入れする。見せない破片も配列には残し、並び順を変えない
+ * （色づけは並び順で二色へ振り分けるため）。
+ */
+function ringPoses(
+	width: number,
+	height: number,
+	elapsed: number,
+	scale: number,
+	density: number,
+	size: number,
+	spread: number,
+): ShardPose[] {
+	// 破片の大きさは通常の輪の半径で決め、`scale` で縮めるのは輪の半径だけにする。
+	const unit = Math.min(width, height) * SHARD_RING_RADIUS;
+	const radius = unit * scale;
+	const shardUnit = unit * size;
 	const breath = ringBreath(elapsed);
 	const cx = width / 2;
 	const cy = height / 2;
 	const light = [width * SHARD_LIGHT.x, height * SHARD_LIGHT.y, Math.min(width, height) * SHARD_LIGHT.z] as const;
 	return RING.map((item, index) => {
 		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
-		const r =
-			radius * breath * (item.b + 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2))));
+		// 輪の中の位置（内側の縁0〜外側の縁1）に応じて、散らばるときの距離を決める。
+		const rank = (item.b - 1 + RING_SPREAD) / (2 * RING_SPREAD);
+		const b = item.b + (1 + rank * SHARD_SCATTER_DEPTH - item.b) * spread;
+		const r = radius * breath * (b + 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2))));
 		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
 		const [x, y] = [cx + Math.cos(theta) * r, cy + Math.sin(theta) * r];
-		const base = pose(item, x, y, rotation, radius);
+		const base = pose(item, x, y, rotation, shardUnit);
+		const visible = clamp01(density * RING_COUNT - index);
+		if (visible === 0) return { ...base, alpha: 0, streak: null };
 		const streak = streakOf(base.vertices, x, y, rotation + AXES[index], CURVES[index], elapsed, light);
-		return { ...base, streak };
+		return { ...base, alpha: base.alpha * visible, streak };
 	});
 }
 
-/** 経過時間 `elapsed`（ミリ秒）での輪の全破片の位置。 */
-export function shardPoses(width: number, height: number, elapsed: number): ShardPose[] {
-	return ringPoses(width, height, elapsed);
+/**
+ * 経過時間 `elapsed`（ミリ秒）での輪の全破片の位置。`scale` は輪の半径の倍率（1が通常の大きさ）、`size` は
+ * 破片の大きさの倍率（1が通常の大きさ）、`spread` は輪の太さの広がり（0が輪、1が画面いっぱいの散らばり）、
+ * `density` は見せる破片の割合（1が全枚数）。見せない破片は不透明度0で返す。
+ */
+export function shardPoses(
+	width: number,
+	height: number,
+	elapsed: number,
+	{
+		scale = 1,
+		density = 1,
+		size = 1,
+		spread = 0,
+	}: { scale?: number; density?: number; size?: number; spread?: number } = {},
+): ShardPose[] {
+	return ringPoses(width, height, elapsed, scale, density, size, spread);
 }
 
 /** 0〜255の三成分の色。 */
@@ -267,16 +309,17 @@ const SHADE_MIN = 150 / 255;
 
 /**
  * `index` 番目の破片の色（0〜255の三成分）。`tint` がなければ明るさ `shade` の灰色にする。`tint` があれば
- * 偶数番目を `colors[0]`、奇数番目を `colors[1]` へ振り分け、灰色からその色へ `amount`（0〜1）だけ寄せる。
+ * 破片を並び順で `colors` へ順に振り分け（二色なら偶数番目が一色目、奇数番目が二色目）、灰色からその色へ
+ * `amount`（0〜1）だけ寄せる。
  */
 export function shardColor(
 	shade: number,
 	index: number,
-	tint?: { colors: readonly [Rgb, Rgb]; amount: number },
+	tint?: { colors: readonly Rgb[]; amount: number },
 ): [number, number, number] {
 	const gray = shade * 255;
 	if (!tint || tint.amount <= 0) return [gray, gray, gray];
-	const base = tint.colors[index % 2];
+	const base = tint.colors[index % tint.colors.length];
 	const lighten = ((shade - SHADE_MIN) / (1 - SHADE_MIN)) * TINT_LIGHTEN;
 	const mix = (value: number) => gray + (value + (255 - value) * lighten - gray) * tint.amount;
 	return [mix(base[0]), mix(base[1]), mix(base[2])];

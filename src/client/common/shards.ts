@@ -16,9 +16,9 @@ export const SHARD_STREAK_PROFILE = [
 /** 破片のアウトラインの太さ（CSS画素）。線は輪郭を中心にして引き、内側の半分は塗りの下になる。 */
 export const SHARD_OUTLINE_WIDTH = 1;
 
-/** 破片の色づけ。偶数番目の破片を `colors[0]`、奇数番目を `colors[1]` へ、灰色から `amount`（0〜1）だけ寄せる。 */
+/** 破片の色づけ。破片を並び順で `colors` へ順に振り分け、灰色から `amount`（0〜1）だけ寄せる。 */
 export interface ShardTint {
-	colors: readonly [Rgb, Rgb];
+	colors: readonly Rgb[];
 	amount: number;
 }
 
@@ -50,6 +50,7 @@ export function drawShards(
 		`rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
 	const white = (alpha: number) => rgba([255, 255, 255], alpha.toFixed(3));
 	poses.forEach((item, index) => {
+		if (item.alpha <= 0) return;
 		const fill = shardColor(item.shade, index, tint);
 		const alpha = (item.alpha * opacity).toFixed(3);
 		context.beginPath();

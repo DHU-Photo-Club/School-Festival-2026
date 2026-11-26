@@ -16,6 +16,49 @@ describe("破片の配置", () => {
 		expect(shardPoses(1920, 1080, 123_456)).toEqual(shardPoses(1920, 1080, 123_456));
 	});
 
+	it("輪の半径の倍率は、輪の半径だけを縮め、破片の大きさは変えない", () => {
+		const distances = (scale?: number) =>
+			shardPoses(1920, 1080, 5_000, { scale }).map((pose) => Math.hypot(pose.x - 960, pose.y - 540));
+		const full = distances();
+		for (const [index, value] of distances(0.3).entries()) expect(value).toBeCloseTo(full[index] * 0.3, 5);
+		const size = (scale?: number) =>
+			shardPoses(1920, 1080, 5_000, { scale }).map(({ vertices }) =>
+				Math.hypot(vertices[0][0] - vertices[1][0], vertices[0][1] - vertices[1][1]),
+			);
+		const fullSizes = size();
+		for (const [index, value] of size(0.3).entries()) expect(value).toBeCloseTo(fullSizes[index], 5);
+	});
+
+	it("密度は先頭から数えた枚数だけ見せ、並び順は変えない", () => {
+		const full = shardPoses(1920, 1080, 5_000);
+		const sparse = shardPoses(1920, 1080, 5_000, { density: 0.3 });
+		expect(sparse).toHaveLength(full.length);
+		const shown = sparse.filter((pose) => pose.alpha > 0);
+		expect(shown).toHaveLength(Math.ceil(full.length * 0.3));
+		// 先頭の破片は全枚数のときと同じ位置と不透明度で、境の一枚だけ不透明度が下がる。
+		expect(sparse[0]).toEqual(full[0]);
+		for (const pose of sparse.slice(shown.length)) expect(pose).toMatchObject({ alpha: 0, streak: null });
+	});
+
+	it("散らばりは輪の内側の縁を残したまま、破片を外側へ画面いっぱいに広げる", () => {
+		const distances = (spread: number) =>
+			shardPoses(1920, 1080, 5_000, { spread }).map((pose) => Math.hypot(pose.x - 960, pose.y - 540));
+		const ring = distances(0);
+		const scatter = distances(1);
+		// どの破片も内側へは動かない。
+		for (const [index, value] of scatter.entries()) expect(value).toBeGreaterThanOrEqual(ring[index] * 0.99);
+		// 外側の縁の破片は、輪の半径の2倍を超えて画面の隅の近くまで広がる。
+		const unit = 1080 * SHARD_RING_RADIUS;
+		expect(Math.max(...scatter)).toBeGreaterThan(unit * 2);
+		// 内側は空けたまま（輪の内側の縁より内には破片が来ない）。
+		expect(Math.min(...scatter)).toBeGreaterThan(unit * 0.7);
+		// 画面の外へ出る破片と、画面の中に散らばる破片の両方がある。
+		const inside = shardPoses(1920, 1080, 5_000, { spread: 1 }).filter(
+			(pose) => pose.x > 0 && pose.x < 1920 && pose.y > 0 && pose.y < 1080,
+		);
+		expect(inside.length).toBeGreaterThan(60);
+	});
+
 	it("時刻が進むと動く", () => {
 		expect(shardPoses(1920, 1080, 0)).not.toEqual(shardPoses(1920, 1080, 5_000));
 	});

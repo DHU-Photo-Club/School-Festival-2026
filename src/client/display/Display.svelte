@@ -2,16 +2,19 @@
 import { onDestroy, onMount } from "svelte";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
-import { PHOTOS } from "../../data/photos.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
-import { idlePhotoFor, idlePlaylist, resultPhotoFor } from "../../shared/assignment.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
-import { computeScene, IDLE_RETURN_MS, idleCrossfade, idleCycleIndex, screenColorId } from "../../shared/motion.ts";
+import {
+	computeScene,
+	IDLE_RETURN_MS,
+	screenColorId,
+	WELCOME_FADE_OUT_MS,
+	welcomeOpacity,
+} from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
-import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
+import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses } from "../../shared/shards.ts";
-import type { DisplayState, PaletteId, Photo } from "../../shared/types.ts";
-import PhotoImage from "../common/PhotoImage.svelte";
+import type { DisplayState, PaletteId } from "../../shared/types.ts";
 import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import { watchReducedMotion } from "../lib/reduced-motion.ts";
@@ -22,58 +25,50 @@ import { createRenderer } from "./renderer.ts";
 /** URLの画面番号（`/display/2` の `2`）。来場者から見た順に1から振る。 */
 let { screen }: { screen: number } = $props();
 
-type LoadStatus = "loading" | "loaded" | "failed";
-
 // svelte-ignore state_referenced_locally
 const displayOrder = screen - 1;
-const playlist = idlePlaylist(PHOTOS);
-/**
- * 結果写真はセッションごとにAIの選定で決まるため、どの写真になってもすぐ見せられるよう、全作品を
- * 先に読み込んでおく（12点）。
- */
-const resultCandidates = PHOTOS;
 
 let displayState = $state<DisplayState | null>(null);
 let reducedMotion = $state(false);
-let resultStatus = $state<Record<string, LoadStatus>>({});
-let cycle = $state(0);
 /** `sequence` の再生位置。再生中だけ毎フレーム更新する。 */
 let sequenceT = $state(0);
-/** 結果表示でこの画面が見せるもの。結果開始のフレームで決め、そのセッション中は変えない。 */
-let resultChoice = $state<{ sessionId: string | null; colorId: PaletteId; photo: Photo | null } | null>(null);
+/** 結果表示でこの画面が見せる色。結果開始のフレームで決め、そのセッション中は変えない。 */
+let resultChoice = $state<{ sessionId: string | null; colorId: PaletteId } | null>(null);
 
 let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
 let bloomCanvas = $state<HTMLCanvasElement>();
-let idleLayer = $state<HTMLDivElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
+let welcome = $state<HTMLParagraphElement>();
 
 let client: RealtimeClient | null = null;
 let renderer: SceneRenderer | null = null;
 let frame = 0;
 let lastDrawn = "";
 let lastShards = "";
-let idleReference: number | null = null;
 let animateSessionId: string | null = null;
+/** 今の質問へ `intro` から入ったか。`intro` の大きく色づいた輪から、質問中の灰色の輪へ戻すために使う。 */
+let questionFromIntro = false;
 let previousBackground: string | null = null;
 let stopWatching = () => {};
+
+/** `intro` の直前に再生するシーケンス。歓迎の文字はここから現れ始める。 */
+const welcomeLead = sequenceBefore(SEQUENCES, "intro");
 
 const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
 function onState(next: DisplayState) {
 	const previous = displayState;
 	if (next.phase === "idle") {
-		idleReference = next.phaseStartedAt;
 		if (previous && previous.phase !== "idle" && resultChoice) {
 			const color = colorOf(resultChoice.colorId);
 			previousBackground = color ? backgroundColor(color) : null;
 		}
 		if (previous?.phase !== "idle") resultChoice = null;
-	} else if (idleReference === null) {
-		idleReference = next.phaseStartedAt;
 	}
 	if (next.phase === "judging") animateSessionId = next.sessionId;
+	if (next.phase === "question" && previous?.phase !== "question") questionFromIntro = previous?.phase === "intro";
 	// 前のシーケンスの再生位置を、新しいシーケンスの最初のフレームへ持ち込まない。再生途中に接続した画面でも
 	// 0を経由しないよう、受信した時点の再生位置から始める。
 	if (next.phase === "sequence" && previous?.phase !== "sequence") {
@@ -88,10 +83,6 @@ function onState(next: DisplayState) {
 				: 0;
 	}
 	displayState = next;
-}
-
-function setResultStatus(photoId: string, status: LoadStatus) {
-	resultStatus = { ...resultStatus, [photoId]: status };
 }
 
 /**
@@ -120,27 +111,23 @@ function resize() {
 }
 
 /**
- * 質問中から結果色が広がり始めるまでの破片と、そのブルームを描く。結果の二色が決まると、破片を交互に二色へ
+ * 展示ディスプレイは写真を置かず、常に破片とそのブルームを描く。結果の二色が決まると、破片を交互に二色へ
  * 振り分けて色づける（docs/visual-language.md 3.2〜3.4節、4.4節）。
  */
-function drawShardLayer(layer: ShardLayer | null) {
+function drawShardLayer(layer: ShardLayer) {
 	const context = shardCanvas?.getContext("2d");
 	if (!context) return;
-	const key = layer ? JSON.stringify(layer) : "";
+	const key = JSON.stringify(layer);
 	if (key === lastShards) return;
 	lastShards = key;
-	// 破片のない間は `mix-blend-mode` を通常に戻し、空のcanvasを毎フレームハードライト合成させない。
-	context.canvas.style.mixBlendMode = layer ? "" : "normal";
 	const bloom = bloomCanvas?.getContext("2d");
-	if (!layer) {
-		drawShards(context, [], shardRatio(), 0);
-		if (bloom) drawShardBloom(bloom, [], 1, 0, 0);
-		return;
-	}
-	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time);
-	const tint = layer.colors
-		? { colors: [hexToRgb(layer.colors[0]), hexToRgb(layer.colors[1])] as const, amount: layer.tint }
-		: undefined;
+	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, {
+		scale: layer.scale,
+		density: layer.density,
+		size: layer.size,
+		spread: layer.spread,
+	});
+	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
 	if (bloom) {
 		const ratio = bloom.canvas.width / window.innerWidth;
@@ -148,21 +135,9 @@ function drawShardLayer(layer: ShardLayer | null) {
 	}
 }
 
-/**
- * 結果表示で見せるもの。この画面の写真は選定された写真の `displayOrder` 番目（足りなければ写真なし）。
- * 結果開始のフレームで写真を読み込めていなければタイポグラフィ表示に決め、そのセッション中は変えない。
- * 結果開始後に接続した画面は演出を再生しないため、割り当て写真の読み込みが終わった時点で決める。
- */
-function chooseResult(
-	sessionId: string | null,
-	result: NonNullable<DisplayState["result"]>,
-	colorId: PaletteId,
-	waitForLoad: boolean,
-) {
-	const photo = resultPhotoFor(PHOTOS, result.photoIds, displayOrder);
-	const status = photo ? resultStatus[photo.id] : "failed";
-	if (waitForLoad && status !== "loaded" && status !== "failed") return;
-	resultChoice = { sessionId, colorId, photo: status === "loaded" ? photo : null };
+/** 結果表示でこの画面が見せる色を決める。 */
+function chooseResult(sessionId: string | null, colorId: PaletteId) {
+	resultChoice = { sessionId, colorId };
 }
 
 /** 値が変わったときだけ書き換え、変化のないフレームでスタイルの再計算を起こさない。 */
@@ -173,10 +148,24 @@ function setStyle(element: HTMLElement | undefined, property: "opacity" | "backg
 const opacity = (value: number) => String(Math.round(value * 1000) / 1000);
 
 function applyLayers(scene: Scene) {
-	setStyle(idleLayer, "opacity", opacity(scene.idleLayer));
 	setStyle(resultLayer, "opacity", opacity(scene.resultLayer));
 	setStyle(veil, "opacity", opacity(scene.veil?.opacity ?? 0));
 	if (scene.veil) setStyle(veil, "backgroundColor", scene.veil.color);
+}
+
+/**
+ * 歓迎の文字（`intro` と、その直前のシーケンス）。現れるときは `welcomeOpacity` で時刻から決め、
+ * 見せる段階を終えて消えるときだけトランジションを付ける（reduced-motionでは即時）。
+ */
+function applyWelcome(state: DisplayState, now: number) {
+	if (!welcome) return;
+	const shown = welcomeOpacity(state, now, reducedMotion, welcomeLead);
+	const visiblePhase =
+		state.phase === "intro" ||
+		(state.phase === "sequence" && welcomeLead !== null && state.sequenceId === welcomeLead.id);
+	const transition = visiblePhase || reducedMotion ? "none" : `opacity ${WELCOME_FADE_OUT_MS}ms ease-in-out`;
+	if (welcome.style.transition !== transition) welcome.style.transition = transition;
+	setStyle(welcome, "opacity", opacity(shown));
 }
 
 function tick(timestamp: number) {
@@ -185,20 +174,6 @@ function tick(timestamp: number) {
 	if (!client || !state || !canvas) return;
 	const now = client.toServerTime(timestamp);
 
-	// 待機写真の巡回（仕様書7.2.3節）。
-	if (idleReference !== null) {
-		const nextCycle = idleCycleIndex(now, idleReference);
-		if (nextCycle !== cycle) cycle = nextCycle;
-		// 枠の切り替えフレームでもDOMの更新を待たずに正しい写真を選ぶため、写真IDで不透明度を決める。
-		const fade = idleCrossfade(now, idleReference, reducedMotion);
-		const currentId = idlePhotoFor(playlist, nextCycle, displayOrder)?.id;
-		const previousId = nextCycle > 0 ? idlePhotoFor(playlist, nextCycle - 1, displayOrder)?.id : undefined;
-		for (const element of idleLayer?.querySelectorAll<HTMLElement>("[data-photo-id]") ?? []) {
-			if (element.tagName === "IMG") continue;
-			const id = element.dataset.photoId;
-			setStyle(element, "opacity", opacity(id === currentId ? fade : id === previousId ? 1 - fade : 0));
-		}
-	}
 	if (sequence && state.phase === "sequence") {
 		const t = sequenceTime(sequenceMs, state.phaseStartedAt, now);
 		if (t !== sequenceT) sequenceT = t;
@@ -215,12 +190,12 @@ function tick(timestamp: number) {
 	const resultMode = animateSessionId !== null && animateSessionId === state.sessionId ? "animate" : "complete";
 	if (result && resultColor && startAt !== null && now >= startAt) {
 		if (!resultChoice || resultChoice.sessionId !== state.sessionId) {
-			chooseResult(state.sessionId, result, resultColor, resultMode === "complete");
+			chooseResult(state.sessionId, resultColor);
 		}
 	} else if (state.phase === "idle" && state.previewColorId) {
-		// 管理画面の表示確認は色だけを見せる（写真はセッションごとに選ぶため、色に決まった写真はない）。
+		// 管理画面の表示確認は色だけを見せる。
 		if (resultChoice?.colorId !== state.previewColorId) {
-			resultChoice = { sessionId: null, colorId: state.previewColorId, photo: null };
+			resultChoice = { sessionId: null, colorId: state.previewColorId };
 		}
 	} else if (state.phase === "idle" && resultChoice && !state.previewColorId) {
 		resultChoice = null;
@@ -236,8 +211,11 @@ function tick(timestamp: number) {
 		colors: PALETTE.colors,
 		resultMode,
 		previousBackground,
+		lead: welcomeLead,
+		questionFromIntro,
 	});
 	applyLayers(scene);
+	applyWelcome(state, now);
 	const key = JSON.stringify(scene.primitives);
 	if (key !== lastDrawn) {
 		renderer ??= createRenderer(canvas, () => (lastDrawn = ""));
@@ -268,19 +246,6 @@ onDestroy(() => {
 	window.removeEventListener("resize", resize);
 });
 
-// 待機写真は前枠・現在枠・次枠の作品だけを読み込む。
-const idleSlots = $derived.by(() => {
-	if (playlist.length === 0 || displayOrder >= playlist.length) return [];
-	const slots: { slot: "previous" | "current" | "next"; photo: Photo }[] = [];
-	const previous = cycle > 0 ? idlePhotoFor(playlist, cycle - 1, displayOrder) : null;
-	const current = idlePhotoFor(playlist, cycle, displayOrder);
-	const next = idlePhotoFor(playlist, cycle + 1, displayOrder);
-	if (previous && previous.id !== current?.id) slots.push({ slot: "previous", photo: previous });
-	if (current) slots.push({ slot: "current", photo: current });
-	if (next && next.id !== current?.id && next.id !== previous?.id) slots.push({ slot: "next", photo: next });
-	return slots;
-});
-
 const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
 const sequence = $derived(displayState?.phase === "sequence" ? findSequence(SEQUENCES, displayState.sequenceId) : null);
 const SequenceView = $derived(sequence ? displaySequence(sequence.id) : null);
@@ -292,39 +257,13 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	data-phase={displayState?.phase}
 	data-revision={displayState?.revision}
 	data-result-color={resultChoice?.colorId}
-	data-result-view={resultChoice ? (resultChoice.photo ? "photo" : "typography") : undefined}
 >
 	<canvas bind:this={canvas}></canvas>
 	<canvas class="shard-bloom" bind:this={bloomCanvas}></canvas>
 	<canvas class="shards" bind:this={shardCanvas}></canvas>
 
-	<div class="layer" bind:this={idleLayer} style="opacity: 0">
-		{#if displayOrder >= playlist.length}
-			<p class="title">{EXHIBIT.title}</p>
-		{:else}
-			<div class="frame">
-				{#each idleSlots as { slot, photo } (photo.id)}
-					<div class="photo" data-slot={slot} data-photo-id={photo.id} style="opacity: 0">
-						<PhotoImage {photo} />
-					</div>
-				{/each}
-			</div>
-		{/if}
-	</div>
-
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
-		<div class="frame">
-			{#each resultCandidates as photo (photo.id)}
-				<div
-					class="photo"
-					data-result-photo={photo.id}
-					style:opacity={resultChoice?.photo?.id === photo.id ? 1 : 0}
-				>
-					<PhotoImage {photo} onstatus={(status) => setResultStatus(photo.id, status)} />
-				</div>
-			{/each}
-		</div>
-		{#if shownColor && resultChoice && !resultChoice.photo}
+		{#if shownColor && resultChoice}
 			<p class="color-name" style:color={foregroundColor(shownColor)}>{shownColor.name}</p>
 		{/if}
 	</div>
@@ -342,6 +281,9 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 			/>
 		</div>
 	{/if}
+
+	<!-- 歓迎の文字は、演出の覆いの上に置く。 -->
+	<p class="welcome" bind:this={welcome} style="opacity: 0">{EXHIBIT.title}へようこそ</p>
 </main>
 
 <style>
@@ -368,7 +310,7 @@ canvas,
 	opacity: 0.45;
 	mix-blend-mode: screen;
 }
-/* 破片。ハードライト合成で下の色面とブルームへ重ねる。破片のない間はスクリプトでハードライト合成をやめる（docs/visual-language.md 4.4節、7章）。 */
+/* 破片。ハードライト合成で下の色面とブルームへ重ねる（docs/visual-language.md 4.4節、7章）。 */
 .shards {
 	mix-blend-mode: hard-light;
 }
@@ -381,16 +323,20 @@ canvas,
 	pointer-events: none;
 	will-change: opacity;
 }
-/* 上下左右に clamp(32px, 5vmin, 96px) の余白を取った写真の配置領域（仕様書7.2.2節）。 */
-.frame {
-	position: absolute;
-	inset: clamp(32px, 5vmin, 96px);
-}
-.photo {
+.welcome {
 	position: absolute;
 	inset: 0;
+	margin: 0;
+	display: grid;
+	place-content: center;
+	text-align: center;
+	font-size: 5vmin;
+	font-weight: 500;
+	letter-spacing: 0.12em;
+	color: #e8e6e3;
+	pointer-events: none;
+	will-change: opacity;
 }
-.title,
 .color-name {
 	position: absolute;
 	inset: 0;
@@ -401,8 +347,5 @@ canvas,
 	font-size: 6vmin;
 	font-weight: 500;
 	letter-spacing: 0.12em;
-}
-.title {
-	color: #e8e6e3;
 }
 </style>

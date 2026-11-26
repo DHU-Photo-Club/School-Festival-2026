@@ -5,12 +5,23 @@ import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
 
 // ---- 時間（docs/visual-language.md 3章） ----
 
+/** `/photo` の写真表示が写真を切り替える間隔。展示ディスプレイは写真を置かない。 */
 export const IDLE_FRAME_MS = 8_000;
-export const IDLE_CROSSFADE_MS = 1_000;
-export const QUESTION_PHOTO_FADE_MS = 1_500;
-export const GLOW_APPEAR_DELAY_MS = 600;
-export const GLOW_APPEAR_MS = 3_000;
 export const JUDGING_FADE_MS = 1_200;
+/** 待機中の輪の半径（質問中の輪に対する倍率）。破片の大きさは変えない。 */
+export const SHARD_IDLE_SCALE = 0.3;
+/** 待機中に見せる破片の割合（質問中の全枚数に対する比）。 */
+export const SHARD_IDLE_DENSITY = 0.3;
+/** 輪が大きさや枚数を変える時間（待機へ縮む、`intro` の輪へ広がる、`intro` から質問中の輪へ戻る）。 */
+export const SHARD_SCALE_MS = 3_000;
+/** `intro` の破片の散らばり（`shardPoses` の `spread`）。輪の内側を空けたまま、画面いっぱいに散らばる。 */
+export const SHARD_OPENING_SPREAD = 1;
+/** `intro` の破片の大きさ（質問中の破片に対する倍率）。 */
+export const SHARD_OPENING_SIZE = 2;
+/** `intro` で歓迎の文字がゆっくり現れる時間。 */
+export const WELCOME_FADE_MS = 3_000;
+/** `intro` を終えて歓迎の文字が消える時間。 */
+export const WELCOME_FADE_OUT_MS = 1_500;
 /** 判定中に灰色の破片を沈める不透明度。 */
 export const JUDGING_SHARD_DIM = 0.4;
 /**
@@ -18,8 +29,6 @@ export const JUDGING_SHARD_DIM = 0.4;
  * （`SETTLE_MARGIN_MS`）に合わせ、結果開始の時刻に色づき終える。
  */
 export const SHARD_TINT_MS = SETTLE_MARGIN_MS;
-/** 結果開始から、色づいた破片が消えるまでの時間。 */
-export const RESULT_SHARD_FADE_MS = 1_200;
 export const RESULT_SETTLE_MS = 1_000;
 export const RESULT_PHOTO_DELAY_MS = 400;
 export const RESULT_PHOTO_FADE_MS = 1_200;
@@ -116,21 +125,27 @@ export type Primitive =
 export interface ShardLayer {
 	/** `shardPoses` に渡す経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
 	time: number;
-	/** 結果の二色の基準色。偶数番目の破片が一色目、奇数番目が二色目になる。結果が決まる前は `null`。 */
-	colors: readonly [string, string] | null;
+	/** 破片を並び順で順に振り分ける基準色。結果の二色なら偶数番目が一色目、奇数番目が二色目。灰色のときは `null`。 */
+	colors: readonly string[] | null;
 	/** 灰色から `colors` への進み具合（0〜1）。 */
 	tint: number;
 	/** 不透明度（0〜1）。 */
 	intensity: number;
+	/** 輪の半径の倍率。1が質問中の大きさで、待機中は `SHARD_IDLE_SCALE`。 */
+	scale: number;
+	/** 見せる破片の割合。1が全枚数で、待機中は `SHARD_IDLE_DENSITY`。 */
+	density: number;
+	/** 破片の大きさの倍率。1が質問中の大きさ。 */
+	size: number;
+	/** 輪の太さの広がり。0が輪、1が画面いっぱいの散らばり。 */
+	spread: number;
 }
 
 export interface Scene {
 	primitives: Primitive[];
-	/** WebGLの描画の上に重ねる破片。 */
-	shards: ShardLayer | null;
-	/** 待機写真またはタイトルの層の不透明度。 */
-	idleLayer: number;
-	/** 結果写真またはタイポグラフィの層の不透明度。 */
+	/** WebGLの描画の上に重ねる破片。展示ディスプレイは写真を置かず、どの状態でも破片を描く。 */
+	shards: ShardLayer;
+	/** 結果の色名の層の不透明度。 */
 	resultLayer: number;
 	/** 前の結果色を1秒で消すための覆い。 */
 	veil: { color: string; opacity: number } | null;
@@ -153,6 +168,10 @@ export interface SceneInput {
 	resultMode: "animate" | "complete";
 	/** 直前に表示していた結果の背景色。`idle` へ戻るときの覆いに使う。 */
 	previousBackground: string | null;
+	/** `intro` の直前に再生するシーケンス。なければ `null`。 */
+	lead?: WelcomeLead | null;
+	/** 今の質問へ `intro` から入ったか。`intro` の大きな輪から質問中の輪へ戻す。 */
+	questionFromIntro?: boolean;
 }
 
 /**
@@ -182,7 +201,14 @@ function resultShardColors(input: SceneInput): readonly [string, string] | null 
 function shardLayer(
 	input: SceneInput,
 	intensity: number,
-	options: { colors?: readonly [string, string] | null; tint?: number } = {},
+	options: {
+		colors?: readonly string[] | null;
+		tint?: number;
+		scale?: number;
+		density?: number;
+		size?: number;
+		spread?: number;
+	} = {},
 ): ShardLayer {
 	const colors = options.colors ?? null;
 	return {
@@ -190,6 +216,10 @@ function shardLayer(
 		colors,
 		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
+		scale: options.scale ?? 1,
+		density: options.density ?? 1,
+		size: options.size ?? 1,
+		spread: options.spread ?? 0,
 	};
 }
 
@@ -297,20 +327,20 @@ function resultScene(input: SceneInput): Scene {
 	if (!color || !colorId) {
 		return {
 			primitives: [{ type: "fill", color: COLORS.dark }],
-			shards: null,
-			idleLayer: 0,
+			shards: shardLayer(input, 1),
 			resultLayer: 0,
 			veil: null,
-			animating: false,
+			animating: !reducedMotion,
 		};
 	}
+	// 結果が出た後も破片は残り、結果の二色で動き続ける。
+	const shards = shardLayer(input, 1, { colors: resultShardColors(input) });
 	const complete: Scene = {
 		primitives: [{ type: "fill", color: backgroundColor(color) }],
-		shards: null,
-		idleLayer: 0,
+		shards,
 		resultLayer: 1,
 		veil: null,
-		animating: false,
+		animating: !reducedMotion,
 	};
 	if (input.resultMode === "complete") return complete;
 
@@ -321,8 +351,7 @@ function resultScene(input: SceneInput): Scene {
 		if (elapsed < RESULT_REDUCED_HOLD_MS) {
 			return {
 				primitives: [{ type: "fill", color: baseColor(color) }],
-				shards: null,
-				idleLayer: 0,
+				shards,
 				resultLayer: 0,
 				veil: null,
 				animating: true,
@@ -358,18 +387,81 @@ function resultScene(input: SceneInput): Scene {
 			alpha: easeInOutSine((elapsed - durationMs) / RESULT_SETTLE_MS),
 		});
 	}
-	// 色づいた破片は、結果色が広がる間に消える。
-	const shardFade = elapsed / RESULT_SHARD_FADE_MS;
-	const shardColors = resultShardColors(input);
 	return {
 		primitives,
-		shards:
-			shardFade < 1 && shardColors ? shardLayer(input, 1 - easeInSine(shardFade), { colors: shardColors }) : null,
-		idleLayer: 0,
+		shards,
 		resultLayer: easeInOutSine((elapsed - durationMs - RESULT_PHOTO_DELAY_MS) / RESULT_PHOTO_FADE_MS),
 		veil: null,
 		animating: true,
 	};
+}
+
+/** `intro` の直前に再生するシーケンス。歓迎の文字はこのシーケンスの開始から現れ始める。 */
+export interface WelcomeLead {
+	id: string;
+	durationMs: number;
+}
+
+/**
+ * 歓迎の文字の不透明度。`intro` と、その直前に再生するシーケンス `lead` の間だけ見せる。現れ始めるのは
+ * シーケンスの開始（シーケンスがなければ `intro` の開始）で、`intro` に入っても途切れずにゆっくり現れ続ける。
+ * `intro` の経過時間にシーケンスの定義上の長さを足すので、`intro` の途中から接続した画面も同じ不透明度になる。
+ * 見せない段階では0で、文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
+ */
+export function welcomeOpacity(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	const inLead = state.phase === "sequence" && lead !== null && state.sequenceId === lead.id;
+	if (state.phase !== "intro" && !inLead) return 0;
+	if (reducedMotion) return 1;
+	return easeInOutSine(openingElapsed(state, now, lead) / WELCOME_FADE_MS);
+}
+
+/**
+ * `intro` の直前のシーケンス `lead` の開始からの経過時間（ミリ秒）。`intro` では、その開始からの経過時間に
+ * シーケンスの定義上の長さを足す。`intro` の途中から接続した画面もほかの画面と同じ値になる。
+ */
+function openingElapsed(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt">,
+	now: number,
+	lead: WelcomeLead | null,
+): number {
+	return now - state.phaseStartedAt + (state.phase === "intro" ? (lead?.durationMs ?? 0) : 0);
+}
+
+/**
+ * `intro` の直前のシーケンスと `intro` の破片。待機の小さな灰色の輪から、パレットの全色で色づきながら、
+ * 輪の内側を空けたまま画面いっぱいに散らばり、破片も大きく、枚数も全枚数へ増える。散らばり終えた破片は
+ * `intro` の間そのまま動き続ける。
+ */
+function openingShards(input: SceneInput): ShardLayer {
+	const { state, now, reducedMotion } = input;
+	const p = reducedMotion ? 1 : easeInOutSine(openingElapsed(state, now, input.lead ?? null) / SHARD_SCALE_MS);
+	return shardLayer(input, 1, {
+		colors: input.colors.map(baseColor),
+		tint: p,
+		scale: lerp(SHARD_IDLE_SCALE, 1, p),
+		density: lerp(SHARD_IDLE_DENSITY, 1, p),
+		size: lerp(1, SHARD_OPENING_SIZE, p),
+		spread: lerp(0, SHARD_OPENING_SPREAD, p),
+	});
+}
+
+/** `intro` から質問へ移った直後の破片。`intro` の色づいて散らばった破片が、質問中の灰色の輪へ戻る。 */
+function questionShards(input: SceneInput): ShardLayer {
+	const { state, now, reducedMotion } = input;
+	const p =
+		reducedMotion || !input.questionFromIntro ? 1 : easeInOutSine((now - state.phaseStartedAt) / SHARD_SCALE_MS);
+	if (p >= 1) return shardLayer(input, 1);
+	return shardLayer(input, 1, {
+		colors: input.colors.map(baseColor),
+		tint: 1 - p,
+		size: lerp(SHARD_OPENING_SIZE, 1, p),
+		spread: lerp(SHARD_OPENING_SPREAD, 0, p),
+	});
 }
 
 /** 一フレームの描画内容を求める。同じ入力には同じ結果を返す。 */
@@ -382,20 +474,36 @@ export function computeScene(input: SceneInput): Scene {
 		if (preview) {
 			return {
 				primitives: [{ type: "fill", color: backgroundColor(preview) }],
-				shards: null,
-				idleLayer: 0,
+				shards: shardLayer(input, 1, { colors: [baseColor(preview), baseColor(preview)] }),
 				resultLayer: 1,
 				veil: null,
-				animating: false,
+				animating: !reducedMotion,
+			};
+		}
+		// `intro` と、その直前のシーケンスは、色づいて大きく広がる輪を描く。
+		const opening =
+			state.phase === "intro" ||
+			(state.phase === "sequence" && input.lead != null && state.sequenceId === input.lead.id);
+		if (opening) {
+			return {
+				primitives: [{ type: "fill", color: COLORS.idle }],
+				shards: openingShards(input),
+				resultLayer: 0,
+				veil: null,
+				animating: !reducedMotion,
 			};
 		}
 		const sinceIdle = now - state.phaseStartedAt;
 		const veiled =
 			state.phase === "idle" && input.previousBackground !== null && !reducedMotion && sinceIdle < IDLE_RETURN_MS;
+		// 結果や質問から待機へ戻った直後は、質問中の大きさから待機の小さな輪へ縮む。
+		const shrink = state.phase === "idle" && !reducedMotion ? easeInOutSine(sinceIdle / SHARD_SCALE_MS) : 1;
 		return {
 			primitives: [{ type: "fill", color: COLORS.idle }],
-			shards: null,
-			idleLayer: 1,
+			shards: shardLayer(input, 1, {
+				scale: lerp(1, SHARD_IDLE_SCALE, shrink),
+				density: lerp(1, SHARD_IDLE_DENSITY, shrink),
+			}),
 			resultLayer: 0,
 			veil: veiled
 				? { color: input.previousBackground as string, opacity: 1 - easeInOutSine(sinceIdle / IDLE_RETURN_MS) }
@@ -405,13 +513,10 @@ export function computeScene(input: SceneInput): Scene {
 	}
 
 	if (state.phase === "question") {
-		const sinceStart = now - state.phaseStartedAt;
-		const appear = reducedMotion ? 1 : easeInOutSine((sinceStart - GLOW_APPEAR_DELAY_MS) / GLOW_APPEAR_MS);
 		// 回答の確定や「戻る」には反応しない。輪は常時の動き（4.4節）だけで動く。
 		return {
 			primitives: [{ type: "fill", color: COLORS.idle }],
-			shards: shardLayer(input, appear),
-			idleLayer: reducedMotion ? 0 : 1 - easeInOutSine(sinceStart / QUESTION_PHOTO_FADE_MS),
+			shards: questionShards(input),
 			resultLayer: 0,
 			veil: null,
 			animating: !reducedMotion,
@@ -424,7 +529,6 @@ export function computeScene(input: SceneInput): Scene {
 			return {
 				primitives: [{ type: "fill", color: COLORS.dark }],
 				shards: judgingShards(input),
-				idleLayer: 0,
 				resultLayer: 0,
 				veil: null,
 				// 色づく時刻に一度だけ構図が切り替わる。
@@ -436,22 +540,8 @@ export function computeScene(input: SceneInput): Scene {
 			{ type: "fill", color: COLORS.idle },
 			{ type: "fill", color: COLORS.dark, alpha: fade },
 		];
-		return { primitives, shards: judgingShards(input), idleLayer: 0, resultLayer: 0, veil: null, animating: true };
+		return { primitives, shards: judgingShards(input), resultLayer: 0, veil: null, animating: true };
 	}
 
 	return resultScene(input);
-}
-
-// ---- 待機写真の巡回（仕様書7.2.3節） ----
-
-/** `floor((補正済みサーバー時刻 - idle.phaseStartedAt) / 8000)`。 */
-export function idleCycleIndex(now: number, idleStartedAt: number): number {
-	return Math.max(0, Math.floor((now - idleStartedAt) / IDLE_FRAME_MS));
-}
-
-/** 現在の枠のクロスフェード進み具合（0〜1）。reduced-motionでは常に1。 */
-export function idleCrossfade(now: number, idleStartedAt: number, reducedMotion: boolean): number {
-	if (reducedMotion) return 1;
-	const intoFrame = (now - idleStartedAt) % IDLE_FRAME_MS;
-	return easeInOutSine(intoFrame / IDLE_CROSSFADE_MS);
 }

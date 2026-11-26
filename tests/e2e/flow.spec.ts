@@ -1,10 +1,8 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { SPLIT_MAX, SPLIT_MIN } from "../../src/client/controller/split.ts";
-import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
-import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import type { Question } from "../../src/shared/types.ts";
 import type { Device } from "./fixtures.ts";
 import {
@@ -280,22 +278,12 @@ for (const displayCount of [1, 3]) {
 			);
 		}
 		await displays[0].page.waitForTimeout(4_500);
-		const shown: string[] = [];
 		for (const [displayOrder, display] of displays.entries()) {
 			expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(displayOrder)));
-			// 写真がある画面は選定した写真の displayOrder 番目、足りない画面は複製せずに色名のタイポグラフィ。
-			const assigned = resultPhotoFor(PHOTOS, STUB_RESULT.photoIds, displayOrder);
-			if (assigned) {
-				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "photo");
-				await expect(display.page.locator(`.photo[data-result-photo="${assigned.id}"] img`)).toBeVisible();
-				shown.push(assigned.id);
-			} else {
-				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "typography");
-				await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
-			}
+			// 展示ディスプレイは写真を置かず、色名と破片だけを見せる。
+			await expect(display.page.locator("main.display img")).toHaveCount(0);
+			await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 		}
-		// 同じ写真を複数の画面へ割り当てない。
-		expect(new Set(shown).size).toBe(shown.length);
 
 		// QRコードと結果URL。結果ページのIDは16桁の16進数。
 		await expect(page.getByRole("img", { name: "結果ページのQRコード" })).toBeVisible();

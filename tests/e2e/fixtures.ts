@@ -6,7 +6,6 @@ import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { STUB_COLORS, STUB_NAME } from "../../src/server/ai/judge.ts";
-import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
 import { selectPhotos } from "../../src/shared/photo-selection.ts";
 import type { PaletteColor, PaletteId, Question, ScreenRole } from "../../src/shared/types.ts";
@@ -395,24 +394,6 @@ export async function answerQuestion(page: Page, question: Question, variant = 0
 				await choiceOption(page, question, choices[(variant + offset) % choices.length]).click();
 		}
 	}
-}
-
-/** 展示ディスプレイが先に読み込む結果写真がすべて読み込まれるまで待つ。 */
-export async function waitForResultPhotos(page: Page): Promise<void> {
-	await expect
-		.poll(() =>
-			page.evaluate(() =>
-				[...document.querySelectorAll<HTMLImageElement>(".photo[data-result-photo] img")].every(
-					(image) => image.complete && image.naturalWidth > 0,
-				),
-			),
-		)
-		.toBe(true);
-}
-
-/** 選定した写真から決まる結果表示の種類。写真が足りない画面はタイポグラフィ。 */
-export function expectedResultView(photoIds: readonly string[], displayOrder: number): "photo" | "typography" {
-	return resultPhotoFor(PHOTOS, photoIds, displayOrder) ? "photo" : "typography";
 }
 
 /**

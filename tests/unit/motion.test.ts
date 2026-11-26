@@ -6,14 +6,18 @@ import {
 	BLOOM_WARP,
 	COLORS,
 	computeScene,
-	idleCrossfade,
-	idleCycleIndex,
 	JUDGING_SHARD_DIM,
 	RESULT_FORMS,
-	RESULT_SHARD_FADE_MS,
 	resultFormPrimitives,
+	SHARD_IDLE_DENSITY,
+	SHARD_IDLE_SCALE,
+	SHARD_OPENING_SIZE,
+	SHARD_OPENING_SPREAD,
+	SHARD_SCALE_MS,
 	SHARD_TINT_MS,
 	screenColorId,
+	WELCOME_FADE_MS,
+	welcomeOpacity,
 } from "../../src/shared/motion.ts";
 import { backgroundColor, baseColor, paletteColor } from "../../src/shared/palette.ts";
 import type { DisplayState, PaletteId } from "../../src/shared/types.ts";
@@ -179,7 +183,7 @@ describe("判定と結果", () => {
 		}
 	});
 
-	it("色づいた破片は、結果色が広がる間に消える", () => {
+	it("色づいた破片は、結果色が広がった後も消えずに残る", () => {
 		const start = T0 + JUDGING_MS;
 		const state: Partial<DisplayState> = {
 			phase: "result",
@@ -188,12 +192,11 @@ describe("判定と結果", () => {
 			phaseEndsAt: start + 60_000,
 		};
 		const at = (offset: number) => shardsOf(computeScene(base(state, { now: start + offset })));
-		const mid = at(RESULT_SHARD_FADE_MS / 2);
-		expect(mid?.tint).toBe(1);
-		expect(mid?.intensity).toBeGreaterThan(0);
-		expect(mid?.intensity).toBeLessThan(1);
-		expect(at(RESULT_SHARD_FADE_MS)).toBeNull();
-		expect(shardsOf(computeScene(base(state, { now: start + 100, resultMode: "complete" })))).toBeNull();
+		expect(at(600)).toMatchObject({ tint: 1, intensity: 1 });
+		expect(at(10_000)).toMatchObject({ tint: 1, intensity: 1 });
+		const complete = shardsOf(computeScene(base(state, { now: start + 100, resultMode: "complete" })));
+		expect(complete).toMatchObject({ tint: 1, intensity: 1 });
+		expect(complete.colors).not.toBeNull();
 	});
 
 	it("reduced-motion の判定は、灰色の破片から二色の破片へ一回だけ切り替わる", () => {
@@ -204,7 +207,7 @@ describe("判定と結果", () => {
 		expect(shardsOf(at(T0))).toEqual(shardsOf(at(tintAt - 1)));
 		expect(shardsOf(at(tintAt - 1))).toMatchObject({ colors: null, time: 0 });
 		expect(shardsOf(at(tintAt))).toMatchObject({ tint: 1, intensity: 1, time: 0 });
-		expect(shardsOf(at(T0 + JUDGING_MS))).toBeNull();
+		expect(shardsOf(at(T0 + JUDGING_MS))).toMatchObject({ tint: 1, intensity: 1, time: 0 });
 	});
 
 	it.each(PALETTE_IDS)("%s: 結果開始の最初のフレームで結果色の形が見えている", (colorId) => {
@@ -221,7 +224,7 @@ describe("判定と結果", () => {
 		expect(JSON.stringify(second.primitives[1])).toContain(baseColor(colorOf("rose")));
 	});
 
-	it.each(PALETTE_IDS)("%s: 広がり、沈み、写真が現れて完了状態になる", (colorId) => {
+	it.each(PALETTE_IDS)("%s: 広がり、沈み、色名が現れて完了状態になる", (colorId) => {
 		const color = colorOf(colorId);
 		const start = T0 + JUDGING_MS;
 		const result: Partial<DisplayState> = {
@@ -233,14 +236,12 @@ describe("判定と結果", () => {
 		const { durationMs } = RESULT_FORMS[colorId];
 		expect(durationMs).toBeGreaterThanOrEqual(1_400);
 		const settled = computeScene(base(result, { now: start + 10_000 }));
-		expect(settled).toEqual({
+		expect(settled).toMatchObject({
 			primitives: [{ type: "fill", color: backgroundColor(color) }],
-			shards: null,
-			idleLayer: 0,
 			resultLayer: 1,
 			veil: null,
-			animating: false,
 		});
+		expect(settled.shards).toMatchObject({ tint: 1, intensity: 1 });
 		const mid = computeScene(base(result, { now: start + durationMs / 2 }));
 		expect(mid.animating).toBe(true);
 		expect(mid.resultLayer).toBe(0);
@@ -351,19 +352,119 @@ describe("判定と結果", () => {
 	});
 });
 
-describe("待機写真の巡回", () => {
-	it("cycleIndex は8秒ごとに進む", () => {
-		expect(idleCycleIndex(T0 + 7_999, T0)).toBe(0);
-		expect(idleCycleIndex(T0 + 8_000, T0)).toBe(1);
-		expect(idleCycleIndex(T0 + 80_000, T0)).toBe(10);
+describe("歓迎の文字", () => {
+	const intro = { phase: "intro" as const, sequenceId: null, phaseStartedAt: T0 };
+
+	it("intro の間だけ、開始からゆっくり現れる", () => {
+		expect(welcomeOpacity(intro, T0, false)).toBe(0);
+		const mid = welcomeOpacity(intro, T0 + WELCOME_FADE_MS / 2, false);
+		expect(mid).toBeGreaterThan(0);
+		expect(mid).toBeLessThan(1);
+		expect(welcomeOpacity(intro, T0 + WELCOME_FADE_MS, false)).toBe(1);
+		expect(welcomeOpacity(intro, T0 + 60_000, false)).toBe(1);
 	});
 
-	it("先頭1秒だけクロスフェードし、reduced-motion では即時に切り替える", () => {
-		expect(idleCrossfade(T0 + 8_000, T0, false)).toBe(0);
-		expect(idleCrossfade(T0 + 8_500, T0, false)).toBeCloseTo(0.5);
-		expect(idleCrossfade(T0 + 9_000, T0, false)).toBe(1);
-		expect(idleCrossfade(T0 + 15_000, T0, false)).toBe(1);
-		expect(idleCrossfade(T0 + 8_000, T0, true)).toBe(1);
+	it("reduced-motion では即時に現れ、intro 以外では出さない", () => {
+		expect(welcomeOpacity(intro, T0, true)).toBe(1);
+		for (const phase of ["idle", "sequence", "question", "judging", "result"] as const)
+			expect(welcomeOpacity({ phase, sequenceId: null, phaseStartedAt: T0 }, T0 + 60_000, false)).toBe(0);
+	});
+
+	it("intro の直前のシーケンスから現れ始め、intro に入っても途切れない", () => {
+		const lead = { id: "opening", durationMs: 1_200 };
+		const sequence = { phase: "sequence" as const, sequenceId: "opening", phaseStartedAt: T0 };
+		const afterwards = { phase: "intro" as const, sequenceId: null, phaseStartedAt: T0 + lead.durationMs };
+		expect(welcomeOpacity(sequence, T0, false, lead)).toBe(0);
+		expect(welcomeOpacity(sequence, T0 + 1_000, false, lead)).toBeGreaterThan(0);
+		// シーケンスの終わりの前後で連続する。
+		expect(welcomeOpacity(afterwards, T0 + lead.durationMs, false, lead)).toBeCloseTo(
+			welcomeOpacity(sequence, T0 + lead.durationMs, false, lead),
+		);
+		expect(welcomeOpacity(afterwards, T0 + WELCOME_FADE_MS, false, lead)).toBe(1);
+		// 別のシーケンスや、定義にないシーケンスでは出さない。
+		expect(welcomeOpacity({ ...sequence, sequenceId: "other" }, T0 + 1_000, false, lead)).toBe(0);
+		expect(welcomeOpacity(sequence, T0 + 1_000, false, null)).toBe(0);
+	});
+});
+
+describe("opening と intro の破片", () => {
+	const lead = { id: "opening", durationMs: 3_600 };
+	const sequence = { phase: "sequence" as const, sequenceId: "opening", phaseStartedAt: T0 };
+	const intro = { phase: "intro" as const, sequenceId: null, phaseStartedAt: T0 + lead.durationMs };
+	const at = (state: Partial<DisplayState>, now: number, patch: Partial<SceneInput> = {}) =>
+		computeScene(base(state, { now, lead, ...patch })).shards;
+	const scattered = { tint: 1, scale: 1, density: 1, size: SHARD_OPENING_SIZE, spread: SHARD_OPENING_SPREAD };
+
+	it("シーケンスの開始では待機の小さな灰色の輪で、パレットの全色へ色づきながら画面いっぱいに散らばる", () => {
+		const start = at(sequence, T0);
+		expect(start).toMatchObject({ tint: 0, density: SHARD_IDLE_DENSITY, size: 1, spread: 0 });
+		expect(start.scale).toBeCloseTo(SHARD_IDLE_SCALE);
+		const mid = at(sequence, T0 + SHARD_SCALE_MS / 2);
+		expect(mid.tint).toBeGreaterThan(0);
+		expect(mid.tint).toBeLessThan(1);
+		expect(mid.spread).toBeGreaterThan(0);
+		expect(mid.spread).toBeLessThan(SHARD_OPENING_SPREAD);
+		const end = at(sequence, T0 + SHARD_SCALE_MS);
+		expect(end).toMatchObject(scattered);
+		expect(end.colors).toEqual(PALETTE.colors.map(baseColor));
+	});
+
+	it("intro に入っても散らばったまま続き、途中から接続した画面も同じになる", () => {
+		expect(at(intro, intro.phaseStartedAt)).toMatchObject(scattered);
+		expect(at(intro, intro.phaseStartedAt + 60_000)).toMatchObject(scattered);
+		// シーケンスの終わりと intro の始まりで、破片は途切れない。
+		expect(at(intro, T0 + lead.durationMs)).toEqual(at(sequence, T0 + lead.durationMs));
+	});
+
+	it("reduced-motion では最初から散らばった状態", () => {
+		expect(at(sequence, T0, { reducedMotion: true })).toMatchObject(scattered);
+	});
+
+	it("intro から質問へ移ると、色づいて散らばった破片が灰色の質問中の輪へ戻る", () => {
+		const question = questionState(T0 + 10_000);
+		const from = (offset: number) =>
+			computeScene(base(question, { now: T0 + offset, lead, questionFromIntro: true })).shards;
+		expect(from(0)).toMatchObject({ tint: 1, spread: SHARD_OPENING_SPREAD, size: SHARD_OPENING_SIZE });
+		const mid = from(SHARD_SCALE_MS / 2);
+		expect(mid.tint).toBeGreaterThan(0);
+		expect(mid.tint).toBeLessThan(1);
+		expect(mid.spread).toBeGreaterThan(0);
+		expect(mid.spread).toBeLessThan(SHARD_OPENING_SPREAD);
+		expect(from(SHARD_SCALE_MS)).toMatchObject({ colors: null, tint: 0, scale: 1, size: 1, density: 1, spread: 0 });
+	});
+});
+
+describe("待機", () => {
+	it("写真を置かず、灰色の破片を常に描く", () => {
+		const idle = { phase: "idle" as const, sessionId: null, phaseStartedAt: T0 };
+		const scene = computeScene(base(idle, { now: T0 + 30_000 }));
+		expect(scene.shards).toMatchObject({ colors: null, tint: 0, intensity: 1, time: T0 + 30_000 });
+		expect(scene).not.toHaveProperty("idleLayer");
+	});
+
+	it("待機中と、intro 以外のシーケンスでは、輪は小さく枚数も少ない", () => {
+		const idle = { phase: "idle" as const, sessionId: null, phaseStartedAt: T0 };
+		const at = (state: Partial<DisplayState>, offset: number, reducedMotion = false) =>
+			computeScene(base(state, { now: T0 + offset, reducedMotion })).shards;
+		for (const state of [idle, { ...idle, phase: "sequence" as const, sequenceId: "other" }]) {
+			expect(at(state, 60_000)).toMatchObject({ colors: null, size: 1 });
+			expect(at(state, 60_000).scale).toBeCloseTo(SHARD_IDLE_SCALE);
+			expect(at(state, 60_000).density).toBeCloseTo(SHARD_IDLE_DENSITY);
+		}
+		expect(at(idle, 0, true).scale).toBeCloseTo(SHARD_IDLE_SCALE);
+	});
+
+	it("質問へ intro 以外から入ったときは、輪は最初から質問中の大きさ", () => {
+		const shards = computeScene(base(questionState(T0), { now: T0 })).shards;
+		expect(shards).toMatchObject({ colors: null, scale: 1, density: 1, size: 1, tint: 0 });
+	});
+
+	it("結果から待機へ戻ると、質問中の大きさから待機の小さな輪へ縮む", () => {
+		const idle = { phase: "idle" as const, sessionId: null, phaseStartedAt: T0 };
+		const at = (offset: number) => computeScene(base(idle, { now: T0 + offset })).shards.scale;
+		expect(at(0)).toBe(1);
+		expect(at(SHARD_SCALE_MS / 2)).toBeLessThan(1);
+		expect(at(SHARD_SCALE_MS)).toBeCloseTo(SHARD_IDLE_SCALE);
 	});
 
 	it("結果から待機へ戻るときは1秒で前の結果色を消す", () => {
@@ -380,12 +481,11 @@ describe("待機写真の巡回", () => {
 });
 
 describe("シーケンス", () => {
-	it("待機写真の巡回を続け、演出はシーケンスのコンポーネントに任せる", () => {
+	it("破片を描き続け、演出はシーケンスのコンポーネントに任せる", () => {
 		const scene = computeScene(base({ phase: "sequence", sequenceId: "opening" }, { now: T0 + 500 }));
 		expect(scene).toMatchObject({
 			primitives: [{ type: "fill", color: COLORS.idle }],
-			shards: null,
-			idleLayer: 1,
+			shards: { colors: null, tint: 0, intensity: 1 },
 			resultLayer: 0,
 		});
 	});

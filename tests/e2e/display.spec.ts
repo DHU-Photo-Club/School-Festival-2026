@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { QUESTIONS } from "../../src/data/questions.ts";
-import type { Device } from "./fixtures.ts";
 import {
 	answerQuestion,
 	backgroundHex,
@@ -10,97 +9,56 @@ import {
 	canvasPixel,
 	ExhibitHarness,
 	enterNickname,
-	expectedResultView,
 	expectQuestion,
 	palette,
 	STUB_RESULT,
 	stubScreenColor,
-	waitForResultPhotos,
 } from "./fixtures.ts";
 
-/** 現在枠の待機写真のIDと不透明度。 */
-async function currentIdle(device: Device) {
-	return device.page.evaluate(() => {
-		const slot = document.querySelector<HTMLElement>('[data-slot="current"]');
-		return {
-			id: slot?.querySelector("img")?.dataset.photoId ?? null,
-			opacity: Number(slot?.style.opacity ?? "NaN"),
-		};
-	});
-}
-
-/** 待機枠の先頭からの経過時間（ms）。展示画面の補正済み時刻ではなく、管理画面と同じサーバー時刻の近似。 */
-async function waitForFramePosition(device: Device, from: number, to: number) {
-	await expect
-		.poll(
-			async () => {
-				const { opacity } = await currentIdle(device);
-				return opacity > from && opacity < to;
-			},
-			{ timeout: 12_000, intervals: [20] },
-		)
-		.toBe(true);
-}
-
-test("待機写真は8秒ごとに進み、先頭1秒だけクロスフェードし、同じ写真を複数画面へ表示しない", async ({ browser }) => {
-	test.setTimeout(90_000);
+test("待機中は写真を置かず、すべての画面が破片を描く", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const displays = await harness.openDisplays(3);
-	await expect.poll(async () => (await currentIdle(displays[0])).opacity).toBe(1);
-
-	const ids = await Promise.all(displays.map(async (display) => (await currentIdle(display)).id));
-	expect(new Set(ids).size).toBe(3);
-
-	// クロスフェード中（不透明度が0と1の間）を観測し、その後は1で止まる。
-	await waitForFramePosition(displays[0], 0.05, 0.95);
-	const fadingId = (await currentIdle(displays[0])).id;
-	expect(fadingId).not.toBe(ids[0]);
-	await expect.poll(async () => (await currentIdle(displays[0])).opacity, { timeout: 2_000 }).toBe(1);
-	// 次の切り替えまで同じ写真のまま（8秒枠）。
-	await displays[0].page.waitForTimeout(5_000);
-	expect((await currentIdle(displays[0])).id).toBe(fadingId);
-
-	const later = await Promise.all(displays.map(async (display) => (await currentIdle(display)).id));
-	expect(new Set(later).size).toBe(3);
-	// 画面ごとにプレイリストを1つずつずらして表示する。
-	expect(later[1]).toBe(ids[2]);
-
+	for (const display of displays) {
+		await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
+		await expect(display.page.locator("main.display img")).toHaveCount(0);
+		await expect.poll(() => canvasHasGraphics(display.page)).toBe(true);
+		await expect.poll(() => bloomHasGraphics(display.page)).toBe(true);
+	}
 	for (const display of displays) await display.context.close();
 	await harness.close();
 });
 
-test("reduced-motion の待機表示はクロスフェードせず即時に切り替える", async ({ browser }) => {
-	test.setTimeout(60_000);
+test("intro で「あなた色写真展へようこそ」がゆっくり現れ、質問で消える", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
-	const [display] = await harness.openDisplays(1, { reducedMotion: "reduce" });
-	const first = (await currentIdle(display)).id;
-	await expect
-		.poll(async () => (await currentIdle(display)).id, { timeout: 12_000, intervals: [20] })
-		.not.toBe(first);
-	for (let i = 0; i < 10; i += 1) {
-		expect((await currentIdle(display)).opacity).toBe(1);
-		await display.page.waitForTimeout(50);
-	}
+	const [display] = await harness.openDisplays(1);
+	const ipad = await harness.openDevice("controller");
+	const welcome = display.page.locator(".welcome");
+	await expect(welcome).toHaveText("あなた色写真展へようこそ");
+	await expect(welcome).toHaveCSS("opacity", "0");
+	await ipad.page.getByRole("button", { name: "はじめる" }).click();
+	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "intro");
+	await expect(welcome).toHaveCSS("opacity", "1", { timeout: 6_000 });
+	await enterNickname(ipad.page);
+	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "question");
+	await expect(welcome).toHaveCSS("opacity", "0", { timeout: 4_000 });
 	await display.context.close();
+	await ipad.context.close();
 	await harness.close();
 });
 
 test("管理画面の表示確認で全画面がパレットの色の完了状態を表示し、終了で待機へ戻る", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const displays = await harness.openDisplays(3);
-	for (const display of displays) await waitForResultPhotos(display.page);
 	const wisteria = palette("wisteria");
 	await harness.admin.page.getByRole("button", { name: wisteria.name, exact: true }).click();
 	for (const display of displays) {
 		await expect(display.page.locator("main.display")).toHaveAttribute("data-result-color", "wisteria");
-		await expect.poll(() => canvasPixel(display.page, 0.5, 0.01)).toBe(backgroundHex(wisteria));
-		// 写真はセッションごとに選ぶため、表示確認は色名のタイポグラフィで見せる。
-		await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "typography");
+		await expect.poll(() => canvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(wisteria));
 		await expect(display.page.locator(".color-name")).toHaveText(wisteria.name);
 	}
 	await harness.admin.page.getByRole("button", { name: "表示確認を終了" }).click();
 	for (const display of displays) {
-		await expect.poll(() => canvasPixel(display.page, 0.5, 0.01)).toBe("#0B0B0B");
+		await expect.poll(() => canvasPixel(display.page, 0.01, 0.01)).toBe("#0B0B0B");
 	}
 	for (const display of displays) await display.context.close();
 	await harness.close();
@@ -152,14 +110,11 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	// 結果: 基準色の全面から完了状態へ一回だけ切り替わる。画面ごとに二色を交互に見せる。
 	for (const [displayOrder, display] of displays.entries()) {
 		await expect
-			.poll(() => canvasPixel(display.page, 0.5, 0.01), { timeout: 5_000 })
+			.poll(() => canvasPixel(display.page, 0.01, 0.01), { timeout: 5_000 })
 			.toBe(backgroundHex(stubScreenColor(displayOrder)));
-		// 結果では破片とともにブルームも消える。
-		await expect.poll(() => bloomHasGraphics(display.page)).toBe(false);
-		await expect(display.page.locator("main.display")).toHaveAttribute(
-			"data-result-view",
-			expectedResultView(STUB_RESULT.photoIds, displayOrder),
-		);
+		// 結果でも破片とブルームは残る。
+		await expect.poll(() => bloomHasGraphics(display.page)).toBe(true);
+		await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 	}
 	await page.getByRole("button", { name: "最初に戻る" }).click();
 	for (const display of displays)
@@ -177,10 +132,11 @@ test("開いた台数の展示ディスプレイで動き、管理画面に接�
 	for (let index = 1; index <= 5; index += 1) {
 		await expect(harness.admin.page.getByTestId(`device-display-${index}`)).toContainText("接続中");
 	}
-	// 5画面すべてが別々の待機写真を表示する。
-	await expect.poll(async () => (await currentIdle(displays[4])).opacity).toBe(1);
-	const ids = await Promise.all(displays.map(async (display) => (await currentIdle(display)).id));
-	expect(new Set(ids).size).toBe(5);
+	// 5画面すべてが写真を置かず、破片を描く。
+	for (const display of displays) {
+		await expect(display.page.locator("main.display img")).toHaveCount(0);
+		await expect.poll(() => canvasHasGraphics(display.page)).toBe(true);
+	}
 	for (const display of displays) await display.context.close();
 	await harness.close();
 });
