@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "cf-typegen": "wrangler types src/worker/worker-configuration.d.ts",
-    "export-photos": "node scripts/export-photos.ts"
+    "export-photos": "node scripts/export-photos.ts",
+    "build:archive": "vite build --config vite.archive.config.ts",
+    "deploy:archive": "pnpm build:archive && wrangler deploy --config wrangler.archive.jsonc"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
