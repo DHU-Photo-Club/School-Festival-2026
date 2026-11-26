@@ -243,7 +243,9 @@ export class ExhibitCore {
 				clearTimeout(timer);
 			}
 		} else {
-			(this.options.log ?? console.error)("AIの選定が設定されていないため、結果を決められません");
+			(this.options.log ?? console.error)(
+				"AIの選定が設定されていないため、結果を決められません。.env に MISTRAL_API_KEY を設定してください（開発中は AI_STUB=1 でも動きます）",
+			);
 		}
 		const state = this.current();
 		// 期限の処理や強制リセットで、待っていたセッションの `judging` が終わっていれば何もしない。

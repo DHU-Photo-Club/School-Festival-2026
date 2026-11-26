@@ -66,6 +66,8 @@ export class Exhibit {
 	private readonly publisher: ResultPublisher | null;
 	private readonly sockets = new Map<Socket, ConnectionMeta>();
 	private timer: ReturnType<typeof setTimeout> | null = null;
+	/** `dispose` 後はSQLiteが閉じているため、遅れて届く切断やメッセージを処理しない。 */
+	private disposed = false;
 	/** 期限の処理が続けて失敗した回数。失敗が続く間は、間隔を広げて処理し直す。 */
 	private alarmFailures = 0;
 
@@ -76,7 +78,10 @@ export class Exhibit {
 			: null;
 		if (!this.publisher) console.warn("RESULTS_UPLOAD_TOKEN が未設定のため、結果を結果ページへ送りません");
 		const judge = judgeFor(config);
-		if (!judge) console.warn("MISTRAL_API_KEY が未設定のため、AIの選定ができず、結果を出せません");
+		if (!judge)
+			console.warn(
+				"MISTRAL_API_KEY が設定されていないため、AIの選定ができず、結果を出せません。.env に設定してください（開発中は AI_STUB=1 でも動きます）",
+			);
 		this.core = new ExhibitCore({
 			store: this.store,
 			now: () => Date.now(),
@@ -118,6 +123,7 @@ export class Exhibit {
 
 	/** 次の期限にタイマーを設定する。期限がなければ止める。 */
 	private schedule(): void {
+		if (this.disposed) return;
 		if (this.timer) clearTimeout(this.timer);
 		this.timer = null;
 		const wakeAt = this.core.nextWakeAt();
@@ -153,7 +159,7 @@ export class Exhibit {
 	}
 
 	async message(socket: Socket, message: string | ArrayBuffer): Promise<void> {
-		if (!this.sockets.has(socket)) return;
+		if (this.disposed || !this.sockets.has(socket)) return;
 		let pending: Promise<void> | null;
 		try {
 			pending = this.core.handleMessage(this.wrap(socket), message);
@@ -173,7 +179,7 @@ export class Exhibit {
 	}
 
 	close(socket: Socket): void {
-		if (!this.sockets.delete(socket)) return;
+		if (!this.sockets.delete(socket) || this.disposed) return;
 		try {
 			this.core.handleClose();
 		} catch (error) {
@@ -188,6 +194,7 @@ export class Exhibit {
 
 	/** サーバーの終了時に呼ぶ。タイマーを止め、SQLiteを閉じる。 */
 	dispose(): void {
+		this.disposed = true;
 		if (this.timer) clearTimeout(this.timer);
 		this.timer = null;
 		this.publisher?.close();

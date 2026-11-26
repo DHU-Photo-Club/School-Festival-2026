@@ -34,5 +34,8 @@ export default defineConfig(({ command, isPreview }) => {
 			// QRコードと結果URLの正本（仕様書10.1節）。
 			__PUBLIC_ORIGIN__: JSON.stringify(wrangler.vars.PUBLIC_ORIGIN),
 		},
+		server: {
+			allowedHosts: [".trycloudflare.com"],
+		},
 	};
 });
