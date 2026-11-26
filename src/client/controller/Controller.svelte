@@ -1,17 +1,19 @@
 <script lang="ts">
 import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
 import { onDestroy, onMount } from "svelte";
+import { sineInOut } from "svelte/easing";
+import { fade } from "svelte/transition";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import { QUESTIONS } from "../../data/questions.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
 import { INITIAL_POSITION, isMapPoint, isValidAnswer, sameAnswer } from "../../shared/answer.ts";
 import type { Command } from "../../shared/machine.ts";
-import { easeOutCubic } from "../../shared/motion.ts";
+import { easeOutCubic, introDescriptionRemainingMs, NICKNAME_FADE_IN_MS } from "../../shared/motion.ts";
 import { NICKNAME_MAX_LENGTH, normalizeNickname } from "../../shared/nickname.ts";
 import { backgroundColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
 import { resultUrl } from "../../shared/result-url.ts";
-import { findSequence, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
+import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import type { Answer, ExhibitState, PaletteColor, Question } from "../../shared/types.ts";
 import { createQrModel } from "../lib/qr.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
@@ -50,6 +52,13 @@ let startPressed = $state(false);
 /** `intro` で入力中のニックネーム。 */
 let nicknameDraft = $state("");
 let nicknameInput = $state<HTMLInputElement | null>(null);
+/**
+ * ニックネームの入力欄と進捗バーを出してよいか。展示ディスプレイが `intro` の説明の文を現れ終えるまでは出さない
+ * （説明を読んでいる間に入力欄が出ないようにする）。
+ */
+let nicknameReady = $state(false);
+/** `intro` の直前に再生するシーケンス。説明の文はここから数えた時刻で現れる。 */
+const introLead = sequenceBefore(SEQUENCES, "intro");
 /**
  * 質問の入れ替えの間は `true`。この間だけ次の質問に降りてくる動きを掛ける。入れ替えの途中で次の切り替えが
  * 起きると、降りかけの質問が動きを失って一瞬はっきり見えるため、入れ替えが終わるまで下部のボタンを無効にする。
@@ -219,6 +228,24 @@ $effect(() => {
 	return () => cancelAnimationFrame(frame);
 });
 
+/** `intro` に入ったら、展示ディスプレイが説明の文を現れ終える時刻に、ニックネームの入力欄を出す。 */
+$effect(() => {
+	if (exhibit?.phase !== "intro" || !client) {
+		nicknameReady = false;
+		return;
+	}
+	const sync = client;
+	const state = { phaseStartedAt: exhibit.phaseStartedAt };
+	let timer = 0;
+	const check = () => {
+		const remaining = introDescriptionRemainingMs(state, sync.serverNow(), reducedMotion, introLead);
+		nicknameReady = remaining <= 0;
+		if (remaining > 0) timer = window.setTimeout(check, remaining);
+	};
+	check();
+	return () => window.clearTimeout(timer);
+});
+
 /** `sequence` の間は、シーケンスのコンポーネントへ渡す補正済みサーバー時刻を毎フレーム更新する。 */
 $effect(() => {
 	if (exhibit?.phase !== "sequence" || !client) return;
@@ -296,42 +323,47 @@ $effect(() => {
 				{/if}
 			</section>
 		{:else if exhibit.phase === "intro"}
-			<section class="step">
-				<ProgressBar total={progressTotal} current={0} label="ニックネームの入力" />
-				<form class="intro" onsubmit={submitNickname} aria-busy={pending === "continue"}>
-					<h1><label for="nickname">ニックネームを入力して下さい</label></h1>
-					<div class="nickname-field">
-						<input
-							id="nickname"
-							type="text"
-							bind:this={nicknameInput}
-							bind:value={nicknameDraft}
-							placeholder="好きな名前を入力..."
-							aria-invalid={nicknameTooLong}
-							aria-describedby="nickname-hint"
-							autocomplete="off"
-							autocapitalize="off"
-							spellcheck="false"
-							enterkeyhint="go"
-							disabled={!online || pending !== null}
-							onkeydown={onNicknameKeydown}
-							oncompositionstart={() => (composing = true)}
-							oncompositionend={() => (composing = false)}
-						>
-						<button
-							type="submit"
-							class="nickname-submit"
-							aria-label={pending === "continue" ? "準備しています" : "進む"}
-							disabled={!online || pending !== null}
-						>
-							<ArrowRightIcon aria-hidden="true" size={24} strokeWidth={2} />
-						</button>
-					</div>
-					<p id="nickname-hint" class="nickname-hint" aria-live="polite">
-						{nicknameTooLong ? `${NICKNAME_MAX_LENGTH}文字までにしてください` : ""}
-					</p>
-				</form>
-			</section>
+			{#if nicknameReady}
+				<section
+					class="step"
+					in:fade={{ duration: reducedMotion ? 0 : NICKNAME_FADE_IN_MS, easing: sineInOut }}
+				>
+					<ProgressBar total={progressTotal} current={0} label="ニックネームの入力" />
+					<form class="intro" onsubmit={submitNickname} aria-busy={pending === "continue"}>
+						<h1><label for="nickname">ニックネームを入力して下さい</label></h1>
+						<div class="nickname-field">
+							<input
+								id="nickname"
+								type="text"
+								bind:this={nicknameInput}
+								bind:value={nicknameDraft}
+								placeholder="好きな名前を入力..."
+								aria-invalid={nicknameTooLong}
+								aria-describedby="nickname-hint"
+								autocomplete="off"
+								autocapitalize="off"
+								spellcheck="false"
+								enterkeyhint="go"
+								disabled={!online || pending !== null}
+								onkeydown={onNicknameKeydown}
+								oncompositionstart={() => (composing = true)}
+								oncompositionend={() => (composing = false)}
+							>
+							<button
+								type="submit"
+								class="nickname-submit"
+								aria-label={pending === "continue" ? "準備しています" : "進む"}
+								disabled={!online || pending !== null}
+							>
+								<ArrowRightIcon aria-hidden="true" size={24} strokeWidth={2} />
+							</button>
+						</div>
+						<p id="nickname-hint" class="nickname-hint" aria-live="polite">
+							{nicknameTooLong ? `${NICKNAME_MAX_LENGTH}文字までにしてください` : ""}
+						</p>
+					</form>
+				</section>
+			{/if}
 		{:else if exhibit.phase === "question" && question && exhibit.questionIndex !== null}
 			<section class="step question">
 				<ProgressBar

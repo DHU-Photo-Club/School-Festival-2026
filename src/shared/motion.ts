@@ -20,8 +20,18 @@ export const SHARD_OPENING_SPREAD = 1;
 export const SHARD_OPENING_SIZE = 2;
 /** `intro` で歓迎の文字がゆっくり現れる時間。 */
 export const WELCOME_FADE_MS = 3_000;
-/** `intro` を終えて歓迎の文字が消える時間。 */
+/** `intro` を終えて歓迎の文字が消える時間。歓迎の文字から説明の文へ入れ替えるときに歓迎の文字が消える時間にも使う。 */
 export const WELCOME_FADE_OUT_MS = 1_500;
+/** 歓迎の文字が現れ終えてから、説明の文へ入れ替えるために消え始めるまで、そのまま見せる時間。 */
+export const WELCOME_HOLD_MS = 3_000;
+/** 歓迎の文字が消え始める時刻（現れ始めからの経過時間）。 */
+export const WELCOME_LEAVE_AT_MS = WELCOME_FADE_MS + WELCOME_HOLD_MS;
+/** 歓迎の文字が消え終え、説明の文が現れ始める時刻（現れ始めからの経過時間）。 */
+export const INTRO_DESCRIPTION_AT_MS = WELCOME_LEAVE_AT_MS + WELCOME_FADE_OUT_MS;
+/** `intro` で説明の文がゆっくり現れる時間。 */
+export const INTRO_DESCRIPTION_FADE_MS = 3_000;
+/** iPadの `intro` で、説明の文を現れ終えたあとに、進捗バーとニックネームの入力欄が現れる時間。 */
+export const NICKNAME_FADE_IN_MS = 800;
 /** 判定中に灰色の破片を沈める不透明度。 */
 export const JUDGING_SHARD_DIM = 0.4;
 /**
@@ -405,8 +415,9 @@ export interface WelcomeLead {
 /**
  * 歓迎の文字の不透明度。`intro` と、その直前に再生するシーケンス `lead` の間だけ見せる。現れ始めるのは
  * シーケンスの開始（シーケンスがなければ `intro` の開始）で、`intro` に入っても途切れずにゆっくり現れ続ける。
+ * 現れ終えて `WELCOME_HOLD_MS` 見せたあと、説明の文へ入れ替えるために `WELCOME_FADE_OUT_MS` で消える。
  * `intro` の経過時間にシーケンスの定義上の長さを足すので、`intro` の途中から接続した画面も同じ不透明度になる。
- * 見せない段階では0で、文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
+ * 見せない段階では0で、`intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
 export function welcomeOpacity(
 	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
@@ -416,8 +427,44 @@ export function welcomeOpacity(
 ): number {
 	const inLead = state.phase === "sequence" && lead !== null && state.sequenceId === lead.id;
 	if (state.phase !== "intro" && !inLead) return 0;
-	if (reducedMotion) return 1;
-	return easeInOutSine(openingElapsed(state, now, lead) / WELCOME_FADE_MS);
+	const elapsed = openingElapsed(state, now, lead);
+	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 1 : 0;
+	return (
+		easeInOutSine(elapsed / WELCOME_FADE_MS) *
+		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS) / WELCOME_FADE_OUT_MS))
+	);
+}
+
+/**
+ * `intro` の説明の文の不透明度。歓迎の文字が消え終えてから（`INTRO_DESCRIPTION_AT_MS`）、`intro` の間だけ
+ * ゆっくり現れ、`intro` を終えるまで見せ続ける。時刻の数え方は `welcomeOpacity` と同じ。
+ * `intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
+ */
+export function introDescriptionOpacity(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	if (state.phase !== "intro") return 0;
+	const elapsed = openingElapsed(state, now, lead);
+	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 0 : 1;
+	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS);
+}
+
+/**
+ * `intro` の説明の文が現れ終えるまでの残り時間（ミリ秒）。0以下なら現れ終えている。iPadは、これが0以下に
+ * なるまでニックネームの入力欄を出さない。時刻の数え方は `welcomeOpacity` と同じ。
+ * reduced-motionでは、説明の文が即時に現れる時刻（`WELCOME_LEAVE_AT_MS`）までの残り時間。
+ */
+export function introDescriptionRemainingMs(
+	state: Pick<DisplayState, "phaseStartedAt">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	const doneAt = reducedMotion ? WELCOME_LEAVE_AT_MS : INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS;
+	return doneAt - openingElapsed({ ...state, phase: "intro" }, now, lead);
 }
 
 /**

@@ -16,8 +16,14 @@ import {
 	SHARD_SCALE_MS,
 	SHARD_TINT_MS,
 	screenColorId,
+	INTRO_DESCRIPTION_AT_MS,
+	INTRO_DESCRIPTION_FADE_MS,
 	WELCOME_FADE_MS,
+	WELCOME_FADE_OUT_MS,
+	WELCOME_LEAVE_AT_MS,
 	welcomeOpacity,
+	introDescriptionOpacity,
+	introDescriptionRemainingMs,
 } from "../../src/shared/motion.ts";
 import { backgroundColor, baseColor, paletteColor } from "../../src/shared/palette.ts";
 import type { DisplayState, PaletteId } from "../../src/shared/types.ts";
@@ -361,11 +367,20 @@ describe("歓迎の文字", () => {
 		expect(mid).toBeGreaterThan(0);
 		expect(mid).toBeLessThan(1);
 		expect(welcomeOpacity(intro, T0 + WELCOME_FADE_MS, false)).toBe(1);
-		expect(welcomeOpacity(intro, T0 + 60_000, false)).toBe(1);
+		expect(welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS - 1, false)).toBeCloseTo(1, 3);
 	});
 
-	it("reduced-motion では即時に現れ、intro 以外では出さない", () => {
+	it("現れ終えてしばらく見せたあと、説明の文へ入れ替えるために消える", () => {
+		const half = welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS + WELCOME_FADE_OUT_MS / 2, false);
+		expect(half).toBeGreaterThan(0);
+		expect(half).toBeLessThan(1);
+		expect(welcomeOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS, false)).toBe(0);
+		expect(welcomeOpacity(intro, T0 + 60_000, false)).toBe(0);
+	});
+
+	it("reduced-motion では即時に現れ、入れ替えの時刻に即時に消え、intro 以外では出さない", () => {
 		expect(welcomeOpacity(intro, T0, true)).toBe(1);
+		expect(welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS, true)).toBe(0);
 		for (const phase of ["idle", "sequence", "question", "judging", "result"] as const)
 			expect(welcomeOpacity({ phase, sequenceId: null, phaseStartedAt: T0 }, T0 + 60_000, false)).toBe(0);
 	});
@@ -384,6 +399,68 @@ describe("歓迎の文字", () => {
 		// 別のシーケンスや、定義にないシーケンスでは出さない。
 		expect(welcomeOpacity({ ...sequence, sequenceId: "other" }, T0 + 1_000, false, lead)).toBe(0);
 		expect(welcomeOpacity(sequence, T0 + 1_000, false, null)).toBe(0);
+	});
+});
+
+describe("intro の説明の文", () => {
+	const intro = { phase: "intro" as const, sequenceId: null, phaseStartedAt: T0 };
+
+	it("歓迎の文字が消え終えてから、ゆっくり現れて見せ続ける", () => {
+		expect(introDescriptionOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS - 1, false)).toBe(0);
+		const mid = introDescriptionOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS / 2, false);
+		expect(mid).toBeGreaterThan(0);
+		expect(mid).toBeLessThan(1);
+		expect(introDescriptionOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS, false)).toBe(1);
+		expect(introDescriptionOpacity(intro, T0 + 60_000, false)).toBe(1);
+	});
+
+	it("歓迎の文字と同時には見えない", () => {
+		for (let t = 0; t <= INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS; t += 100) {
+			const welcome = welcomeOpacity(intro, T0 + t, false);
+			const description = introDescriptionOpacity(intro, T0 + t, false);
+			expect(Math.min(welcome, description)).toBe(0);
+		}
+	});
+
+	it("reduced-motion では入れ替えの時刻に即時に現れ、intro 以外では出さない", () => {
+		expect(introDescriptionOpacity(intro, T0 + WELCOME_LEAVE_AT_MS - 1, true)).toBe(0);
+		expect(introDescriptionOpacity(intro, T0 + WELCOME_LEAVE_AT_MS, true)).toBe(1);
+		for (const phase of ["idle", "sequence", "question", "judging", "result"] as const)
+			expect(introDescriptionOpacity({ phase, sequenceId: null, phaseStartedAt: T0 }, T0 + 60_000, false)).toBe(
+				0,
+			);
+	});
+
+	it("intro の直前のシーケンスから数えて、intro の途中から接続しても同じ不透明度になる", () => {
+		const lead = { id: "opening", durationMs: 3_600 };
+		const afterwards = { phase: "intro" as const, sequenceId: null, phaseStartedAt: T0 + lead.durationMs };
+		expect(introDescriptionOpacity(afterwards, T0 + INTRO_DESCRIPTION_AT_MS - 1, false, lead)).toBe(0);
+		expect(
+			introDescriptionOpacity(afterwards, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS, false, lead),
+		).toBe(1);
+	});
+});
+
+describe("ニックネームの入力欄を出す時刻", () => {
+	const intro = { phaseStartedAt: T0 };
+	const lead = { id: "opening", durationMs: 3_600 };
+
+	it("説明の文が現れ終えるまでの残り時間を返し、現れ終えると0以下になる", () => {
+		const doneAt = INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS;
+		expect(introDescriptionRemainingMs(intro, T0, false)).toBe(doneAt);
+		expect(introDescriptionRemainingMs(intro, T0 + doneAt - 1, false)).toBe(1);
+		expect(introDescriptionRemainingMs(intro, T0 + doneAt, false)).toBeLessThanOrEqual(0);
+	});
+
+	it("直前のシーケンスの長さを足して数える", () => {
+		expect(introDescriptionRemainingMs(intro, T0, false, lead)).toBe(
+			INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS - lead.durationMs,
+		);
+	});
+
+	it("reduced-motion では説明の文が即時に現れる時刻まで", () => {
+		expect(introDescriptionRemainingMs(intro, T0, true)).toBe(WELCOME_LEAVE_AT_MS);
+		expect(introDescriptionRemainingMs(intro, T0 + WELCOME_LEAVE_AT_MS, true)).toBeLessThanOrEqual(0);
 	});
 });
 

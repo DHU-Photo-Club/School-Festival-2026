@@ -28,7 +28,7 @@ test("待機中は写真を置かず、すべての画面が破片を描く", as
 	await harness.close();
 });
 
-test("intro で「あなた色写真展へようこそ」がゆっくり現れ、質問で消える", async ({ browser }) => {
+test("intro で「あなた色写真展へようこそ」がゆっくり現れ、説明の文へ入れ替わり、質問で消える", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const [display] = await harness.openDisplays(1);
 	const ipad = await harness.openDevice("controller");
@@ -38,9 +38,20 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	await ipad.page.getByRole("button", { name: "はじめる" }).click();
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "intro");
 	await expect(welcome).toHaveCSS("opacity", "1", { timeout: 6_000 });
+	// 説明の文を現れ終えるまで、iPadにニックネームの入力欄は出ない。
+	const nicknameField = ipad.page.getByRole("textbox", { name: "ニックネームを入力して下さい" });
+	await expect(nicknameField).toHaveCount(0);
+	// 「ようこそ」を見せたあと、それが消えて、説明の文が三行で現れる。
+	const description = display.page.locator(".description");
+	await expect(description.locator("span")).toHaveText(["あなた色写真展は", "あなたの気分や感性によって", "変化する写真展です"]);
+	await expect(welcome).toHaveCSS("opacity", "0", { timeout: 10_000 });
+	// 説明の文が現れている途中でも、入力欄は出ない。現れ終えると出る。
+	await expect(nicknameField).toHaveCount(0);
+	await expect(description).toHaveCSS("opacity", "1", { timeout: 10_000 });
+	await expect(nicknameField).toBeVisible({ timeout: 10_000 });
 	await enterNickname(ipad.page);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "question");
-	await expect(welcome).toHaveCSS("opacity", "0", { timeout: 4_000 });
+	await expect(description).toHaveCSS("opacity", "0", { timeout: 4_000 });
 	await display.context.close();
 	await ipad.context.close();
 	await harness.close();

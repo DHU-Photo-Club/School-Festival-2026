@@ -9,6 +9,7 @@ import {
 	IDLE_RETURN_MS,
 	screenColorId,
 	WELCOME_FADE_OUT_MS,
+	introDescriptionOpacity,
 	welcomeOpacity,
 } from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
@@ -41,6 +42,7 @@ let bloomCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
+let description = $state<HTMLParagraphElement>();
 
 let client: RealtimeClient | null = null;
 let renderer: SceneRenderer | null = null;
@@ -166,6 +168,11 @@ function applyWelcome(state: DisplayState, now: number) {
 	const transition = visiblePhase || reducedMotion ? "none" : `opacity ${WELCOME_FADE_OUT_MS}ms ease-in-out`;
 	if (welcome.style.transition !== transition) welcome.style.transition = transition;
 	setStyle(welcome, "opacity", opacity(shown));
+	// 説明の文は `intro` の間だけ見せる。`intro` を終えるときの消える変化は歓迎の文字と同じ。
+	if (!description) return;
+	const descriptionTransition = state.phase === "intro" || reducedMotion ? "none" : transition;
+	if (description.style.transition !== descriptionTransition) description.style.transition = descriptionTransition;
+	setStyle(description, "opacity", opacity(introDescriptionOpacity(state, now, reducedMotion, welcomeLead)));
 }
 
 function tick(timestamp: number) {
@@ -284,6 +291,11 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 	<!-- 歓迎の文字は、演出の覆いの上に置く。 -->
 	<p class="welcome" bind:this={welcome} style="opacity: 0">{EXHIBIT.title}へようこそ</p>
+	<p class="description" bind:this={description} style="opacity: 0">
+		{#each EXHIBIT.introDescription as line (line)}
+			<span>{line}</span>
+		{/each}
+	</p>
 </main>
 
 <style>
@@ -323,7 +335,8 @@ canvas,
 	pointer-events: none;
 	will-change: opacity;
 }
-.welcome {
+.welcome,
+.description {
 	position: absolute;
 	inset: 0;
 	margin: 0;
@@ -336,6 +349,9 @@ canvas,
 	color: #e8e6e3;
 	pointer-events: none;
 	will-change: opacity;
+}
+.description {
+	line-height: 1.9;
 }
 .color-name {
 	position: absolute;

@@ -223,7 +223,10 @@ export async function answerAllQuestions(page: Page): Promise<void> {
 
 /** `intro` でニックネームを入力して質問へ進む。 */
 export async function enterNickname(page: Page, nickname = "テスト"): Promise<void> {
-	await page.getByRole("textbox", { name: "ニックネームを入力して下さい" }).fill(nickname);
+	// 展示ディスプレイが説明の文を現れ終えるまで、入力欄は出ない。
+	const field = page.getByRole("textbox", { name: "ニックネームを入力して下さい" });
+	await field.waitFor({ timeout: 20_000 });
+	await field.fill(nickname);
 	await page.getByRole("button", { name: "進む" }).click();
 }
 
