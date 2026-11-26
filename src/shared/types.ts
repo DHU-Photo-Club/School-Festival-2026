@@ -64,9 +64,12 @@ export type Phase = (typeof PHASES)[number];
 
 export type QuestionId = string;
 
-/** 端末の役割。診断用iPadは `controller`、スマート電球の中継スクリプト（`scripts/light-bridge.ts`）は `light`。 */
+/**
+ * 端末の役割。診断用iPadは `controller`、スマート電球の中継スクリプト（`scripts/light-bridge.ts`）は `light`、
+ * 会場のスピーカーから音を出すサウンド用の画面（`/sound`）は `sound`。
+ */
 export type ScreenRole = "display" | "photo";
-export type DeviceRole = "controller" | ScreenRole | "light";
+export type DeviceRole = "controller" | ScreenRole | "light" | "sound";
 export type Role = DeviceRole | "admin";
 
 /**
@@ -127,6 +130,12 @@ export type DisplayState = Pick<
 	| "answeredAt"
 	| "revision"
 > & { result: DisplayResult | null };
+
+/**
+ * サウンド用（`/sound`）へ配信する状態。展示ディスプレイと同じ範囲に、質問ごとのナレーションと回答SEを選ぶための
+ * 質問の番号を加える。回答内容とニックネームは含めない。
+ */
+export type SoundState = DisplayState & Pick<ExhibitState, "questionIndex">;
 
 /** 2Dマップ上の位置。`x` は左端0から右端1、`y` は上端0から下端1。 */
 export interface MapPoint {

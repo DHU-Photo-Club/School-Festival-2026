@@ -18,6 +18,7 @@
     "build:results": "node scripts/build-results.ts",
     "deploy:results": "pnpm build && pnpm build:results && wrangler deploy",
     "export-photos": "node scripts/export-photos.ts",
+    "export-sounds": "node scripts/export-sounds.ts",
     "lights": "node --env-file-if-exists=.env.lights scripts/light-bridge.ts"
   },
   "dependencies": {

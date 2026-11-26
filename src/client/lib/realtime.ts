@@ -1,7 +1,7 @@
 import type { ClockSample } from "../../shared/clock.ts";
 import { bestOffset } from "../../shared/clock.ts";
 import type { Command } from "../../shared/machine.ts";
-import type { ClientMessage, RoleState, ServerMessage } from "../../shared/protocol.ts";
+import type { AudioStatus, ClientMessage, RoleState, ServerMessage } from "../../shared/protocol.ts";
 import type { Role } from "../../shared/types.ts";
 
 /** 生存確認と時刻補正の `ping` の間隔。 */
@@ -40,6 +40,8 @@ export class RealtimeClient {
 	private samples: ClockSample[] = [];
 	private timers: ReturnType<typeof setInterval>[] = [];
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	/** サウンド用の画面の再生状態。接続し直したら送り直す。 */
+	private audioStatus: AudioStatus | null = null;
 
 	constructor(private readonly options: RealtimeOptions) {}
 
@@ -81,6 +83,12 @@ export class RealtimeClient {
 		return this.sendRaw({ type: "command", command });
 	}
 
+	/** サウンド用の画面の再生状態を管理画面へ知らせる。未接続なら、接続したときに送る。 */
+	reportAudio(status: AudioStatus): void {
+		this.audioStatus = status;
+		this.sendRaw({ type: "audio", status });
+	}
+
 	private sendRaw(message: ClientMessage): boolean {
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
 		this.socket.send(JSON.stringify(message));
@@ -112,6 +120,7 @@ export class RealtimeClient {
 				if (this.samples.length === 0) this.offset = message.serverTime - clientNow();
 				this.options.onStatus("open");
 				this.ping();
+				if (this.audioStatus) this.sendRaw({ type: "audio", status: this.audioStatus });
 			}
 			this.handle(message);
 		});

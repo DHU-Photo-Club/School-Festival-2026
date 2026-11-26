@@ -116,6 +116,21 @@ describe("二色の出力の検証", () => {
 	])("%sを拒否する", (_label, value) => {
 		expect(check(value).ok).toBe(false);
 	});
+
+	it("文字数超過・空文字・欠落の原因を具体的に返す", () => {
+		expect(check(colorOutput({ reading: "あ".repeat(151) }))).toEqual({
+			ok: false,
+			error: "回答全体の読み取り（reading）が上限（150文字）を超えています（151文字）",
+		});
+		expect(check(colorOutput({ reading: "  " }))).toEqual({
+			ok: false,
+			error: "回答全体の読み取り（reading）が空です",
+		});
+		expect(check(colorOutput({ reading: undefined }))).toEqual({
+			ok: false,
+			error: "回答全体の読み取り（reading）がありません",
+		});
+	});
 });
 
 describe("写真の出力の検証", () => {
@@ -258,7 +273,9 @@ describe("AIで結果を決める", () => {
 		]);
 		expect(await judge(ANSWERS, new AbortController().signal)).not.toBeNull();
 		expect(send).toHaveBeenCalledTimes(3);
-		expect(log).toHaveBeenCalledWith(expect.stringContaining("色の選定の出力を使えません（1回目）"));
+		expect(log).toHaveBeenCalledWith(
+			expect.stringContaining("色の選定: AIの出力が条件を満たしません（試行 1/2・再試行します）"),
+		);
 		expect(log.mock.calls[0][0]).toContain("翡翠×琥珀");
 	});
 

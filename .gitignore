@@ -12,7 +12,7 @@ test-results/
 playwright-report/
 
 # Exhibit state (SQLite)
-data/
+/data/
 
 # Secrets
 .env

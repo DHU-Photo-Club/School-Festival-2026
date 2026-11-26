@@ -1,9 +1,19 @@
 import type { Command } from "./machine.ts";
-import type { Answer, DeviceRole, DisplayState, ExhibitState, PaletteId } from "./types.ts";
+import type { Answer, DeviceRole, DisplayState, ExhibitState, PaletteId, SoundState } from "./types.ts";
 import { PALETTE_IDS } from "./types.ts";
 
-/** クライアントからサーバーへのメッセージ。 */
-export type ClientMessage = { type: "command"; command: Command } | { type: "ping"; clientSentAt: number };
+/**
+ * サウンド用の画面の再生状態。`blocked` はブラウザが音を止めている（画面のクリック待ち）、`loading` は音源の読み込み中、
+ * `playing` は再生中、`degraded` は再生中だが読み込めなかった音源がある。
+ */
+export const AUDIO_STATUSES = ["blocked", "loading", "playing", "degraded"] as const;
+export type AudioStatus = (typeof AUDIO_STATUSES)[number];
+
+/** クライアントからサーバーへのメッセージ。`audio` はサウンド用の画面が再生状態を管理画面へ知らせる。 */
+export type ClientMessage =
+	| { type: "command"; command: Command }
+	| { type: "ping"; clientSentAt: number }
+	| { type: "audio"; status: AudioStatus };
 
 /** サーバーからクライアントへのメッセージ。 */
 export type ServerMessage =
@@ -18,11 +28,13 @@ export interface DeviceStatus {
 	/** 最後にメッセージを受信してから15秒以内なら `true`。 */
 	connected: boolean;
 	lastReceivedAt: number;
+	/** サウンド用の画面が最後に知らせた再生状態。サウンド用だけが持ち、まだ届いていなければ `null`。 */
+	audio?: AudioStatus | null;
 }
 
 export type AdminState = Omit<ExhibitState, "answers" | "nickname"> & { devices: DeviceStatus[] };
 
-export type RoleState = ExhibitState | DisplayState | AdminState;
+export type RoleState = ExhibitState | DisplayState | SoundState | AdminState;
 
 type Json = Record<string, unknown>;
 
@@ -95,6 +107,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 		case "ping":
 			if (typeof data.clientSentAt !== "number" || !Number.isFinite(data.clientSentAt)) return null;
 			return { type: "ping", clientSentAt: data.clientSentAt };
+		case "audio":
+			if (!AUDIO_STATUSES.includes(data.status as AudioStatus)) return null;
+			return { type: "audio", status: data.status as AudioStatus };
 		default:
 			return null;
 	}
@@ -116,4 +131,9 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 		answeredAt: state.answeredAt ?? null,
 		revision: state.revision,
 	};
+}
+
+/** サウンド用の画面へ配信する範囲。展示ディスプレイと同じ範囲に質問の番号を加える。 */
+export function toSoundState(state: ExhibitState): SoundState {
+	return { ...toDisplayState(state), questionIndex: state.questionIndex };
 }

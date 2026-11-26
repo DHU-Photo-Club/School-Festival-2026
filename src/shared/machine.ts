@@ -48,6 +48,7 @@ export const ROLE_COMMANDS: Readonly<Record<Role, readonly CommandName[]>> = {
 	display: [],
 	photo: [],
 	light: [],
+	sound: [],
 };
 
 export interface MachineContext {

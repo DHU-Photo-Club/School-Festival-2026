@@ -7,7 +7,7 @@ import { parseScreenNumber } from "../shared/screens.ts";
 import type { Role } from "../shared/types.ts";
 import type { Exhibit } from "./exhibit.ts";
 
-const ROLES: readonly Role[] = ["controller", "display", "photo", "light", "admin"];
+const ROLES: readonly Role[] = ["controller", "display", "photo", "light", "sound", "admin"];
 /** 一件のメッセージの上限。端末が送るのは操作と `ping` だけで、これより十分小さい。 */
 const MAX_PAYLOAD = 64 * 1024;
 /**

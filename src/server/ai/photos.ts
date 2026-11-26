@@ -29,7 +29,7 @@ export function checkPhotoOutput(
 	questionIds: readonly QuestionId[],
 ): Checked<{ matches: ContentMatch[]; dropped: number }> {
 	if (!isObject(value) || !Array.isArray(value.contentMatches))
-		return { ok: false, error: "contentMatches の配列がありません" };
+		return { ok: false, error: "写真の一致一覧（contentMatches）が配列ではありません" };
 	const known = new Set(photos.map((photo) => photo.id));
 	const matches: ContentMatch[] = [];
 	let dropped = 0;
