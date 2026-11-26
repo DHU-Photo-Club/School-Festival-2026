@@ -52,6 +52,9 @@ export class SoundEngine {
 	private glassLast: number | null = null;
 	private glassNextAt = 0;
 	private narration: ScheduledNarration | null = null;
+	/** 鳴っている、または予約済みの `AudioBufferSourceNode`（ガラス音、効果音、ナレーション）。`halt` で止める。 */
+	private readonly active = new Set<AudioBufferSourceNode>();
+	private halted = false;
 
 	constructor(
 		private readonly onStatus: (status: AudioStatus) => void,
@@ -140,14 +143,48 @@ export class SoundEngine {
 	private async begin(): Promise<void> {
 		if (this.started || !this.loaded || this.context.state !== "running") return;
 		this.started = true;
+		if (!this.halted) await this.startLoops();
+	}
+
+	/** BGMとガラス音を鳴らし始める。すでにガラス音の予約が動いていれば、予約を重ねない。 */
+	private async startLoops(): Promise<void> {
+		if (this.glassTimer) return;
+		this.glassNextAt = this.context.currentTime + 0.1;
+		this.scheduleGlass();
+		this.glassTimer = setInterval(() => this.scheduleGlass(), GLASS_TICK_MS);
 		try {
 			await this.bgm.play();
 		} catch (error) {
 			console.error("BGMを再生できませんでした", error);
 		}
-		this.glassNextAt = this.context.currentTime + 0.1;
-		this.scheduleGlass();
-		this.glassTimer = setInterval(() => this.scheduleGlass(), GLASS_TICK_MS);
+	}
+
+	/** 画面が全停止の状態か。 */
+	get isHalted(): boolean {
+		return this.halted;
+	}
+
+	/** BGM、ガラス音、ナレーション、効果音をすべて止める。`resumePlayback` まで、展示の進行の音も鳴らさない。 */
+	halt(): void {
+		this.halted = true;
+		if (this.glassTimer) clearInterval(this.glassTimer);
+		this.glassTimer = null;
+		this.stopNarration();
+		for (const source of this.active) source.stop();
+		this.active.clear();
+		this.bgm.pause();
+	}
+
+	/** `halt` で止めた音のうち、BGMとガラス音を鳴らし直す。ナレーションと効果音は、次の進行から鳴る。 */
+	async resumePlayback(): Promise<void> {
+		this.halted = false;
+		if (this.started) await this.startLoops();
+		else await this.begin();
+	}
+
+	private track(source: AudioBufferSourceNode): void {
+		this.active.add(source);
+		source.addEventListener("ended", () => this.active.delete(source));
 	}
 
 	/** 系統の音量（0〜1）を設定データの値に掛ける。 */
@@ -186,12 +223,13 @@ export class SoundEngine {
 		const source = new AudioBufferSourceNode(this.context, { buffer });
 		source.connect(panner).connect(this.gains.glass);
 		source.addEventListener("ended", () => panner.disconnect());
+		this.track(source);
 		source.start(when);
 	}
 
 	/** 状態の変化で決まった音を鳴らす。再生を始める前（クリック待ち、読み込み中）の出来事は鳴らさない。 */
 	cue(cue: SoundCue): void {
-		if (!this.started) return;
+		if (!this.started || this.halted) return;
 		switch (cue.kind) {
 			case "answer":
 				this.playEffect(SOUND_FILES.answer[cue.number - 1]);
@@ -216,6 +254,7 @@ export class SoundEngine {
 		if (!buffer) return;
 		const source = new AudioBufferSourceNode(this.context, { buffer });
 		source.connect(this.gains.effects);
+		this.track(source);
 		source.start();
 	}
 
@@ -230,6 +269,7 @@ export class SoundEngine {
 			if (!buffer) continue;
 			const source = new AudioBufferSourceNode(this.context, { buffer });
 			source.connect(gain);
+			this.track(source);
 			source.start(at);
 			sources.push(source);
 			// 企画説明01〜03は連続再生し、04以降や質問内の間隔は保つ。

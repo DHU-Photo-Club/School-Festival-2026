@@ -49,6 +49,7 @@ let connection = $state<ConnectionStatus>("connecting");
 let current = $state<SoundState | null>(null);
 let failures = $state<readonly string[]>([]);
 let volumes = $state<Record<Bus, number>>(loadVolumes());
+let halted = $state(false);
 
 function loadVolumes(): Record<Bus, number> {
 	const defaults = Object.fromEntries(BUSES.map((bus) => [bus, 1])) as Record<Bus, number>;
@@ -82,6 +83,16 @@ function onState(state: SoundState): void {
 
 function resume(): void {
 	if (engine && engine.context.state !== "running") void engine.resume();
+}
+
+function toggleHalt(): void {
+	if (!engine) return;
+	if (halted) {
+		void engine.resumePlayback();
+	} else {
+		engine.halt();
+	}
+	halted = engine.isHalted;
 }
 
 function test(cue: SoundCue): void {
@@ -130,6 +141,15 @@ const progress = $derived.by(() => {
 
 	{#if audio === "blocked"}
 		<button class="primary-button start" type="button" onclick={resume}>音を出す</button>
+	{/if}
+
+	<button class="halt" type="button" data-halted={halted} onclick={toggleHalt}>
+		{halted ? "音を再開する" : "すべての音を止める"}
+	</button>
+	{#if halted}
+		<p class="note" data-testid="halt-note">
+			止めている間は、BGM、ガラス音、ナレーション、効果音のすべてが鳴りません。展示の進行の音も鳴らしません。
+		</p>
 	{/if}
 
 	<dl class="status">
@@ -230,6 +250,22 @@ h2 {
 
 .start {
 	justify-self: start;
+}
+
+.halt {
+	justify-self: start;
+	padding: 10px 16px;
+	border: 1px solid #b3261e;
+	border-radius: 6px;
+	background: transparent;
+	color: #b3261e;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.halt[data-halted="true"] {
+	background: #b3261e;
+	color: #fff;
 }
 
 .status {
