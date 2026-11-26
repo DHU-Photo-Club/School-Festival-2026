@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { blur } from "svelte/transition";
+	import { fade } from "svelte/transition";
 	import { cubicInOut } from "svelte/easing";
 	import type { ArchivePhoto } from "./detail";
 	let { photos, index, select, close, reducedMotion = false }: { photos: readonly ArchivePhoto[]; index: number; select: (index: number) => void; close: () => void; reducedMotion?: boolean } = $props();
@@ -77,7 +77,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div bind:this={panel} class="photo-viewer" role="dialog" tabindex="-1" aria-modal="true" aria-label="写真の詳細" onkeydown={keyboard} onclick={(event) => { if (event.target === event.currentTarget) close(); }} transition:blur|global={{ duration: reducedMotion ? 0 : 420, amount: 8, opacity: 0, easing: cubicInOut }}>
+<div bind:this={panel} class="photo-viewer" role="dialog" tabindex="-1" aria-modal="true" aria-label="写真の詳細" onkeydown={keyboard} onclick={(event) => { if (event.target === event.currentTarget) close(); }} transition:fade|global={{ duration: reducedMotion ? 0 : 420, easing: cubicInOut }}>
 	<div class="viewer-content">
 		<div class="viewer-toolbar"><button bind:this={closeButton} class="close" type="button" aria-label="画像詳細を閉じる" onclick={close}><img src="/archive/figma/detail/c691e.svg" alt="" /></button></div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->

@@ -8,7 +8,7 @@
 	const uiIntro = getContext<UiEntranceController>(UI_ENTRANCE_CONTEXT);
 	import { ScatterCamera, MIN_SCALE, MAX_SCALE, floatingLagSeconds, limitVector, stepFloating, centeredPose, type FloatingState } from "./scatter-camera";
 
-	let { entries, children, targetId = null, searchRequest = 0, onSelect = () => {}, intro = false, onIntroComplete = () => {} }: { entries: ArchiveEntry[]; children: Snippet; targetId?: string | null; searchRequest?: number; onSelect?: (id: string) => void; intro?: boolean; onIntroComplete?: (interrupted: boolean) => void } = $props();
+	let { entries, children, targetId = null, searchRequest = 0, onSelect = () => {}, intro = false, onIntroComplete = () => {}, paused = false }: { paused?: boolean; entries: ArchiveEntry[]; children: Snippet; targetId?: string | null; searchRequest?: number; onSelect?: (id: string) => void; intro?: boolean; onIntroComplete?: (interrupted: boolean) => void } = $props();
 	let introActive = $state(untrack(() => intro));
 	let logoArrival: HTMLDivElement;
 	const camera = new ScatterCamera([]);
@@ -39,6 +39,7 @@
 			for (const property of ["--intro-scale", "--intro-opacity", "--intro-filter"]) item.arrival.style.removeProperty(property);
 		}
 		onIntroComplete(interrupted);
+		requestAnimationFrame(() => window.dispatchEvent(new Event("archive:scene-settled")));
 	}
 
 	function updateIntro(now: number) {
@@ -64,13 +65,14 @@
 	}
 
 	function ensureFrame() {
-		if (!mounted || frameId || document.visibilityState !== "visible") return;
+		if (paused || !mounted || frameId || document.visibilityState !== "visible") return;
 		lastFrame = performance.now();
 		frameId = requestAnimationFrame(frame);
 	}
 
 	function frame(now: number) {
 		frameId = 0;
+		if (paused) return;
 		const dt = Math.max(0.008, Math.min(0.032, (now - lastFrame) / 1000));
 		lastFrame = now;
 		updateIntro(now);
@@ -157,7 +159,7 @@
 				const distance = Math.hypot(event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2);
 				if (distance < Math.min(rect.width, rect.height) / 2 + 8 && distance < best) { hit = id; best = distance; }
 			}
-			if (hit) { camera.endInteraction(false); ensureFrame(); onSelect(hit); return; }
+			if (hit) { camera.stopMotion(); onSelect(hit); return; }
 		}
 		camera.endInteraction(mode === "dragging" && event.type === "pointerup" && performance.now() - lastMove < 100);
 		ensureFrame();
@@ -251,6 +253,7 @@
 			viewport.removeEventListener("wheel", wheel); reduced.removeEventListener("change", preferenceChanged); document.removeEventListener("visibilitychange", visibilityChanged);
 		};
 	});
+	$effect(() => { if (paused) { cancelAnimationFrame(frameId); frameId = 0; camera.stopMotion(); pointers.clear(); dragging = false; } else ensureFrame(); });
 </script>
 
 <!-- Focusable map surface with pointer and keyboard navigation. -->
@@ -262,7 +265,7 @@
 			<div class="orb-anchor" style:--intro-x={`${entry.x * 1.5}px`} style:--intro-y={`${entry.y * 1.5}px`} style:left={`calc(50% + ${entry.x}px)`} style:top={`calc(50% + ${entry.y}px)`}>
 				<div class="orb-arrival">
 				<div role="button" tabindex="0" aria-label={`${entry.nickname}の詳細を開く`} onclick={() => onSelect(entry.id)} onkeydown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onSelect(entry.id); } }} class="floating-body" class:is-target={targetId === entry.id} use:registerFloat={entry.id}>
-					<OrbImage src={entry.scatterImage} motionKey={entry.id} />
+					<OrbImage src={entry.scatterImage} motionKey={entry.id} {paused} scale={pose.scale} />
 					<p class="orb-caption">{entry.nickname}</p>
 				</div>
 				</div>

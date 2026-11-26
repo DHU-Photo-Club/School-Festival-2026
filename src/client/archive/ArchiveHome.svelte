@@ -11,11 +11,17 @@
 	import ArchiveDetail from "./ArchiveDetail.svelte";
 	import { previewDetail } from "./detail";
 	let detailId = $state<string | null>(null);
-	function openEntry(id: string) { location.hash = `entry=${encodeURIComponent(id)}`; }
+	function openEntry(id: string) {
+		// Update the address without starting a browser fragment navigation.
+		history.pushState(null, "", `${location.pathname}${location.search}#entry=${encodeURIComponent(id)}`);
+		detailId = id;
+	}
 	function closeEntry() { history.replaceState(null, "", location.pathname + location.search); detailId = null; }
 	onMount(() => {
 		const sync = () => { const match = location.hash.match(/^#entry=(.+)$/); try { detailId = match ? decodeURIComponent(match[1]) : null; } catch { detailId = null; } };
-		sync(); window.addEventListener("hashchange", sync); return () => window.removeEventListener("hashchange", sync);
+		sync();
+		window.addEventListener("hashchange", sync); window.addEventListener("popstate", sync);
+		return () => { window.removeEventListener("hashchange", sync); window.removeEventListener("popstate", sync); };
 	});
 
 	let { entries = previewEntries }: { entries?: ArchiveEntry[] } = $props();
@@ -117,7 +123,7 @@
 			<div class="photo-grid">
 				{#each entries as entry (entry.id)}
 					<div class="grid-card" class:is-target={targetId === entry.id} data-entry-id={entry.id} role="button" tabindex="0" aria-label={`${entry.nickname}の詳細を開く`} onclick={() => openEntry(entry.id)} onkeydown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openEntry(entry.id); } }}>
-						<div class="grid-orb"><OrbImage src={entry.gridImage} motionKey={entry.id} /></div>
+						<div class="grid-orb"><OrbImage src={entry.gridImage} motionKey={entry.id} paused={!!selectedEntry} /></div>
 						<p class="grid-caption">{entry.nickname}</p>
 					</div>
 				{:else}
@@ -128,7 +134,7 @@
 		</div>
 	{:else}
 		<div class="mode-layer" transition:blur={viewTransition} inert={viewMode !== "scatter"} aria-hidden={viewMode !== "scatter"}>
-			<ScatterView onSelect={openEntry} {entries} {targetId} {searchRequest} intro={initialEntrance} onIntroComplete={(interrupted) => { initialEntrance = false; if (interrupted) uiIntro.finish(true); }}>{@render brand()}</ScatterView>
+			<ScatterView paused={!!selectedEntry} onSelect={openEntry} {entries} {targetId} {searchRequest} intro={initialEntrance} onIntroComplete={(interrupted) => { initialEntrance = false; if (interrupted) uiIntro.finish(true); }}>{@render brand()}</ScatterView>
 		</div>
 	{/if}
 

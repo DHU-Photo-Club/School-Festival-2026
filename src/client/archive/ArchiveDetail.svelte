@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { blur } from "svelte/transition";
+	import { fade } from "svelte/transition";
 	import { cubicInOut } from "svelte/easing";
 	import ArchiveSymbolShapes from "./ArchiveSymbolShapes.svelte";
 	import ArchivePhotoViewer from "./ArchivePhotoViewer.svelte";
@@ -56,7 +56,7 @@
 </script>
 
 <svelte:head><title>{detail.colorName} — {entry.nickname} | あなた色写真展</title></svelte:head>
-<div class="detail-transition" transition:blur|global={{ duration: reducedMotion ? 0 : 420, amount: 8, opacity: 0, easing: cubicInOut }}>
+<div class="detail-transition" transition:fade|global={{ duration: reducedMotion ? 0 : 420, easing: cubicInOut }}>
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div bind:this={panel} class="detail-page" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="detail-title" onkeydown={keyboard} inert={photoIndex >= 0} aria-hidden={photoIndex >= 0}>
 	<div bind:this={shade} class="top-shade" aria-hidden="true" style:--shade-color-one={logoColors[0]} style:--shade-color-two={logoColors[1]}>
