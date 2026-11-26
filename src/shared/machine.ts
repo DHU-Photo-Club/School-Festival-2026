@@ -84,6 +84,7 @@ export function initialState(now: number): ExhibitState {
 		previewColorId: null,
 		phaseStartedAt: now,
 		phaseEndsAt: null,
+		answeredAt: null,
 		revision: 0,
 		accepting: true,
 	};
@@ -125,6 +126,7 @@ function toIdle(state: ExhibitState, at: number): ExhibitState {
 		previewColorId: null,
 		phaseStartedAt: at,
 		phaseEndsAt: null,
+		answeredAt: null,
 		revision: state.revision + 1,
 	};
 }
@@ -206,6 +208,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			if (state.questionIndex < context.questions.length - 1) {
 				return accept({
 					answers,
+					answeredAt: now,
 					judgeFailed: false,
 					questionIndex: state.questionIndex + 1,
 					phaseEndsAt: now + INACTIVITY_MS,
@@ -218,6 +221,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			if (missing !== -1) {
 				return accept({
 					answers,
+					answeredAt: now,
 					judgeFailed: false,
 					questionIndex: missing,
 					phaseEndsAt: now + INACTIVITY_MS,
@@ -227,6 +231,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			const judging = accept({
 				phase: "judging",
 				answers,
+				answeredAt: now,
 				result: null,
 				judgeFailed: false,
 				phaseStartedAt: now,

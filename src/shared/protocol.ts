@@ -112,6 +112,8 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 		previewColorId: state.previewColorId,
 		phaseStartedAt: state.phaseStartedAt,
 		phaseEndsAt: state.phaseEndsAt,
+		// この項目を持たない保存済みの状態は、波紋を出さない。
+		answeredAt: state.answeredAt ?? null,
 		revision: state.revision,
 	};
 }

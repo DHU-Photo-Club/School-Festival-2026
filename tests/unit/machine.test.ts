@@ -85,6 +85,7 @@ describe("状態遷移", () => {
 			previewColorId: null,
 			phaseStartedAt: 10,
 			phaseEndsAt: null,
+			answeredAt: null,
 			revision: 0,
 			accepting: true,
 		});
@@ -144,6 +145,20 @@ describe("状態遷移", () => {
 		expect(state.answers.Q1).toEqual(["q1_1"]);
 		state = apply(state, { name: "answer", questionId: "Q1", answer: ["q1_2", "q1_4"] }, 300);
 		expect(state.answers.Q1).toEqual(["q1_2", "q1_4"]);
+	});
+
+	it("回答を受け付けた時刻を answeredAt に記録し、戻る操作では変えず、idle へ戻ると消す", () => {
+		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
+		expect(state.answeredAt).toBeNull();
+		state = apply(state, { name: "answer", questionId: "Q1", answer: ["q1_1"] }, 100);
+		expect(state.answeredAt).toBe(100);
+		state = apply(state, { name: "back" }, 200);
+		expect(state.answeredAt).toBe(100);
+		state = apply(state, { name: "answer", questionId: "Q1", answer: ["q1_2"] }, 300);
+		expect(state.answeredAt).toBe(300);
+		// 最終問の回答（judging へ進む）も受け付けた時刻を記録する。
+		expect(finalAnswer(toLastQuestion(0), 1_000).answeredAt).toBe(1_000);
+		expect(apply(state, { name: "forceReset" }, 400).answeredAt).toBeNull();
 	});
 
 	it("戻って変更した回答だけがAIの選定へ渡る", () => {

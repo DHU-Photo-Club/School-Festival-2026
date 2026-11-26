@@ -3,9 +3,16 @@ import { PALETTE } from "../../src/data/palette.ts";
 import { INACTIVITY_MS, JUDGING_MS } from "../../src/shared/machine.ts";
 import type { Primitive, Scene, SceneInput } from "../../src/shared/motion.ts";
 import {
+	ANSWER_PULSE_DEPTH,
+	ANSWER_PULSE_IN_MS,
+	ANSWER_PULSE_OUT_MS,
 	BLOOM_WARP,
 	COLORS,
 	computeScene,
+	INTRO_DESCRIPTION_AT_MS,
+	INTRO_DESCRIPTION_FADE_MS,
+	introDescriptionOpacity,
+	introDescriptionRemainingMs,
 	JUDGING_SHARD_DIM,
 	RESULT_FORMS,
 	resultFormPrimitives,
@@ -16,16 +23,13 @@ import {
 	SHARD_SCALE_MS,
 	SHARD_TINT_MS,
 	screenColorId,
-	INTRO_DESCRIPTION_AT_MS,
-	INTRO_DESCRIPTION_FADE_MS,
 	WELCOME_FADE_MS,
 	WELCOME_FADE_OUT_MS,
 	WELCOME_LEAVE_AT_MS,
 	welcomeOpacity,
-	introDescriptionOpacity,
-	introDescriptionRemainingMs,
 } from "../../src/shared/motion.ts";
 import { backgroundColor, baseColor, paletteColor } from "../../src/shared/palette.ts";
+import { RIPPLE_MS } from "../../src/shared/ripple.ts";
 import type { DisplayState, PaletteId } from "../../src/shared/types.ts";
 import { PALETTE_IDS } from "../../src/shared/types.ts";
 
@@ -52,6 +56,7 @@ const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): Sc
 		previewColorId: null,
 		phaseStartedAt: T0,
 		phaseEndsAt: null,
+		answeredAt: null,
 		revision: 10,
 		...state,
 	},
@@ -74,6 +79,146 @@ const questionState = (lastAcceptedAt: number, revision = 12): Partial<DisplaySt
 });
 
 const shardsOf = (scene: Scene) => scene.shards;
+
+describe("回答の瞬間の輪の収縮", () => {
+	const at = (elapsed: number, patch: Partial<DisplayState> = {}, input: Partial<SceneInput> = {}) =>
+		computeScene(
+			base({ ...questionState(T0), answeredAt: T0 + 1_000, ...patch }, { now: T0 + 1_000 + elapsed, ...input }),
+		).shards.scale;
+
+	it("回答の瞬間から一瞬で縮み、勢いよく戻って、減速しながら元の大きさへ着く", () => {
+		expect(at(0)).toBe(1);
+		expect(at(ANSWER_PULSE_IN_MS)).toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
+		// 縮む側は `easeInOutSine` で、半分の時間で半分の量。
+		expect(at(ANSWER_PULSE_IN_MS / 2)).toBeCloseTo(1 - ANSWER_PULSE_DEPTH / 2);
+		const returning = Array.from({ length: ANSWER_PULSE_OUT_MS / 10 + 1 }, (_, i) =>
+			at(ANSWER_PULSE_IN_MS + i * 10),
+		);
+		// 元の大きさを超えず、縮み切った点から元の大きさへ向けて一方向に戻る（弾性がない）。
+		for (let index = 1; index < returning.length; index++) {
+			expect(returning[index]).toBeGreaterThanOrEqual(returning[index - 1]);
+			expect(returning[index]).toBeLessThanOrEqual(1);
+		}
+		// 戻る速さは、早め（戻る時間の3分の1まで）に最高速に達し、その後は減速し続ける。
+		const speeds = returning.slice(1).map((scale, index) => scale - returning[index]);
+		const fastest = speeds.indexOf(Math.max(...speeds));
+		expect(fastest).toBeGreaterThan(2);
+		expect(fastest).toBeLessThan(speeds.length / 3);
+		for (let index = fastest + 1; index < speeds.length; index++) {
+			expect(speeds[index]).toBeLessThanOrEqual(speeds[index - 1] + 1e-12);
+		}
+		// 戻る時間の4分の1で、縮めた量の半分以上が戻る。
+		expect(at(ANSWER_PULSE_IN_MS + ANSWER_PULSE_OUT_MS / 4)).toBeGreaterThan(1 - ANSWER_PULSE_DEPTH / 2);
+		// 元の大きさへ着いて止まる。
+		expect(returning.at(-1)).toBe(1);
+		expect(at(ANSWER_PULSE_IN_MS + ANSWER_PULSE_OUT_MS)).toBe(1);
+		expect(ANSWER_PULSE_IN_MS + ANSWER_PULSE_OUT_MS).toBeGreaterThanOrEqual(1_400);
+	});
+
+	it("縮み切った下限で、速度が途切れずにつながる（ガクッとならない）", () => {
+		const velocity = (from: number) => (at(from + 1) - at(from - 1)) / 2;
+		const fastestShrink = Math.max(
+			...Array.from({ length: ANSWER_PULSE_IN_MS }, (_, i) => Math.abs(velocity(i + 1))),
+		);
+		// 縮み切る時刻の前後で、速度が最高速の数%以内（0を通って符号が変わるだけ）。
+		for (const offset of [-5, -1, 0, 1, 5]) {
+			expect(Math.abs(velocity(ANSWER_PULSE_IN_MS + offset))).toBeLessThan(fastestShrink * 0.1);
+		}
+		expect(Math.abs(velocity(ANSWER_PULSE_IN_MS - 10))).toBeLessThan(fastestShrink * 0.25);
+		expect(Math.abs(velocity(ANSWER_PULSE_IN_MS + 10))).toBeLessThan(fastestShrink * 0.25);
+		// 速度は縮み切る時刻の前後で、急にではなく滑らかに変わる（10ミリ秒ごとの速度の変化が最高速の15%未満）。
+		for (let time = ANSWER_PULSE_IN_MS - 50; time < ANSWER_PULSE_IN_MS + 50; time += 10) {
+			expect(Math.abs(velocity(time + 10) - velocity(time))).toBeLessThan(fastestShrink * 0.15);
+		}
+	});
+
+	it("縮む側は動き出しが急に変わらない", () => {
+		const step = (from: number) => Math.abs(at(from + 10) - at(from));
+		const peak = ANSWER_PULSE_DEPTH / ANSWER_PULSE_IN_MS;
+		expect(step(0)).toBeLessThan(peak * 10 * 0.2);
+		// 縮む側の途中が最も速い。
+		expect(step(ANSWER_PULSE_IN_MS / 2 - 5)).toBeGreaterThan(step(0) * 3);
+	});
+
+	it("縮むのは輪の半径だけで、破片の大きさや枚数は変えない", () => {
+		const shards = computeScene(
+			base({ ...questionState(T0), answeredAt: T0 + 1_000 }, { now: T0 + 1_000 + ANSWER_PULSE_IN_MS }),
+		).shards;
+		expect(shards).toMatchObject({ size: 1, density: 1, spread: 0, intensity: 1 });
+	});
+
+	it("全画面で同じ倍率になり、最終問の回答で入った judging でも縮む", () => {
+		expect(at(300, {}, { displayOrder: 1 })).toBe(at(300, {}, { displayOrder: 0 }));
+		expect(at(ANSWER_PULSE_IN_MS, { phase: "judging" })).toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
+	});
+
+	it("回答がなければ、reduced-motionなら、question と judging 以外なら縮めない", () => {
+		expect(at(ANSWER_PULSE_IN_MS, { answeredAt: null })).toBe(1);
+		expect(at(ANSWER_PULSE_IN_MS, {}, { reducedMotion: true })).toBe(1);
+		for (const phase of ["idle", "intro", "sequence", "result"] as const) {
+			expect(at(ANSWER_PULSE_IN_MS, { phase })).not.toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
+		}
+	});
+});
+
+describe("回答の波紋", () => {
+	const answered = (answeredAt: number | null, patch: Partial<DisplayState> = {}) => ({
+		...questionState(T0),
+		answeredAt,
+		...patch,
+	});
+
+	// 波紋は、輪が縮み切って戻り始める瞬間（回答から `ANSWER_PULSE_IN_MS` 後）に始まる。
+	const start = T0 + 1_000 + ANSWER_PULSE_IN_MS;
+
+	it("輪が戻り始める瞬間から経過時間を数え、全画面で同じ値にする", () => {
+		const at = (displayOrder: number) =>
+			computeScene(base(answered(T0 + 1_000), { now: start + 750, displayOrder })).ripple;
+		expect(at(0)).toEqual({ elapsed: 750 });
+		expect(at(1)).toEqual({ elapsed: 750 });
+	});
+
+	it("輪が戻り始めるまでは出さず、始まる瞬間に出て、波紋が消えるまで広げ続ける", () => {
+		const ripple = (now: number) => computeScene(base(answered(T0 + 1_000), { now })).ripple;
+		// 回答の瞬間と、輪が縮んでいる間は出ない。
+		expect(ripple(T0 + 1_000)).toBeNull();
+		expect(ripple(start - 1)).toBeNull();
+		expect(ripple(start)).toEqual({ elapsed: 0 });
+		expect(ripple(start + RIPPLE_MS - 1)).not.toBeNull();
+		expect(ripple(start + RIPPLE_MS)).toBeNull();
+	});
+
+	it("波紋が始まる瞬間は、輪が縮み切って戻り始める瞬間と同じ", () => {
+		const scale = (now: number) => computeScene(base(answered(T0 + 1_000), { now })).shards.scale;
+		// 波紋が出る直前まで輪は縮み続け、波紋が出た後は戻り続ける。
+		expect(scale(start - 20)).toBeGreaterThan(scale(start));
+		expect(scale(start + 20)).toBeGreaterThan(scale(start));
+		expect(scale(start)).toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
+	});
+
+	it("回答がなければ、reduced-motionなら、question と judging 以外なら広げない", () => {
+		const now = start + 500;
+		expect(computeScene(base(answered(null), { now })).ripple).toBeNull();
+		expect(computeScene(base(answered(T0 + 1_000), { now, reducedMotion: true })).ripple).toBeNull();
+		for (const phase of ["idle", "intro", "sequence", "result"] as const) {
+			expect(computeScene(base(answered(T0 + 1_000, { phase }), { now })).ripple).toBeNull();
+		}
+		// 最終問の回答（judging へ進む）は広げる。
+		expect(computeScene(base(answered(T0 + 1_000, { phase: "judging" }), { now })).ripple).toEqual({
+			elapsed: 500,
+		});
+	});
+
+	it("answeredAt を持たない保存済みの状態でも広げず、落ちない", () => {
+		const input = base(answered(null), { now: start + 500 });
+		const legacy = { ...input, state: { ...input.state, answeredAt: undefined } } as unknown as SceneInput;
+		expect(computeScene(legacy).ripple).toBeNull();
+	});
+
+	it("波紋の間は描き続ける", () => {
+		expect(computeScene(base(answered(T0 + 1_000), { now: start + 500 })).animating).toBe(true);
+	});
+});
 
 describe("決定性", () => {
 	it("同じ入力からは同じ描画内容を返す", () => {

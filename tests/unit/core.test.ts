@@ -53,6 +53,7 @@ describe("接続と配信", () => {
 		expect(ipad.lastState()).toHaveProperty("answers");
 		expect(Object.keys(display.lastState<DisplayState>()).sort()).toEqual(
 			[
+				"answeredAt",
 				"phase",
 				"phaseEndsAt",
 				"phaseStartedAt",

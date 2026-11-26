@@ -11,31 +11,11 @@ const RING_SPREAD = 0.2;
  */
 export const SHARD_SCATTER_DEPTH = 1.6;
 const RING_COUNT = 130;
+/** 破片が現れる／消えるときに、同時に不透明度が変わっていく枚数。小さいと一枚ずつ急に現れる。 */
+const DENSITY_FADE_COUNT = 50;
 /** 輪の一周の周期（ミリ秒）。 */
 const ORBIT_MS = 150_000;
 const SEED = 0x5eedc0de;
-/** 破片の面の曲がりの偏りと揺れを決める擬似乱数の種。配置の乱数列と分け、光の筋を加えても配置が変わらないようにする。 */
-const CURVE_SEED = 0x7117ab1e;
-
-/**
- * 光の筋を作る点光源の位置。`x` は画面幅に対する比、`y` は画面の高さに対する比、`z`（画面から手前への距離）は
- * 画面短辺に対する比。視点は画面の正面の無限遠に置く。
- */
-const SHARD_LIGHT = { x: 0.2, y: 0.15, z: 0.5 } as const;
-/**
- * 破片の面の曲がり（ラジアン）。破片を長い向きを軸にわずかに曲げた鏡と見なし、幅の中央から端までで面の法線が
- * この角度だけ幅の向きへ倒れる。
- */
-const CURVE = 0.6;
-/** 破片の揺れの振れ幅（ラジアン）。揺れると面の法線が幅の向きへ傾き、光の筋が面の上を横切るように走る。 */
-const ROCK = 0.6;
-/** 破片の長い向きが光源の向きとそろうにつれて光の筋が暗くなる度合い（Blinn-Phongの指数）。直交するとき最も明るい。 */
-const STREAK_SHARPNESS = 120;
-/** 光の筋を描く明るさの下限。 */
-const STREAK_MIN = 0.05;
-/** 光の筋の半分の幅（CSS画素）。筋はこの二倍の幅の線形グラデーションで描き、中央を最も明るくする。 */
-export const SHARD_STREAK_HALF_WIDTH = 3;
-
 type Point = readonly [number, number];
 
 interface Shard {
@@ -67,18 +47,6 @@ export interface ShardPose {
 	vertices: Point[];
 	shade: number;
 	alpha: number;
-	/** 面の上の光の筋。描かないときは `null`。 */
-	streak: ShardStreak | null;
-}
-
-/**
- * 破片の面の上の光の筋。破片の長い向きに沿う細い帯で、幅の向きに置いた `from` から `to` への線形グラデーションの
- * 中点を中心線が通る。`strength` は中心線の明るさ（0〜1）。
- */
-export interface ShardStreak {
-	from: Point;
-	to: Point;
-	strength: number;
 }
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
@@ -114,7 +82,7 @@ function shard(next: () => number, a: number, b: number, size: number): Shard {
 		points: triangle(next),
 		size,
 		shade: (150 + 105 * next()) / 255,
-		alpha: 0.3 + 0.45 * next(),
+		alpha: 0.6 + 0.35 * next(),
 		spin: next() * Math.PI * 2,
 		spinSpeed: ((next() < 0.5 ? -1 : 1) * Math.PI * 2) / (40_000 + 60_000 * next()),
 		sway: next() * Math.PI * 2,
@@ -122,60 +90,6 @@ function shard(next: () => number, a: number, b: number, size: number): Shard {
 		a,
 		b,
 		speed: 0.8 + 0.4 * next(),
-	};
-}
-
-/**
- * 破片の面の曲がりの偏りと揺れ。偏り `bias` に、初期位相 `rock`（ラジアン）と角速度 `rockSpeed`（ラジアン/ミリ秒）
- * による揺れの角度を足して、面の法線を幅の向きへ倒す。
- */
-const nextCurve = random(CURVE_SEED);
-const CURVES = Array.from({ length: RING_COUNT }, () => ({
-	bias: (nextCurve() - 0.5) * 0.2,
-	rock: nextCurve() * Math.PI * 2,
-	rockSpeed: (Math.PI * 2) / (14_000 + 10_000 * nextCurve()),
-}));
-
-/**
- * 重心 `(x, y)`、長い向き `axis`（ラジアン）の破片の面にできる光の筋。破片を長い向きを軸に曲げた鏡と見なすと、
- * 法線が光源の向きと視点の向きの中間の向きに最も近づく場所が、長い向きに沿う一本の線になる。破片の幅の両端を
- * -1〜1 とした座標でその線の位置を求め、実際の幅へ変換する。明るさはBlinn-Phongの式（指数 `STREAK_SHARPNESS`）で求める。
- * 光源は `light`（CSS画素、`z` 成分は画面から手前への距離）、視点は正面の無限遠に置く。光源からの距離による
- * 減衰は入れず、筋の幅は破片の幅によらず一定にする。
- */
-function streakOf(
-	vertices: readonly Point[],
-	x: number,
-	y: number,
-	axis: number,
-	curve: (typeof CURVES)[number],
-	elapsed: number,
-	light: readonly [number, number, number],
-): ShardStreak | null {
-	const [ux, uy] = [Math.cos(axis), Math.sin(axis)];
-	const [wx, wy] = [-uy, ux];
-	const [lx, ly, lz] = [light[0] - x, light[1] - y, light[2]];
-	const distance = Math.hypot(lx, ly, lz);
-	// 光源の向きと視点の向き (0, 0, 1) の中間の向き。
-	const [hx, hy, hz] = [lx / distance, ly / distance, lz / distance + 1];
-	const half = Math.hypot(hx, hy, hz);
-	const along = (hx * ux + hy * uy) / half;
-	const across = (hx * wx + hy * wy) / half;
-	// 法線を幅の向きへ倒して中間の向きに最も近づけたときの反射の強さ。長い向きの成分 `along` だけは合わせられず、
-	// 最も近づけたときの内積は √(1 − along²) になる。その `STREAK_SHARPNESS` 乗なので、指数を半分にして累乗する。
-	const strength = Math.max(0, 1 - along * along) ** (STREAK_SHARPNESS / 2);
-	if (strength < STREAK_MIN) return null;
-	const tilt = curve.bias + ROCK * Math.sin(curve.rock + ((elapsed * curve.rockSpeed) % (Math.PI * 2)));
-	const position = (Math.atan2(across, hz / half) - tilt) / CURVE;
-	const spans = vertices.map(([px, py]) => (px - x) * wx + (py - y) * wy);
-	const [low, high] = [Math.min(...spans), Math.max(...spans)];
-	const offset = (low + high) / 2 + (position * (high - low)) / 2;
-	if (offset < low - SHARD_STREAK_HALF_WIDTH || offset > high + SHARD_STREAK_HALF_WIDTH) return null;
-	const [cx, cy] = [x + wx * offset, y + wy * offset];
-	return {
-		from: [cx - wx * SHARD_STREAK_HALF_WIDTH, cy - wy * SHARD_STREAK_HALF_WIDTH],
-		to: [cx + wx * SHARD_STREAK_HALF_WIDTH, cy + wy * SHARD_STREAK_HALF_WIDTH],
-		strength,
 	};
 }
 
@@ -187,16 +101,7 @@ const RING: readonly Shard[] = Array.from({ length: RING_COUNT }, () => {
 	return shard(next, angle, 1 + offset, 0.14 + 0.2 * next());
 });
 
-/**
- * 破片の形の長い向き（破片の向きからの角度、ラジアン）。頂点の主成分の向きで、細長い破片ではほぼ0になる。
- * 正三角形に近い破片でも、光の筋が形の長い向きに沿うようにする。
- */
-const AXES = RING.map(({ points }) => {
-	const [xx, yy, xy] = points.reduce(([a, b, c], [px, py]) => [a + px * px, b + py * py, c + px * py], [0, 0, 0]);
-	return Math.atan2(2 * xy, xx - yy) / 2;
-});
-
-function pose(item: Shard, x: number, y: number, rotation: number, unit: number): Omit<ShardPose, "streak"> {
+function pose(item: Shard, x: number, y: number, rotation: number, unit: number): ShardPose {
 	const length = item.size * unit;
 	const cos = Math.cos(rotation);
 	const sin = Math.sin(rotation);
@@ -239,7 +144,7 @@ export function ringBreath(elapsed: number): number {
  * 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転し、輪全体が呼吸する。
  * `scale` は輪の半径だけにかける倍率、`size` は破片の大きさにかける倍率。`spread` は輪の太さの広がりで、
  * 0なら輪、1なら輪の内側の縁を残したまま、画面いっぱいに散らばる（`SHARD_SCATTER_DEPTH`）。`density` は見せる破片の割合で、
- * 先頭から数えた枚数だけ見せ、境の一枚は不透明度で出し入れする。見せない破片も配列には残し、並び順を変えない
+ * 先頭から数えた枚数だけ見せ、境の `DENSITY_FADE_COUNT` 枚は不透明度を段階的に変えて、一枚ずつ急に現れないようにする。見せない破片も配列には残し、並び順を変えない
  * （色づけは並び順で二色へ振り分けるため）。
  */
 function ringPoses(
@@ -258,7 +163,6 @@ function ringPoses(
 	const breath = ringBreath(elapsed);
 	const cx = width / 2;
 	const cy = height / 2;
-	const light = [width * SHARD_LIGHT.x, height * SHARD_LIGHT.y, Math.min(width, height) * SHARD_LIGHT.z] as const;
 	return RING.map((item, index) => {
 		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
 		// 輪の中の位置（内側の縁0〜外側の縁1）に応じて、散らばるときの距離を決める。
@@ -268,10 +172,8 @@ function ringPoses(
 		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
 		const [x, y] = [cx + Math.cos(theta) * r, cy + Math.sin(theta) * r];
 		const base = pose(item, x, y, rotation, shardUnit);
-		const visible = clamp01(density * RING_COUNT - index);
-		if (visible === 0) return { ...base, alpha: 0, streak: null };
-		const streak = streakOf(base.vertices, x, y, rotation + AXES[index], CURVES[index], elapsed, light);
-		return { ...base, alpha: base.alpha * visible, streak };
+		const visible = clamp01((density * (RING_COUNT + DENSITY_FADE_COUNT) - index) / DENSITY_FADE_COUNT);
+		return { ...base, alpha: base.alpha * visible };
 	});
 }
 

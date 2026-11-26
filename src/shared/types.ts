@@ -107,6 +107,8 @@ export interface ExhibitState {
 	previewColorId: PaletteId | null;
 	phaseStartedAt: number;
 	phaseEndsAt: number | null;
+	/** 直前に質問の回答を受け付けた時刻。展示ディスプレイは、この時刻から中心の波紋を広げる。`idle` へ戻ると `null`。 */
+	answeredAt: number | null;
 	revision: number;
 	accepting: boolean;
 }
@@ -117,7 +119,14 @@ export type DisplayResult = Pick<SessionResult, "name" | "colors" | "photoIds">;
 /** 展示ディスプレイと写真用へ配信する状態（仕様書8.3節）。 */
 export type DisplayState = Pick<
 	ExhibitState,
-	"sessionId" | "phase" | "sequenceId" | "previewColorId" | "phaseStartedAt" | "phaseEndsAt" | "revision"
+	| "sessionId"
+	| "phase"
+	| "sequenceId"
+	| "previewColorId"
+	| "phaseStartedAt"
+	| "phaseEndsAt"
+	| "answeredAt"
+	| "revision"
 > & { result: DisplayResult | null };
 
 /** 2Dマップ上の位置。`x` は左端0から右端1、`y` は上端0から下端1。 */

@@ -13,9 +13,11 @@ import {
 	welcomeOpacity,
 } from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
+import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId } from "../../shared/types.ts";
+import { drawRipple } from "../common/ripple.ts";
 import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 import { watchReducedMotion } from "../lib/reduced-motion.ts";
@@ -39,6 +41,7 @@ let resultChoice = $state<{ sessionId: string | null; colorId: PaletteId } | nul
 let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
 let bloomCanvas = $state<HTMLCanvasElement>();
+let rippleCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
@@ -49,6 +52,7 @@ let renderer: SceneRenderer | null = null;
 let frame = 0;
 let lastDrawn = "";
 let lastShards = "";
+let lastRipple = "";
 let animateSessionId: string | null = null;
 /** 今の質問へ `intro` から入ったか。`intro` の大きく色づいた輪から、質問中の灰色の輪へ戻すために使う。 */
 let questionFromIntro = false;
@@ -102,6 +106,11 @@ function resize() {
 	canvas.height = Math.max(1, Math.round(window.innerHeight * CANVAS_SCALE));
 	lastDrawn = "";
 	lastShards = "";
+	lastRipple = "";
+	if (rippleCanvas) {
+		rippleCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
+		rippleCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+	}
 	if (shardCanvas) {
 		shardCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
 		shardCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
@@ -135,6 +144,20 @@ function drawShardLayer(layer: ShardLayer) {
 		const ratio = bloom.canvas.width / window.innerWidth;
 		drawShardBloom(bloom, poses, ratio, Math.min(window.innerWidth, window.innerHeight), layer.intensity, tint);
 	}
+}
+
+/**
+ * 質問の回答を受け付けた瞬間に、画面の中心から細い輪を外側へ薄く広げる（docs/visual-language.md 3.2節）。
+ * 広げていないフレームは、輪を消した状態を一度だけ描く。
+ */
+function drawRippleLayer(layer: Scene["ripple"]) {
+	const context = rippleCanvas?.getContext("2d");
+	if (!context) return;
+	const rings = layer ? rippleRings(layer.elapsed, window.innerWidth, window.innerHeight) : [];
+	const key = rings.length === 0 ? "" : JSON.stringify(rings);
+	if (key === lastRipple) return;
+	lastRipple = key;
+	drawRipple(context, rings, shardRatio());
 }
 
 /** 結果表示でこの画面が見せる色を決める。 */
@@ -230,6 +253,7 @@ function tick(timestamp: number) {
 		lastDrawn = key;
 	}
 	drawShardLayer(scene.shards);
+	drawRippleLayer(scene.ripple);
 }
 
 onMount(() => {
@@ -268,6 +292,7 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	<canvas bind:this={canvas}></canvas>
 	<canvas class="shard-bloom" bind:this={bloomCanvas}></canvas>
 	<canvas class="shards" bind:this={shardCanvas}></canvas>
+	<canvas class="ripple" bind:this={rippleCanvas}></canvas>
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
 		{#if shownColor && resultChoice}
@@ -325,6 +350,9 @@ canvas,
 /* 破片。ハードライト合成で下の色面とブルームへ重ねる（docs/visual-language.md 4.4節、7章）。 */
 .shards {
 	mix-blend-mode: hard-light;
+}
+.ripple {
+	pointer-events: none;
 }
 .sequence {
 	overflow: hidden;

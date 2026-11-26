@@ -1,18 +1,6 @@
 import type { Rgb, ShardPose } from "../../shared/shards.ts";
 import { shardColor, shardOutlineColor } from "../../shared/shards.ts";
 
-/**
- * 光の筋の幅の向きの明るさの分布。線形グラデーションの位置と、中心線の不透明度に対する比。両端は透明で、
- * グラデーションの外も透明のまま塗る。
- */
-export const SHARD_STREAK_PROFILE = [
-	[0, 0],
-	[0.3, 0.2],
-	[0.5, 1],
-	[0.7, 0.2],
-	[1, 0],
-] as const;
-
 /** 破片のアウトラインの太さ（CSS画素）。線は輪郭を中心にして引き、内側の半分は塗りの下になる。 */
 export const SHARD_OUTLINE_WIDTH = 1;
 
@@ -25,10 +13,8 @@ export interface ShardTint {
 /**
  * 破片をcanvas 2Dへ描く。座標はCSS画素単位で、`ratio` はcanvasの画素数とCSS画素の比。
  * 破片は明るさに応じた灰色で描き、`tint` を渡すとその色へ寄せる（`shardColor`）。`opacity` は全体の不透明度。
- * `detail` が真なら、アウトラインと光の筋も描く。輪郭には塗りの色を白へ寄せた細いアウトラインを塗りと同じ
- * 不透明度で描き（`shardOutlineColor`）、その上に塗りを重ねて線の内側の半分を塗りの下にする。塗りの上には、
- * 光源を映した細い光の筋（`ShardPose.streak`）を、中央が最も明るい白の線形グラデーションで重ねる。筋の中心線の
- * 不透明度は、筋の明るさに破片ごとの不透明度と `opacity` を掛けたもの。
+ * `detail` が真なら、アウトラインも描く。輪郭には塗りの色を白へ寄せた細いアウトラインを塗りと同じ
+ * 不透明度で描き（`shardOutlineColor`）、その上に塗りを重ねて線の内側の半分を塗りの下にする。
  */
 export function drawShards(
 	context: CanvasRenderingContext2D,
@@ -48,7 +34,6 @@ export function drawShards(
 	context.lineJoin = "round";
 	const rgba = ([r, g, b]: readonly number[], alpha: string) =>
 		`rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
-	const white = (alpha: number) => rgba([255, 255, 255], alpha.toFixed(3));
 	poses.forEach((item, index) => {
 		if (item.alpha <= 0) return;
 		const fill = shardColor(item.shade, index, tint);
@@ -65,14 +50,6 @@ export function drawShards(
 		}
 		context.fillStyle = rgba(fill, alpha);
 		context.fill();
-		if (detail && item.streak) {
-			const { from, to, strength } = item.streak;
-			const peak = strength * item.alpha * opacity;
-			const gradient = context.createLinearGradient(from[0], from[1], to[0], to[1]);
-			for (const [offset, share] of SHARD_STREAK_PROFILE) gradient.addColorStop(offset, white(peak * share));
-			context.fillStyle = gradient;
-			context.fill();
-		}
 	});
 	context.restore();
 }
@@ -124,7 +101,7 @@ export function drawShardBloom(
 	}
 	const draft = scratch.getContext("2d");
 	if (!draft) return;
-	// アウトラインと光の筋はこの解像度では1画素に満たず、ぼかすと見えないので描かない。
+	// アウトラインはこの解像度では1画素に満たず、ぼかすと見えないので描かない。
 	drawShards(draft, poses, ratio, opacity, tint, false);
 	context.globalCompositeOperation = "lighter";
 	for (const { spread, weight } of SHARD_BLOOM_PASSES) {

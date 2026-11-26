@@ -1,6 +1,7 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
 import { SETTLE_MARGIN_MS } from "./machine.ts";
 import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
+import { RIPPLE_MS } from "./ripple.ts";
 import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
 
 // ---- 時間（docs/visual-language.md 3章） ----
@@ -18,6 +19,17 @@ export const SHARD_SCALE_MS = 3_000;
 export const SHARD_OPENING_SPREAD = 1;
 /** `intro` の破片の大きさ（質問中の破片に対する倍率）。 */
 export const SHARD_OPENING_SIZE = 2;
+/** 質問の回答を受け付けた瞬間に、輪の半径を縮める割合（縮み切ったときの輪の半径は `1 - この値` 倍）。 */
+export const ANSWER_PULSE_DEPTH = 0.1;
+/** 輪が縮み切るまでの時間。動き出しと縮み切りは `easeInOutSine` でなめらかにする。 */
+export const ANSWER_PULSE_IN_MS = 450;
+/** 縮んだ輪が元の大きさへ戻る時間。縮む時間と合わせて2.2秒になる。 */
+export const ANSWER_PULSE_OUT_MS = 1_750;
+/**
+ * 戻る動きの前寄りの度合い。大きいほど、戻り始めの勢いが強く、早めに最高速に達して、長く減速しながら元の大きさへ着く。
+ * 1なら前寄りにならない。
+ */
+export const ANSWER_PULSE_RELEASE_BIAS = 2.5;
 /** `intro` で歓迎の文字がゆっくり現れる時間。 */
 export const WELCOME_FADE_MS = 3_000;
 /** `intro` を終えて歓迎の文字が消える時間。歓迎の文字から説明の文へ入れ替えるときに歓迎の文字が消える時間にも使う。 */
@@ -151,10 +163,18 @@ export interface ShardLayer {
 	spread: number;
 }
 
+/** 質問の回答のあと、輪が戻り始める瞬間から広がる波紋（`rippleRings` に渡す経過時間）。 */
+export interface RippleLayer {
+	/** 輪が戻り始めた時刻からの経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
+	elapsed: number;
+}
+
 export interface Scene {
 	primitives: Primitive[];
 	/** WebGLの描画の上に重ねる破片。展示ディスプレイは写真を置かず、どの状態でも破片を描く。 */
 	shards: ShardLayer;
+	/** 回答の直後に中心から広がる波紋。広がっていなければ `null`。 */
+	ripple: RippleLayer | null;
 	/** 結果の色名の層の不透明度。 */
 	resultLayer: number;
 	/** 前の結果色を1秒で消すための覆い。 */
@@ -207,6 +227,32 @@ function resultShardColors(input: SceneInput): readonly [string, string] | null 
 	return first && second ? [baseColor(first), baseColor(second)] : null;
 }
 
+/**
+ * 質問の回答を受け付けた瞬間の、輪の半径の倍率。`answeredAt` から一瞬（`ANSWER_PULSE_IN_MS`、`easeInOutSine`）で縮み、
+ * 押された勢いで戻り、早めに最高速に達して、減速しながら元の大きさへ着く（`ANSWER_PULSE_OUT_MS`）。縮み切った点は速度0で途切れずにつなぐ。弾性はなく、元の大きさを超えない。`question` と、最終問の回答で入った `judging` だけで、reduced-motionでは縮めない。
+ * 回答の時刻はサーバーが決めた `answeredAt` なので、全画面が同じ倍率にする。
+ */
+export function answerPulseScale(
+	state: Pick<DisplayState, "phase" | "answeredAt">,
+	now: number,
+	reducedMotion: boolean,
+): number {
+	if (reducedMotion || state.answeredAt == null) return 1;
+	if (state.phase !== "question" && state.phase !== "judging") return 1;
+	const elapsed = now - state.answeredAt;
+	if (elapsed <= 0 || elapsed >= ANSWER_PULSE_IN_MS + ANSWER_PULSE_OUT_MS) return 1;
+	if (elapsed < ANSWER_PULSE_IN_MS) {
+		return 1 - ANSWER_PULSE_DEPTH * easeInOutSine(elapsed / ANSWER_PULSE_IN_MS);
+	}
+	// 縮み切った点は速度0で、縮む動きから途切れずにつなぐ。戻る動きは速度0から勢いよく立ち上がり、早めに最高速に達して
+	// （時間を前へ寄せる）、減速しながら元の大きさへ着く。元の大きさを超えない。
+	const returned = easeInOutSine(
+		1 - (1 - clamp01((elapsed - ANSWER_PULSE_IN_MS) / ANSWER_PULSE_OUT_MS)) ** ANSWER_PULSE_RELEASE_BIAS,
+	);
+	const pulse = 1 - returned;
+	return 1 - ANSWER_PULSE_DEPTH * pulse;
+}
+
 /** 破片の層。reduced-motionでは時刻を進めず、初期配置のまま止める。 */
 function shardLayer(
 	input: SceneInput,
@@ -226,7 +272,7 @@ function shardLayer(
 		colors,
 		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
-		scale: options.scale ?? 1,
+		scale: (options.scale ?? 1) * answerPulseScale(input.state, input.now, input.reducedMotion),
 		density: options.density ?? 1,
 		size: options.size ?? 1,
 		spread: options.spread ?? 0,
@@ -330,7 +376,7 @@ export function resultFormPrimitives(
 	}
 }
 
-function resultScene(input: SceneInput): Scene {
+function resultScene(input: SceneInput): BaseScene {
 	const { state, now, colors, reducedMotion, width, height, displayOrder } = input;
 	const colorId = screenColorId(state.result, displayOrder);
 	const color = paletteColor(colors, colorId);
@@ -345,7 +391,7 @@ function resultScene(input: SceneInput): Scene {
 	}
 	// 結果が出た後も破片は残り、結果の二色で動き続ける。
 	const shards = shardLayer(input, 1, { colors: resultShardColors(input) });
-	const complete: Scene = {
+	const complete: BaseScene = {
 		primitives: [{ type: "fill", color: backgroundColor(color) }],
 		shards,
 		resultLayer: 1,
@@ -511,8 +557,31 @@ function questionShards(input: SceneInput): ShardLayer {
 	});
 }
 
+/** 波紋以外の描画内容。 */
+type BaseScene = Omit<Scene, "ripple">;
+
+/**
+ * 質問の回答の波紋。輪が縮み切って戻り始める瞬間（回答を受け付けた時刻 `answeredAt` から `ANSWER_PULSE_IN_MS` 後）に
+ * 中心から広がり始める。`question` と `judging`（最終問の回答）だけで広がり、reduced-motionでは広げない。
+ * 時刻はサーバーが決めた `answeredAt` から求めるので、全画面が同じ経過時間で描く。
+ */
+function rippleLayer(input: SceneInput): RippleLayer | null {
+	const { state, now, reducedMotion } = input;
+	if (reducedMotion || state.answeredAt == null) return null;
+	if (state.phase !== "question" && state.phase !== "judging") return null;
+	const elapsed = now - (state.answeredAt + ANSWER_PULSE_IN_MS);
+	// 輪が戻り始めるまでは出さない。
+	return elapsed >= 0 && elapsed < RIPPLE_MS ? { elapsed } : null;
+}
+
 /** 一フレームの描画内容を求める。同じ入力には同じ結果を返す。 */
 export function computeScene(input: SceneInput): Scene {
+	const ripple = rippleLayer(input);
+	const scene = computeBaseScene(input);
+	return { ...scene, ripple, animating: scene.animating || ripple !== null };
+}
+
+function computeBaseScene(input: SceneInput): BaseScene {
 	const { state, now, reducedMotion, colors } = input;
 
 	// `sequence` の演出はシーケンスのコンポーネントが上に重ねて描く。下には待機写真の巡回を続ける。

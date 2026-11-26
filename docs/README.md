@@ -238,17 +238,18 @@ judgeFailed: boolean
 previewColorId: PaletteId | null
 phaseStartedAt: number
 phaseEndsAt: number | null
+answeredAt: number | null  // 直前に質問の回答を受け付けた時刻。展示ディスプレイの波紋の起点
 revision: number
 accepting: boolean
 ```
 
-時刻はサーバー時刻のUnix time milliseconds、`questionIndex`は0始まりとする。`nickname`は`intro`で入力したニックネームで、`idle`へ戻るまで保持する。`revision`は状態が変わるたびに1増える番号である。展示ディスプレイは回答に反応せず、この番号を描画に使わない。`result`は6.3節の選定の結果で、`id`は結果ページのID。`judgeFailed`は直前の選定に失敗して最終問へ戻ったことを表す。
+時刻はサーバー時刻のUnix time milliseconds、`questionIndex`は0始まりとする。`nickname`は`intro`で入力したニックネームで、`idle`へ戻るまで保持する。`revision`は状態が変わるたびに1増える番号である。`answeredAt`は、質問への回答（最終問を含む）を受け付けた時刻で、「戻る」では変わらず、`idle`へ戻ると`null`になる。展示ディスプレイは回答の内容に反応せず、`revision`を描画に使わない。`answeredAt`だけを使い、その時刻から輪を縮め、縮み切って戻り始める瞬間（0.45秒後）に画面の中心へ波紋を広げる（`docs/visual-language.md`の3.2節）。`result`は6.3節の選定の結果で、`id`は結果ページのID。`judgeFailed`は直前の選定に失敗して最終問へ戻ったことを表す。
 
 以前の版（8色の配点判定）で保存した状態（`judgeFailed`がない）を読んだときは、セッションを捨てて`idle`から始める。`accepting`は引き継ぐ。
 
 ### 8.1 初期値
 
-保存した展示状態がないとき（会場サーバーの初回起動時）は、`phase`を`idle`、`accepting`を`true`、`revision`を0、`phaseStartedAt`を作成時刻とし、それ以外を空（`null`または`{}`）にする。
+保存した展示状態がないとき（会場サーバーの初回起動時）は、`phase`を`idle`、`accepting`を`true`、`revision`を0、`answeredAt`を`null`、`phaseStartedAt`を作成時刻とし、それ以外を空（`null`または`{}`）にする。
 
 `idle`から開始するときに`crypto.randomUUID()`で新しい`sessionId`を発行し、`idle`へ戻るときに`null`へ戻す。
 

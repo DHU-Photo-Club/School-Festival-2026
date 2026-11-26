@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ShardPose } from "../../src/shared/shards.ts";
 import {
 	BREATH_CYCLE,
 	BREATH_DEPTH,
 	ringBreath,
 	SHARD_RING_RADIUS,
-	SHARD_STREAK_HALF_WIDTH,
 	shardColor,
 	shardOutlineColor,
 	shardPoses,
@@ -29,15 +27,20 @@ describe("破片の配置", () => {
 		for (const [index, value] of size(0.3).entries()) expect(value).toBeCloseTo(fullSizes[index], 5);
 	});
 
-	it("密度は先頭から数えた枚数だけ見せ、並び順は変えない", () => {
+	it("密度は先頭から数えた順に、段階的に不透明度を上げて見せ、並び順は変えない", () => {
 		const full = shardPoses(1920, 1080, 5_000);
 		const sparse = shardPoses(1920, 1080, 5_000, { density: 0.3 });
 		expect(sparse).toHaveLength(full.length);
 		const shown = sparse.filter((pose) => pose.alpha > 0);
-		expect(shown).toHaveLength(Math.ceil(full.length * 0.3));
-		// 先頭の破片は全枚数のときと同じ位置と不透明度で、境の一枚だけ不透明度が下がる。
+		expect(shown.length).toBeGreaterThan(0);
+		expect(shown.length).toBeLessThan(full.length);
+		// 先頭の破片は全枚数のときと同じ位置と不透明度で、後ろへ向かって不透明度が下がり、一枚ずつ急に現れない。
 		expect(sparse[0]).toEqual(full[0]);
-		for (const pose of sparse.slice(shown.length)) expect(pose).toMatchObject({ alpha: 0, streak: null });
+		const alphas = sparse.map((pose, index) => pose.alpha / full[index].alpha);
+		for (let index = 1; index < alphas.length; index++)
+			expect(alphas[index]).toBeLessThanOrEqual(alphas[index - 1] + 1e-9);
+		expect(alphas.filter((ratio) => ratio > 0 && ratio < 1).length).toBeGreaterThan(10);
+		for (const pose of sparse.slice(shown.length)) expect(pose).toMatchObject({ alpha: 0 });
 	});
 
 	it("散らばりは輪の内側の縁を残したまま、破片を外側へ画面いっぱいに広げる", () => {
@@ -109,7 +112,7 @@ describe("輪の破片", () => {
 		const all = shardPoses(800, 600, 12_345);
 		expect(rounded(all[0])).toMatchInlineSnapshot(`
 			{
-			  "alpha": 0.667,
+			  "alpha": 0.8854,
 			  "shade": 0.992,
 			  "vertices": [
 			    [
@@ -131,7 +134,7 @@ describe("輪の破片", () => {
 		`);
 		expect(rounded(all[129])).toMatchInlineSnapshot(`
 			{
-			  "alpha": 0.4711,
+			  "alpha": 0.7331,
 			  "shade": 0.8255,
 			  "vertices": [
 			    [
@@ -289,136 +292,5 @@ describe("破片のアウトライン", () => {
 		expect(g).toBeCloseTo(40 + 215 * 0.12);
 		expect(b).toBeCloseTo(200 + 55 * 0.12);
 		expect(b > g && g > r).toBe(true);
-	});
-});
-
-describe("破片の光の筋", () => {
-	type Streak = NonNullable<ShardPose["streak"]>;
-	const middle = (streak: Streak) => [(streak.from[0] + streak.to[0]) / 2, (streak.from[1] + streak.to[1]) / 2];
-	const lit = (time: number) => shardPoses(1920, 1080, time).filter((pose) => pose.streak);
-
-	it("筋の明るさは0〜1で、グラデーションの幅は一定", () => {
-		for (const time of [0, 40_000, 90_000]) {
-			for (const { streak } of lit(time)) {
-				if (!streak) continue;
-				expect(streak.strength).toBeGreaterThan(0);
-				expect(streak.strength).toBeLessThanOrEqual(1);
-				const length = Math.hypot(streak.to[0] - streak.from[0], streak.to[1] - streak.from[1]);
-				expect(length).toBeCloseTo(SHARD_STREAK_HALF_WIDTH * 2);
-			}
-		}
-	});
-
-	it("筋は破片の長い向きに沿い、破片の幅と重なる位置を通る", () => {
-		for (const pose of lit(40_000)) {
-			if (!pose.streak) continue;
-			const [dx, dy] = [pose.streak.to[0] - pose.streak.from[0], pose.streak.to[1] - pose.streak.from[1]];
-			const across = Math.hypot(dx, dy);
-			const [wx, wy] = [dx / across, dy / across];
-			const spans = pose.vertices.map(([x, y]) => (x - pose.x) * wx + (y - pose.y) * wy);
-			const [cx, cy] = middle(pose.streak);
-			const offset = (cx - pose.x) * wx + (cy - pose.y) * wy;
-			expect(offset).toBeGreaterThanOrEqual(Math.min(...spans) - SHARD_STREAK_HALF_WIDTH - 1e-9);
-			expect(offset).toBeLessThanOrEqual(Math.max(...spans) + SHARD_STREAK_HALF_WIDTH + 1e-9);
-			// 中心線の中点は重心を通る幅の向きの直線上にあり、中心線自体は長い向きに走る（重心からの長い向きの成分は0）。
-			expect((cx - pose.x) * -wy + (cy - pose.y) * wx).toBeCloseTo(0);
-		}
-	});
-
-	it("筋の値と、筋のある破片の数が変わらない", () => {
-		const round = (streak: Streak | null) =>
-			streak && {
-				center: middle(streak).map((value) => Number(value.toFixed(2))),
-				strength: Number(streak.strength.toFixed(4)),
-			};
-		const all = shardPoses(1920, 1080, 40_000);
-		const first = all.flatMap((pose, index) => (pose.streak ? [{ index, ...round(pose.streak) }] : [])).slice(0, 3);
-		expect(first).toMatchInlineSnapshot(`
-			[
-			  {
-			    "center": [
-			      676.99,
-			      798.55,
-			    ],
-			    "index": 20,
-			    "strength": 0.6799,
-			  },
-			  {
-			    "center": [
-			      881,
-			      199.19,
-			    ],
-			    "index": 22,
-			    "strength": 0.7263,
-			  },
-			  {
-			    "center": [
-			      819.69,
-			      173.27,
-			    ],
-			    "index": 27,
-			    "strength": 0.6315,
-			  },
-			]
-		`);
-		expect(all.filter((pose) => pose.streak).length).toMatchInlineSnapshot(`32`);
-	});
-
-	it("一部の破片だけに筋があり、筋のある破片は入れ替わる", () => {
-		const indices = (time: number) =>
-			shardPoses(1920, 1080, time).flatMap((pose, index) => (pose.streak ? [index] : []));
-		const now = indices(40_000);
-		expect(now.length).toBeGreaterThan(0);
-		expect(now.length).toBeLessThan(130 / 2);
-		expect(indices(70_000)).not.toEqual(now);
-	});
-
-	it("筋はゆっくり面の上を走り、明るさは急変しない", () => {
-		let previous = shardPoses(1920, 1080, 0);
-		let [brightness, step] = [0, 0];
-		for (let time = 100; time <= 300_000; time += 100) {
-			const current = shardPoses(1920, 1080, time);
-			current.forEach((pose, index) => {
-				const [before, after] = [previous[index].streak, pose.streak];
-				if (!before || !after) return;
-				brightness = Math.max(brightness, Math.abs(after.strength - before.strength));
-				const [[ax, ay], [bx, by]] = [middle(before), middle(after)];
-				step = Math.max(step, Math.hypot(bx - ax, by - ay));
-			});
-			previous = current;
-		}
-		// 100ミリ秒あたりの明るさの変化の上限。1.4秒かけても明るさが最大まで上がらない程度に抑える。
-		expect(brightness).toBeLessThan(0.035);
-		// 筋は動くが、100ミリ秒で5 CSS画素以上は飛ばない（docs/visual-language.md 4.4節）。
-		expect(step).toBeGreaterThan(1);
-		expect(step).toBeLessThan(5);
-	});
-
-	it("筋は、明るさが下限の近くにあるときか、破片の幅の端でだけ現れたり消えたりする", () => {
-		/** 筋の中心線の、破片の幅の両端からの距離（CSS画素）。幅の外なら負。 */
-		const inset = (pose: ShardPose, streak: Streak) => {
-			const [dx, dy] = [streak.to[0] - streak.from[0], streak.to[1] - streak.from[1]];
-			const length = Math.hypot(dx, dy);
-			const [wx, wy] = [dx / length, dy / length];
-			const spans = pose.vertices.map(([x, y]) => (x - pose.x) * wx + (y - pose.y) * wy);
-			const [cx, cy] = middle(streak);
-			const offset = (cx - pose.x) * wx + (cy - pose.y) * wy;
-			return Math.min(offset - Math.min(...spans), Math.max(...spans) - offset);
-		};
-		let previous = shardPoses(1920, 1080, 0);
-		let changes = 0;
-		for (let time = 100; time <= 300_000; time += 100) {
-			const current = shardPoses(1920, 1080, time);
-			current.forEach((pose, index) => {
-				const [before, after] = [previous[index], pose];
-				if (Boolean(before.streak) === Boolean(after.streak)) return;
-				changes += 1;
-				const [shown, streak] = before.streak ? [before, before.streak] : [after, after.streak as Streak];
-				// 明るさが下限（0.05）の近くにあるか、中心線が幅の端から4 CSS画素以内にある。
-				expect(streak.strength < 0.08 || inset(shown, streak) < 4).toBe(true);
-			});
-			previous = current;
-		}
-		expect(changes).toBeGreaterThan(0);
 	});
 });
