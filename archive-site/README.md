@@ -21,3 +21,14 @@
 - ルートディレクトリ: リポジトリ直下
 
 CloudflareのGit連携はダッシュボードで別途接続します。このファイルだけでは自動デプロイは有効になりません。
+
+### Cloudflareの接続済み設定
+
+- アカウント: `syashinbu.at.dhu@gmail.com`
+- 公開URL: https://anatairo-archive-2026.syashinbu-at-dhu.workers.dev/
+- GitHub: `DHU-Photo-Club/School-Festival-2026`
+- 本番ブランチ: `production`（自動ビルド有効）
+- 本番以外の自動プレビュービルド: 無効。作業中はローカルプレビューで確認します。
+- ビルド環境: `NODE_VERSION=26.13.0`、`PNPM_VERSION=12.18.0`
+
+作業ブランチで確認後、`production`へのPRを作成し、マージすると本番が更新されます。
