@@ -74,6 +74,11 @@ export const SOUND_MIX = {
 	narrationFadeOutMs: 400,
 	/** `result` へ入ってから12.wavを読み始めるまで（仮）。完了SEは `result` へ入ると同時に鳴らす。 */
 	resultNarrationDelayMs: 1_500,
+	/**
+	 * 質問から次の質問へ移ってから、ナレーションを読み始めるまで。iPadが次の質問を降ろし始める時刻
+	 * （`QUESTION_ENTER_DELAY_MS`）に合わせる。値が一致することは tests/unit/sound.test.ts が確かめる。
+	 */
+	questionSwitchNarrationDelayMs: 1_660,
 } as const;
 
 /** ガラス音の常時ランダム再生（確定。引き継ぎ資料5節）。 */

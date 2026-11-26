@@ -14,6 +14,15 @@ const GLASS_TICK_MS = 1_000;
 /** 音量の変更にかける時間。急な変化で音が途切れないようにする。 */
 const VOLUME_RAMP_S = 0.05;
 
+/** 場面に入ってから、ナレーションを読み始めるまでの時間（ms）。画面の動きが出そろう時刻に合わせる。場面を足すと、ここも書かないと型エラーになる。 */
+const NARRATION_DELAY_MS: Record<Extract<SoundCue, { kind: "narration" }>["scene"], number> = {
+	welcome: 0,
+	question: 0,
+	questionSwitch: SOUND_MIX.questionSwitchNarrationDelayMs,
+	judging: 0,
+	result: SOUND_MIX.resultNarrationDelayMs,
+};
+
 interface ScheduledNarration {
 	sources: AudioBufferSourceNode[];
 	gain: GainNode;
@@ -195,7 +204,7 @@ export class SoundEngine {
 				return;
 			case "narration": {
 				const fading = this.stopNarration();
-				const delay = cue.scene === "result" ? SOUND_MIX.resultNarrationDelayMs / 1000 : 0;
+				const delay = NARRATION_DELAY_MS[cue.scene] / 1000;
 				this.playNarration(cue.numbers, this.context.currentTime + Math.max(fading, delay));
 				return;
 			}

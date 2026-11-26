@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { QUESTION_ENTER_DELAY_MS } from "../../src/client/controller/question-transition.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
-import { SOUND_CUES, SOUND_FILES } from "../../src/data/sound.ts";
+import { SOUND_CUES, SOUND_FILES, SOUND_MIX } from "../../src/data/sound.ts";
 import { parseRange } from "../../src/server/http.ts";
 import { JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
 import { parseClientMessage, type ServerMessage } from "../../src/shared/protocol.ts";
@@ -46,6 +47,12 @@ describe("サウンドの対応表", () => {
 	});
 });
 
+describe("質問のナレーションを読み始める時刻", () => {
+	it("質問から質問へ移るときの待ちは、iPadが次の質問を降ろし始める時刻と同じ", () => {
+		expect(SOUND_MIX.questionSwitchNarrationDelayMs).toBe(QUESTION_ENTER_DELAY_MS);
+	});
+});
+
 describe("soundCues", () => {
 	it("一回の体験で、ナレーション、回答SE、完了SEを場面の順に一度ずつ鳴らす", async () => {
 		const harness = new Harness({ sequences: SEQUENCES });
@@ -66,13 +73,13 @@ describe("soundCues", () => {
 			{ kind: "answer", number: 1 },
 			{ kind: "narration", numbers: [5], scene: "question" },
 			{ kind: "answer", number: 2 },
-			{ kind: "narration", numbers: [6], scene: "question" },
+			{ kind: "narration", numbers: [6], scene: "questionSwitch" },
 			{ kind: "answer", number: 3 },
-			{ kind: "narration", numbers: [7, 8], scene: "question" },
+			{ kind: "narration", numbers: [7, 8], scene: "questionSwitch" },
 			{ kind: "answer", number: 4 },
-			{ kind: "narration", numbers: [9], scene: "question" },
+			{ kind: "narration", numbers: [9], scene: "questionSwitch" },
 			{ kind: "answer", number: 5 },
-			{ kind: "narration", numbers: [10], scene: "question" },
+			{ kind: "narration", numbers: [10], scene: "questionSwitch" },
 			{ kind: "answer", number: 6 },
 			{ kind: "narration", numbers: [11], scene: "judging" },
 			{ kind: "complete" },
@@ -89,7 +96,7 @@ describe("soundCues", () => {
 		answerAt(harness, ipad, 0);
 		const sound = harness.connect("sound");
 		harness.command(ipad, { name: "back" });
-		expect(cuesOf(sound)).toEqual([{ kind: "narration", numbers: [5], scene: "question" }]);
+		expect(cuesOf(sound)).toEqual([{ kind: "narration", numbers: [5], scene: "questionSwitch" }]);
 	});
 
 	it("AIの選定に失敗して最終問へ戻ったら、色の探索のナレーションを止め、質問を読み直さない", async () => {

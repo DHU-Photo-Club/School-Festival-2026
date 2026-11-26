@@ -12,7 +12,15 @@ export interface SoundCueMap {
 /** 状態の変化から決まる、サウンド用の画面が鳴らす音。 */
 export type SoundCue =
 	/** 読んでいるナレーションを止め、`numbers` を順に読む。 */
-	| { kind: "narration"; numbers: readonly number[]; scene: "welcome" | "question" | "judging" | "result" }
+	| {
+			kind: "narration";
+			numbers: readonly number[];
+			/**
+			 * `question` は質問へ入った直後（iPadがすぐに質問を出す）、`questionSwitch` は質問から別の質問へ移ったとき
+			 * （iPadは前の質問を落としてから次の質問を降ろす）。
+			 */
+			scene: "welcome" | "question" | "questionSwitch" | "judging" | "result";
+	  }
 	/** 読んでいるナレーションを止める。 */
 	| { kind: "stopNarration" }
 	/** 回答SE（引き継ぎ資料の `Q{number}.caf`）。 */
@@ -27,6 +35,8 @@ export type SoundCue =
  *   サーバーが期限をまとめて進めた）ときと、ページを開いた直後（`prev` が `null`）は、過ぎた出来事を
  *   後から鳴らさない。ただし体験が終わっていればナレーションは止める。
  * - 回答SEは回答を受け付けた時点で鳴らす（iPadの送信からの遅れは会場のネットワークの往復だけ）。
+ * - 質問のナレーションは、質問が画面に出る時に鳴らす。質問から質問へ移るときは、iPadが前の質問を落としてから
+ *   次の質問を降ろすため、`questionSwitch` として、その遅れの分を再生側で待つ。
  * - AIの選定に失敗して最終問へ戻ったときは、質問のナレーションを読み直さず、色の探索のナレーションを止める。
  */
 export function soundCues(
@@ -62,9 +72,8 @@ export function soundCues(
 		} else if (prev.phase !== "question" || prev.questionIndex !== next.questionIndex) {
 			const id = questionIds[next.questionIndex];
 			const cue = id === undefined ? undefined : cues.questions[id];
-			out.push(
-				cue ? { kind: "narration", numbers: cue.narration, scene: "question" } : { kind: "stopNarration" },
-			);
+			const scene = prev.phase === "question" ? "questionSwitch" : "question";
+			out.push(cue ? { kind: "narration", numbers: cue.narration, scene } : { kind: "stopNarration" });
 		}
 	}
 	if (next.phase === "judging" && prev.phase !== "judging") {
