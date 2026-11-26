@@ -13,13 +13,14 @@ import type {
 	SessionResult,
 } from "./types.ts";
 
-/** `judging` の最短の長さ（仕様書8.2節）。AIの選定が早く終わっても、暗転をこの時間は見せる。 */
-export const JUDGING_MS = 2_000;
+/** `judging` の最短の長さ（仕様書8.2節）。AIの選定が早く終わっても、色を選んでいる演出としてこの時間（10秒）は待たせる。 */
+export const JUDGING_MS = 10_000;
 /** `judging` の最長の長さの既定値。AIの選定に使う時間の上限（`src/data/ai.ts` の `judgingMaxMs`）を渡す。 */
 export const DEFAULT_JUDGING_MAX_MS = 30_000;
 /**
  * `judging` を早めに終えるとき、終了時刻を少なくともこの時間だけ先にする。全画面へ新しい
- * `phaseEndsAt` が届いてから同時に結果へ切り替えるため。
+ * `phaseEndsAt` が届いてから同時に結果へ切り替えるため。展示ディスプレイの破片が二色へ色づく時間
+ * （`src/shared/motion.ts` の `SHARD_TINT_MS`）もこの値に合わせる。
  */
 export const SETTLE_MARGIN_MS = 800;
 /** `result` の長さ（仕様書5章）。 */
@@ -46,6 +47,7 @@ export const ROLE_COMMANDS: Readonly<Record<Role, readonly CommandName[]>> = {
 	admin: ["setAccepting", "forceReset", "previewColor", "clearPreview"],
 	display: [],
 	photo: [],
+	light: [],
 };
 
 export interface MachineContext {
@@ -68,7 +70,7 @@ export type CommandOutcome =
 	  }
 	| { ok: false; code: RejectCode };
 
-/** Durable Objectを初めて作成したときの状態（仕様書8.1節）。 */
+/** 保存した状態がないときの初期状態（仕様書8.1節）。 */
 export function initialState(now: number): ExhibitState {
 	return {
 		sessionId: null,
@@ -82,6 +84,7 @@ export function initialState(now: number): ExhibitState {
 		previewColorId: null,
 		phaseStartedAt: now,
 		phaseEndsAt: null,
+		answeredAt: null,
 		revision: 0,
 		accepting: true,
 	};
@@ -123,6 +126,7 @@ function toIdle(state: ExhibitState, at: number): ExhibitState {
 		previewColorId: null,
 		phaseStartedAt: at,
 		phaseEndsAt: null,
+		answeredAt: null,
 		revision: state.revision + 1,
 	};
 }
@@ -204,6 +208,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			if (state.questionIndex < context.questions.length - 1) {
 				return accept({
 					answers,
+					answeredAt: now,
 					judgeFailed: false,
 					questionIndex: state.questionIndex + 1,
 					phaseEndsAt: now + INACTIVITY_MS,
@@ -216,6 +221,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			if (missing !== -1) {
 				return accept({
 					answers,
+					answeredAt: now,
 					judgeFailed: false,
 					questionIndex: missing,
 					phaseEndsAt: now + INACTIVITY_MS,
@@ -225,6 +231,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			const judging = accept({
 				phase: "judging",
 				answers,
+				answeredAt: now,
 				result: null,
 				judgeFailed: false,
 				phaseStartedAt: now,

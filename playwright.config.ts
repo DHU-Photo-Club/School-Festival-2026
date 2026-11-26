@@ -6,7 +6,7 @@ const port = Number(process.env.E2E_PORT || 4180);
 
 export default defineConfig({
 	testDir: "tests/e2e",
-	// 展示状態は一つのDurable Objectで共有するため、テストは順に実行する。
+	// 展示状態は開発サーバーの一つの展示状態で共有するため、テストは順に実行する。
 	workers: 1,
 	fullyParallel: false,
 	timeout: 120_000,

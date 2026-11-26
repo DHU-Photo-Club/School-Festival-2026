@@ -6,9 +6,10 @@ const groups = [
 	{ role: "controller", label: "診断用iPad" },
 	{ role: "display", label: "展示ディスプレイ" },
 	{ role: "photo", label: "写真用" },
+	{ role: "light", label: "電球の中継" },
 ] as const;
 
-/** 画面を開かずに、WebSocketだけで展示ディスプレイと写真用を12台ずつ接続する。 */
+/** 画面を開かずに、WebSocketだけで展示ディスプレイと写真用を12台ずつと、電球の中継を1台接続する。 */
 async function connectScreens(page: Page, count: number): Promise<void> {
 	await page.goto("/result/red");
 	await page.evaluate((total) => {
@@ -17,6 +18,7 @@ async function connectScreens(page: Page, count: number): Promise<void> {
 				new WebSocket(`ws://${location.host}/api/realtime?role=${role}&screen=${screen}`);
 			}
 		}
+		new WebSocket(`ws://${location.host}/api/realtime?role=light`);
 	}, count);
 }
 
@@ -30,7 +32,7 @@ async function groupBoxes(page: Page) {
 	});
 }
 
-test("端末一覧は種別ごとの3列で表示し、列ごとにスクロールし、狭い画面では縦に並べる", async ({ browser }) => {
+test("端末一覧は種別ごとの4列で表示し、列ごとにスクロールし、狭い画面では縦に並べる", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const { page } = harness.admin;
 	const sockets = await browser.newContext();
@@ -52,6 +54,8 @@ test("端末一覧は種別ごとの3列で表示し、列ごとにスクロー�
 		await expect(displays.getByTestId("device-display-1")).toContainText("展示ディスプレイ 1");
 		await expect(displays.getByTestId("device-display-1")).toContainText("接続中");
 		await expect(displays).toContainText("12台接続");
+		const lights = page.getByRole("group", { name: "電球の中継", exact: true });
+		await expect(lights.getByTestId("device-light")).toContainText("接続中");
 
 		for (const width of [1920, 1280]) {
 			await page.setViewportSize({ width, height: 1080 });
@@ -60,6 +64,8 @@ test("端末一覧は種別ごとの3列で表示し、列ごとにスクロー�
 			expect(Math.abs(boxes[1].y - boxes[2].y)).toBeLessThan(1);
 			expect(boxes[0].x + boxes[0].width).toBeLessThan(boxes[1].x);
 			expect(boxes[1].x + boxes[1].width).toBeLessThan(boxes[2].x);
+			expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(1);
+			expect(boxes[2].x + boxes[2].width).toBeLessThan(boxes[3].x);
 			for (const group of [displays, photos]) {
 				expect(
 					await group.locator(".device-list").evaluate((list) => list.scrollHeight > list.clientHeight),
@@ -81,6 +87,7 @@ test("端末一覧は種別ごとの3列で表示し、列ごとにスクロー�
 		const mobile = await groupBoxes(page);
 		expect(mobile[0].y + mobile[0].height).toBeLessThan(mobile[1].y);
 		expect(mobile[1].y + mobile[1].height).toBeLessThan(mobile[2].y);
+		expect(mobile[2].y + mobile[2].height).toBeLessThan(mobile[3].y);
 		expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 		await photos.getByTestId("device-photo-12").scrollIntoViewIfNeeded();
 		await expect(photos.getByTestId("device-photo-12")).toBeInViewport({ ratio: 0.99 });

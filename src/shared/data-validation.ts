@@ -149,7 +149,7 @@ export function validateExhibitData(input: {
 
 /**
  * `PUBLIC_ORIGIN` の確認（仕様書10.1節）。HTTPSで、末尾スラッシュがなく、
- * Worker名から決まる `https://{workerName}.{subdomain}.workers.dev` と一致する必要がある。
+ * 結果ページのWorker名から決まる `https://{workerName}.{subdomain}.workers.dev` と一致する必要がある。
  */
 export function validatePublicOrigin(origin: string, workerName: string): string[] {
 	const errors: string[] = [];

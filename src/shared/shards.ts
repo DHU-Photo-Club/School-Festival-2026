@@ -1,20 +1,21 @@
-// 三角形の破片の輪と床の配置と動き（docs/visual-language.md 3.2節、4.4節）。
-// 展示ディスプレイの質問中は輪と床を、iPadの待機画面は床だけを描く。配置は固定の種から作り、位置は経過時間だけから決まる。
+// 三角形の破片の輪の配置と動き（docs/visual-language.md 3.2〜3.4節、4.4節）。
+// 展示ディスプレイで、質問中から結果色が広がり始めるまで描く。配置は固定の種から作り、位置は経過時間だけから決まる。
 
 /** 輪の半径（画面短辺に対する比）。 */
 export const SHARD_RING_RADIUS = 0.38;
 /** 輪の半径方向の散らばり（輪の半径に対する比、片側）。 */
 const RING_SPREAD = 0.2;
+/**
+ * 散らばりを最大にしたとき、輪の外側へ広げる距離（輪の半径に対する比）。輪の内側の縁（`SHARD_RING_RADIUS`）は
+ * 動かさず、各破片をその散らばりの順位に応じて外側へ押し出す。輪の半径の2.6倍は、16:9の画面の隅までの距離に近い。
+ */
+export const SHARD_SCATTER_DEPTH = 1.6;
 const RING_COUNT = 130;
-const FLOOR_COUNT = 110;
+/** 破片が現れる／消えるときに、同時に不透明度が変わっていく枚数。小さいと一枚ずつ急に現れる。 */
+const DENSITY_FADE_COUNT = 50;
 /** 輪の一周の周期（ミリ秒）。 */
 const ORBIT_MS = 150_000;
-/** 床の破片が画面幅を一度流れる周期（ミリ秒）。 */
-const FLOOR_DRIFT_MS = 210_000;
-/** 床の上端（画面の高さに対する比）。 */
-const FLOOR_TOP = 0.78;
 const SEED = 0x5eedc0de;
-
 type Point = readonly [number, number];
 
 interface Shard {
@@ -25,20 +26,20 @@ interface Shard {
 	/** 明るさ（0〜1）。 */
 	shade: number;
 	alpha: number;
-	/** 自転の初期角（ラジアン）と角速度（ラジアン/ミリ秒）。 */
+	/** 自転の初期角（ラジアン）と角速度の基準値（ラジアン/ミリ秒）。輪では0.3倍して使う。 */
 	spin: number;
 	spinSpeed: number;
 	/** 揺れの位相（ラジアン）と角速度（ラジアン/ミリ秒）。 */
 	sway: number;
 	swaySpeed: number;
-	/** 輪: 初期角（ラジアン）、半径の比。床: 横位置の比、高さの比。 */
+	/** 初期角（ラジアン）と、輪の半径に対する比。 */
 	a: number;
 	b: number;
-	/** 公転または流れる速度の倍率。 */
+	/** 公転の速度の倍率。 */
 	speed: number;
 }
 
-/** 一枚の破片の描く位置。座標は画面の画素単位。 */
+/** 一枚の破片を描く位置。座標はCSS画素単位。 */
 export interface ShardPose {
 	/** 重心。 */
 	x: number;
@@ -48,8 +49,10 @@ export interface ShardPose {
 	alpha: number;
 }
 
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
 /** 32ビットの種から [0, 1) の擬似乱数列を作る（mulberry32）。 */
-function random(seed: number): () => number {
+export function random(seed: number): () => number {
 	let s = seed >>> 0;
 	return () => {
 		s = (s + 0x6d2b79f5) >>> 0;
@@ -79,7 +82,7 @@ function shard(next: () => number, a: number, b: number, size: number): Shard {
 		points: triangle(next),
 		size,
 		shade: (150 + 105 * next()) / 255,
-		alpha: 0.3 + 0.45 * next(),
+		alpha: 0.6 + 0.35 * next(),
 		spin: next() * Math.PI * 2,
 		spinSpeed: ((next() < 0.5 ? -1 : 1) * Math.PI * 2) / (40_000 + 60_000 * next()),
 		sway: next() * Math.PI * 2,
@@ -97,83 +100,135 @@ const RING: readonly Shard[] = Array.from({ length: RING_COUNT }, () => {
 	const offset = (next() + next() - 1) * RING_SPREAD;
 	return shard(next, angle, 1 + offset, 0.14 + 0.2 * next());
 });
-const FLOOR: readonly Shard[] = Array.from({ length: FLOOR_COUNT }, () => {
-	const x = next();
-	// 下端ほど密にする。
-	const y = FLOOR_TOP + (1.04 - FLOOR_TOP) * Math.sqrt(next());
-	return shard(next, x, y, 0.07 + 0.11 * next());
-});
 
 function pose(item: Shard, x: number, y: number, rotation: number, unit: number): ShardPose {
 	const length = item.size * unit;
 	const cos = Math.cos(rotation);
 	const sin = Math.sin(rotation);
-	return {
-		x,
-		y,
-		vertices: item.points.map(
-			([px, py]): Point => [x + (px * cos - py * sin) * length, y + (px * sin + py * cos) * length],
-		),
-		shade: item.shade,
-		alpha: item.alpha,
-	};
+	const vertices = item.points.map(
+		([px, py]): Point => [x + (px * cos - py * sin) * length, y + (px * sin + py * cos) * length],
+	);
+	return { x, y, vertices, shade: item.shade, alpha: item.alpha };
 }
 
-/** 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転する。`swell` は輪の半径の倍率。 */
-function ringPoses(width: number, height: number, elapsed: number, swell: number): ShardPose[] {
-	const radius = Math.min(width, height) * SHARD_RING_RADIUS;
+/** 輪の呼吸の振れ幅（輪の半径に対する比、片側）。 */
+export const BREATH_DEPTH = 0.1;
+/**
+ * 輪の呼吸を作る三つの波の周期（ミリ秒）、重み、位相（ラジアン）。周期の比を互いに素な15:23:41にして
+ * 重ね、呼吸の深さと間隔が不規則に見えるようにする。三つを重ねた呼吸は `BREATH_CYCLE` で同じ形へ戻る。
+ * 重みの合計は1。
+ */
+const BREATH_WAVES = [
+	{ period: 15_000, weight: 0.5, phase: 0.4 },
+	{ period: 23_000, weight: 0.3, phase: 2.1 },
+	{ period: 41_000, weight: 0.2, phase: 4.6 },
+] as const;
+
+/** 三つの波を重ねた呼吸の周期（ミリ秒）。15秒、23秒、41秒の最小公倍数の14,145秒（約3.9時間）。 */
+export const BREATH_CYCLE = 14_145_000;
+
+/**
+ * 経過時間 `elapsed`（ミリ秒）での輪の半径の倍率（1 ± `BREATH_DEPTH`）。輪全体がゆっくり不規則に
+ * ふくらんだり縮んだりする。補正済みサーバー時刻から求めるので、全画面で同じになる。
+ */
+export function ringBreath(elapsed: number): number {
+	const wave = BREATH_WAVES.reduce(
+		(sum, { period, weight, phase }) =>
+			sum + weight * Math.sin(phase + ((elapsed % period) / period) * Math.PI * 2),
+		0,
+	);
+	return 1 + BREATH_DEPTH * wave;
+}
+
+/**
+ * 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転し、輪全体が呼吸する。
+ * `scale` は輪の半径だけにかける倍率、`size` は破片の大きさにかける倍率。`spread` は輪の太さの広がりで、
+ * 0なら輪、1なら輪の内側の縁を残したまま、画面いっぱいに散らばる（`SHARD_SCATTER_DEPTH`）。`density` は見せる破片の割合で、
+ * 先頭から数えた枚数だけ見せ、境の `DENSITY_FADE_COUNT` 枚は不透明度を段階的に変えて、一枚ずつ急に現れないようにする。見せない破片も配列には残し、並び順を変えない
+ * （色づけは並び順で二色へ振り分けるため）。
+ */
+function ringPoses(
+	width: number,
+	height: number,
+	elapsed: number,
+	scale: number,
+	density: number,
+	size: number,
+	spread: number,
+): ShardPose[] {
+	// 破片の大きさは通常の輪の半径で決め、`scale` で縮めるのは輪の半径だけにする。
+	const unit = Math.min(width, height) * SHARD_RING_RADIUS;
+	const radius = unit * scale;
+	const shardUnit = unit * size;
+	const breath = ringBreath(elapsed);
 	const cx = width / 2;
 	const cy = height / 2;
-	return RING.map((item) => {
+	return RING.map((item, index) => {
 		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
-		const r = radius * swell * (item.b + 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2))));
+		// 輪の中の位置（内側の縁0〜外側の縁1）に応じて、散らばるときの距離を決める。
+		const rank = (item.b - 1 + RING_SPREAD) / (2 * RING_SPREAD);
+		const b = item.b + (1 + rank * SHARD_SCATTER_DEPTH - item.b) * spread;
+		const r = radius * breath * (b + 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2))));
 		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
-		return pose(item, cx + Math.cos(theta) * r, cy + Math.sin(theta) * r, rotation, radius);
+		const [x, y] = [cx + Math.cos(theta) * r, cy + Math.sin(theta) * r];
+		const base = pose(item, x, y, rotation, shardUnit);
+		const visible = clamp01((density * (RING_COUNT + DENSITY_FADE_COUNT) - index) / DENSITY_FADE_COUNT);
+		return { ...base, alpha: base.alpha * visible };
 	});
 }
 
 /**
- * 経過時間 `elapsed`（ミリ秒）での床の破片の位置。輪の下端と同じ向き（左）へ流れ、画面の端で反対側へ回り込む。
- * iPadの待機画面は床だけを描く（docs/visual-language.md 4.4節）。
+ * 経過時間 `elapsed`（ミリ秒）での輪の全破片の位置。`scale` は輪の半径の倍率（1が通常の大きさ）、`size` は
+ * 破片の大きさの倍率（1が通常の大きさ）、`spread` は輪の太さの広がり（0が輪、1が画面いっぱいの散らばり）、
+ * `density` は見せる破片の割合（1が全枚数）。見せない破片は不透明度0で返す。
  */
-export function floorShardPoses(width: number, height: number, elapsed: number): ShardPose[] {
-	const unit = Math.min(width, height);
-	const margin = unit * 0.2;
-	const span = width + margin * 2;
-	return FLOOR.map((item) => {
-		const travel = (((elapsed * item.speed) % FLOOR_DRIFT_MS) / FLOOR_DRIFT_MS) * span;
-		const x = ((((item.a * span - travel) % span) + span) % span) - margin;
-		const y = height * item.b + unit * 0.012 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2)));
-		const rotation =
-			item.spin * 0.35 + 0.25 * Math.sin(item.sway * 0.5 + ((elapsed * item.spinSpeed) % (Math.PI * 2)));
-		return pose(item, x, y, rotation, unit);
-	});
+export function shardPoses(
+	width: number,
+	height: number,
+	elapsed: number,
+	{
+		scale = 1,
+		density = 1,
+		size = 1,
+		spread = 0,
+	}: { scale?: number; density?: number; size?: number; spread?: number } = {},
+): ShardPose[] {
+	return ringPoses(width, height, elapsed, scale, density, size, spread);
 }
 
-/** 経過時間 `elapsed`（ミリ秒）での輪と床の全破片の位置。`swell` は輪の半径の倍率。 */
-export function shardPoses(width: number, height: number, elapsed: number, swell = 1): ShardPose[] {
-	return [...ringPoses(width, height, elapsed, swell), ...floorShardPoses(width, height, elapsed)];
-}
+/** 0〜255の三成分の色。 */
+export type Rgb = readonly [number, number, number];
 
-const smoothstep = (edge0: number, edge1: number, x: number) => {
-	const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-	return t * t * (3 - 2 * t);
-};
+/** 色づけた破片を白へ寄せる最大の割合。明るい破片ほど白へ寄せる。 */
+const TINT_LIGHTEN = 0.35;
+/**
+ * アウトライン用に破片の塗りの色を白へ寄せる割合。ハードライト合成は暗い背景の上で明るさの差を広げるので、
+ * 小さく取る（docs/visual-language.md 4.4節）。
+ */
+const OUTLINE_LIGHTEN = 0.12;
+/** 破片の明るさ `shade` の最小値。 */
+const SHADE_MIN = 150 / 255;
 
 /**
- * 8色の並びの区画番号 `position` での色。`colors[i]` は番号 `i` から `i + 1` を占め（8区画で一巡する）、
- * 隣の区画の中央へ向けて `blend` の幅で溶け合う（docs/visual-language.md 3.2節）。
+ * `index` 番目の破片の色（0〜255の三成分）。`tint` がなければ明るさ `shade` の灰色にする。`tint` があれば
+ * 破片を並び順で `colors` へ順に振り分け（二色なら偶数番目が一色目、奇数番目が二色目）、灰色からその色へ
+ * `amount`（0〜1）だけ寄せる。
  */
-export function spectrumColor(
-	position: number,
-	colors: readonly (readonly [number, number, number])[],
-	blend: number,
+export function shardColor(
+	shade: number,
+	index: number,
+	tint?: { colors: readonly Rgb[]; amount: number },
 ): [number, number, number] {
-	const s = position - 0.5;
-	const i0 = Math.floor(s);
-	const w = smoothstep(0.5 - blend / 2, 0.5 + blend / 2, s - i0);
-	const n = colors.length;
-	const a = colors[((i0 % n) + n) % n];
-	const b = colors[(((i0 + 1) % n) + n) % n];
-	return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w];
+	const gray = shade * 255;
+	if (!tint || tint.amount <= 0) return [gray, gray, gray];
+	const base = tint.colors[index % tint.colors.length];
+	const lighten = ((shade - SHADE_MIN) / (1 - SHADE_MIN)) * TINT_LIGHTEN;
+	const mix = (value: number) => gray + (value + (255 - value) * lighten - gray) * tint.amount;
+	return [mix(base[0]), mix(base[1]), mix(base[2])];
+}
+
+/** 破片のアウトラインの色（0〜255の三成分）。塗りの色 `fill`（各成分0〜255）を白へ `OUTLINE_LIGHTEN` だけ寄せる。 */
+export function shardOutlineColor(fill: Rgb): [number, number, number] {
+	const lift = (value: number) => value + (255 - value) * OUTLINE_LIGHTEN;
+	return [lift(fill[0]), lift(fill[1]), lift(fill[2])];
 }

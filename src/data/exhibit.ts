@@ -6,5 +6,7 @@
 export const EXHIBIT = {
 	title: "あなた色写真展",
 	welcomeMessage: "ようこそ、あなた色写真展へ",
+	/** 展示ディスプレイの `intro` で、「ようこそ」の次に見せる説明。一行ずつ並べる。 */
+	introDescription: ["あなた色写真展は", "あなたの気分や感性によって", "変化する写真展です"],
 	eventInfo: "デジタルハリウッド大学 学園祭 2026",
 } as const;

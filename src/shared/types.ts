@@ -64,14 +64,14 @@ export type Phase = (typeof PHASES)[number];
 
 export type QuestionId = string;
 
-/** 端末の役割。診断用iPadは `controller`。 */
+/** 端末の役割。診断用iPadは `controller`、スマート電球の中継スクリプト（`scripts/light-bridge.ts`）は `light`。 */
 export type ScreenRole = "display" | "photo";
-export type DeviceRole = "controller" | ScreenRole;
+export type DeviceRole = "controller" | ScreenRole | "light";
 export type Role = DeviceRole | "admin";
 
 /**
  * 一回の体験の結果のうち、各画面へ配信する部分。AIが選んだ二色と色名、選んだ写真。
- * 全文（読み取り、各色の理由、写真の根拠）は `ResultRecord` としてDurable Objectに保存する。
+ * 全文（読み取り、各色の理由、写真の根拠）は `ResultRecord` として会場サーバーに保存する。
  */
 export interface SessionResult {
 	/** 結果ページのID（`/result/{id}`）。 */
@@ -106,6 +106,8 @@ export interface ExhibitState {
 	previewColorId: PaletteId | null;
 	phaseStartedAt: number;
 	phaseEndsAt: number | null;
+	/** 直前に質問の回答を受け付けた時刻。展示ディスプレイは、この時刻から中心の波紋を広げる。`idle` へ戻ると `null`。 */
+	answeredAt: number | null;
 	revision: number;
 	accepting: boolean;
 }
@@ -116,7 +118,14 @@ export type DisplayResult = Pick<SessionResult, "name" | "colors" | "photoIds">;
 /** 展示ディスプレイと写真用へ配信する状態（仕様書8.3節）。 */
 export type DisplayState = Pick<
 	ExhibitState,
-	"sessionId" | "phase" | "sequenceId" | "previewColorId" | "phaseStartedAt" | "phaseEndsAt" | "revision"
+	| "sessionId"
+	| "phase"
+	| "sequenceId"
+	| "previewColorId"
+	| "phaseStartedAt"
+	| "phaseEndsAt"
+	| "answeredAt"
+	| "revision"
 > & { result: DisplayResult | null };
 
 /** 2Dマップ上の位置。`x` は左端0から右端1、`y` は上端0から下端1。 */

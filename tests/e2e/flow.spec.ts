@@ -1,17 +1,15 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { descendStep } from "../../src/client/controller/question-transition.ts";
 import { SPLIT_MAX, SPLIT_MIN } from "../../src/client/controller/split.ts";
-import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
-import { resultPhotoFor } from "../../src/shared/assignment.ts";
 import type { Question } from "../../src/shared/types.ts";
 import type { Device } from "./fixtures.ts";
 import {
 	answerInput,
 	answerQuestion,
 	backgroundHex,
-	canvasDigest,
 	canvasPixel,
 	choiceOption,
 	dragCell,
@@ -20,6 +18,7 @@ import {
 	enterNickname,
 	expectQuestion,
 	mapValue,
+	recordQuestionOverlap,
 	STUB_RESULT,
 	sliderValue,
 	stubScreenColor,
@@ -238,12 +237,27 @@ for (const displayCount of [1, 3]) {
 			}
 			await answerQuestion(page, question, index);
 			await expect(next).toBeEnabled();
-			const digest = await canvasDigest(displays[0].page);
+			// 最初の質問から次の質問へ移るときに、前後の質問が重なって入れ替わることを確かめる（docs/visual-language.md 4.5節）。
+			const overlap = index === 0 ? await recordQuestionOverlap(page) : null;
 			await next.click();
+			if (overlap) {
+				await expectQuestion(page, 1);
+				expect(await overlap()).toBe(2);
+				// 次の質問の要素は、文書順に遅れの段数が付き、上限より後は上限の段数で降りる。段数は降りた後も残る。
+				// 2問目は選択式で、質問文、案内文、各選択肢、選択肢の下のラベルが降りる。
+				const second = QUESTIONS[1];
+				if (second.kind !== "multiple") throw new Error(`${second.id} は複数選択ではありません`);
+				const steps = await page
+					.locator(".question .stage > .body [data-descend]")
+					.evaluateAll((elements) =>
+						elements.map((element) => (element as HTMLElement).style.getPropertyValue("--descend-step")),
+					);
+				expect(steps).toHaveLength(2 + second.options.length + 1);
+				expect(steps).toEqual(steps.map((_, order) => String(descendStep(order))));
+			}
 			if (index < QUESTIONS.length - 1) {
-				// 一問確定するたびに全画面の revision が増え、破片の色が回り始める。
+				// 一問確定するたびに全画面の revision が増える。展示ディスプレイの演出が回答に反応しないことは単体テスト（motion.test.ts）で確かめる。
 				for (const display of displays) await expect.poll(() => revisionOf(display)).toBe(before + 1);
-				await expect.poll(() => canvasDigest(displays[0].page), { timeout: 3_000 }).not.toBe(digest);
 			}
 			if (index === 1) {
 				// 戻ると直前の回答が復元され、変更して再確定できる。
@@ -264,7 +278,7 @@ for (const displayCount of [1, 3]) {
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
 
 		// iPadに色名と二色を表示し、展示ディスプレイは二色を画面の順に交互に見せる。
-		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 15_000 });
 		await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name);
 		await expect(page.locator(".palette-names")).toHaveText(
 			`${stubScreenColor(0).name} と ${stubScreenColor(1).name}`,
@@ -276,22 +290,12 @@ for (const displayCount of [1, 3]) {
 			);
 		}
 		await displays[0].page.waitForTimeout(4_500);
-		const shown: string[] = [];
 		for (const [displayOrder, display] of displays.entries()) {
 			expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(displayOrder)));
-			// 写真がある画面は選定した写真の displayOrder 番目、足りない画面は複製せずに色名のタイポグラフィ。
-			const assigned = resultPhotoFor(PHOTOS, STUB_RESULT.photoIds, displayOrder);
-			if (assigned) {
-				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "photo");
-				await expect(display.page.locator(`.photo[data-result-photo="${assigned.id}"] img`)).toBeVisible();
-				shown.push(assigned.id);
-			} else {
-				await expect(display.page.locator("main.display")).toHaveAttribute("data-result-view", "typography");
-				await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
-			}
+			// 展示ディスプレイは写真を置かず、色名と破片だけを見せる。
+			await expect(display.page.locator("main.display img")).toHaveCount(0);
+			await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 		}
-		// 同じ写真を複数の画面へ割り当てない。
-		expect(new Set(shown).size).toBe(shown.length);
 
 		// QRコードと結果URL。結果ページのIDは16桁の16進数。
 		await expect(page.getByRole("img", { name: "結果ページのQRコード" })).toBeVisible();

@@ -42,7 +42,8 @@ test("管理画面は展示状態を受信する前から全パネルを表示�
 		for (const name of PANELS) {
 			await expect(page.getByRole("heading", { name, exact: true, level: 2 })).toBeVisible();
 		}
-		await expect(page.getByTestId("admin-loading")).toHaveCount(4);
+		// 展示状態のパネルと、端末一覧の4種別（診断用iPad、展示ディスプレイ、写真用、電球の中継）。
+		await expect(page.getByTestId("admin-loading")).toHaveCount(5);
 		await expect(page.getByRole("button", { name: "強制リセット" })).toBeDisabled();
 		await expect(page.getByRole("button", { name: "受付状態を取得中" })).toBeDisabled();
 		// パレットは固定のデータのため先に表示するが、展示状態を受信するまで操作できない。

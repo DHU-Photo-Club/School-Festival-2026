@@ -15,9 +15,9 @@ import {
 	validateSequences,
 } from "../../src/shared/data-validation.ts";
 import { backgroundColor, foregroundColor } from "../../src/shared/palette.ts";
+import { resultAvailability } from "../../src/shared/result-page.ts";
 import { resultUrl } from "../../src/shared/result-url.ts";
 import type { Question, Sequence } from "../../src/shared/types.ts";
-import { resultAvailability } from "../../src/worker/result-page.ts";
 
 const data = { palette: PALETTE, questions: QUESTIONS, photos: PHOTOS };
 

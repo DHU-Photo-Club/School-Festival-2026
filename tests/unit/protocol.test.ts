@@ -96,8 +96,16 @@ describe("toDisplayState", () => {
 			previewColorId: null,
 			phaseStartedAt: 1,
 			phaseEndsAt: null,
+			answeredAt: null,
 			revision: 0,
 		});
+	});
+
+	it("回答を受け付けた時刻を渡す。この項目を持たない保存済みの状態は null にする", () => {
+		expect(toDisplayState({ ...initialState(1), answeredAt: 77 }).answeredAt).toBe(77);
+		const legacy = { ...initialState(1) } as Partial<ReturnType<typeof initialState>>;
+		delete legacy.answeredAt;
+		expect(toDisplayState(legacy as ReturnType<typeof initialState>).answeredAt).toBeNull();
 	});
 
 	it("結果は色名、二色、写真IDだけを渡し、結果ページのIDと読み取りは渡さない", () => {

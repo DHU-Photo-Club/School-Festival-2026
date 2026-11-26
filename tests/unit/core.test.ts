@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { QUESTIONS } from "../../src/data/questions.ts";
+import type { Judge } from "../../src/server/ai/judge.ts";
+import { STALE_AFTER_MS } from "../../src/server/core.ts";
 import { INACTIVITY_MS, JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
 import type { ResultRecord } from "../../src/shared/result.ts";
 import type { DisplayState, ExhibitState, Sequence } from "../../src/shared/types.ts";
-import type { Judge } from "../../src/worker/ai/judge.ts";
-import { STALE_AFTER_MS } from "../../src/worker/core.ts";
 import type { FakeConnection } from "./helpers.ts";
 import { Harness, lastAdminState, sampleAnswer } from "./helpers.ts";
 
@@ -53,6 +53,7 @@ describe("接続と配信", () => {
 		expect(ipad.lastState()).toHaveProperty("answers");
 		expect(Object.keys(display.lastState<DisplayState>()).sort()).toEqual(
 			[
+				"answeredAt",
 				"phase",
 				"phaseEndsAt",
 				"phaseStartedAt",
@@ -72,12 +73,16 @@ describe("接続と配信", () => {
 		const ipad = harness.connect("controller");
 		const display = harness.connect("display", 1);
 		const photo = harness.connect("photo", 1);
+		const light = harness.connect("light");
 		const admin = harness.connect("admin");
 		harness.command(ipad, { name: "start" });
 		harness.command(ipad, { name: "continue", nickname: "ひみつ" });
 		expect(ipad.lastState()).toMatchObject({ phase: "question", nickname: "ひみつ" });
 		expect(JSON.stringify(display.lastState())).not.toContain("ひみつ");
 		expect(JSON.stringify(photo.lastState())).not.toContain("ひみつ");
+		expect(JSON.stringify(light.lastState())).not.toContain("ひみつ");
+		// 電球の中継には展示ディスプレイと同じ範囲を送る。
+		expect(light.lastState()).toEqual(display.lastState());
 		expect(JSON.stringify(lastAdminState(admin))).not.toContain("ひみつ");
 	});
 
@@ -119,9 +124,12 @@ describe("接続と配信", () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
 		const display = harness.connect("display", 1);
+		const light = harness.connect("light");
 		const admin = harness.connect("admin");
 		harness.command(ipad, { name: "forceReset" });
 		harness.command(display, { name: "start" });
+		harness.command(light, { name: "start" });
+		harness.command(light, { name: "previewColor", colorId: "sky" });
 		harness.command(admin, { name: "start" });
 		expect(harness.core.current()).toMatchObject({ phase: "idle", revision: 0 });
 	});
@@ -416,6 +424,7 @@ describe("期限", () => {
 describe("管理画面の端末一覧", () => {
 	it("接続中の端末を種別と画面番号の順に並べる", () => {
 		const harness = new Harness();
+		harness.connect("light");
 		harness.connect("photo", 1);
 		harness.connect("display", 2);
 		harness.connect("display", 1);
@@ -426,6 +435,7 @@ describe("管理画面の端末一覧", () => {
 			["display", 1],
 			["display", 2],
 			["photo", 1],
+			["light", null],
 		]);
 	});
 

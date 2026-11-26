@@ -5,16 +5,15 @@ import { PHOTO_POLICY } from "../../src/data/ai.ts";
 import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
-import { resultPhotoFor } from "../../src/shared/assignment.ts";
+import { STUB_COLORS, STUB_NAME } from "../../src/server/ai/judge.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
 import { selectPhotos } from "../../src/shared/photo-selection.ts";
-import type { DeviceRole, PaletteColor, PaletteId, Question } from "../../src/shared/types.ts";
+import type { PaletteColor, PaletteId, Question, ScreenRole } from "../../src/shared/types.ts";
 import { MAP_SIZE } from "../../src/shared/types.ts";
-import { STUB_COLORS, STUB_NAME } from "../../src/worker/ai/judge.ts";
 
 /**
  * E2Eテストの開発サーバーは `AI_STUB=1` で動く（vite.config.ts）。AIへ接続せず、決まった色名と二色、
- * 色の適合だけで選んだ写真を返す（src/worker/ai/judge.ts の `createStubJudge`）。
+ * 色の適合だけで選んだ写真を返す（src/server/ai/judge.ts の `createStubJudge`）。
  */
 export const STUB_RESULT = {
 	name: STUB_NAME,
@@ -90,7 +89,7 @@ export class ExhibitHarness {
 	 * 1、2…の画面番号を使う。`beforeOpen` はページを開く前にコンテキストを設定するときに使う。
 	 */
 	async openDevice(
-		role: DeviceRole,
+		role: "controller" | ScreenRole,
 		options: BrowserContextOptions = {},
 		beforeOpen?: (context: BrowserContext) => Promise<unknown>,
 	): Promise<Device> {
@@ -125,8 +124,9 @@ export class ExhibitHarness {
 }
 
 /**
- * 展示ディスプレイのcanvasを読む。展示ディスプレイはWebGLで描き、描画結果を保持する設定にしているため、
- * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。破片のcanvasは重ねて写す。`stride` 画素ごとに一つ読む。
+ * 展示ディスプレイのcanvasを読む。色面のcanvasはWebGLで描き、描画結果を保持する設定にしているため、
+ * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。その上にブルームと破片のcanvasを重ねて写す。
+ * `stride` 画素ごとに一つ読む。
  */
 async function readCanvas(page: Page, x: number, y: number, w: number, h: number, stride: number): Promise<number[]> {
 	return page.evaluate(
@@ -137,7 +137,23 @@ async function readCanvas(page: Page, x: number, y: number, w: number, h: number
 			copy.height = source.height;
 			const context = copy.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
 			context.drawImage(source, 0, 0);
-			for (const overlay of overlays) context.drawImage(overlay, 0, 0, copy.width, copy.height);
+			for (const overlay of overlays) {
+				// 画面と同じ不透明度と合成方法で重ねる（ブルームはスクリーン、破片はハードライト）。
+				// canvas 2Dで同じ式になる合成方法だけに対応する。未対応の値は黙って別の合成になるため、エラーで止める。
+				const blends: Record<string, GlobalCompositeOperation> = {
+					normal: "source-over",
+					screen: "screen",
+					"hard-light": "hard-light",
+				};
+				const style = getComputedStyle(overlay);
+				const blend = blends[style.mixBlendMode];
+				if (!blend) throw new Error(`readCanvas が対応していない mix-blend-mode: ${style.mixBlendMode}`);
+				context.globalAlpha = Number(style.opacity);
+				context.globalCompositeOperation = blend;
+				context.drawImage(overlay, 0, 0, copy.width, copy.height);
+			}
+			context.globalAlpha = 1;
+			context.globalCompositeOperation = "source-over";
 			const left = Math.min(copy.width - 1, Math.floor(copy.width * px));
 			const top = Math.min(copy.height - 1, Math.floor(copy.height * py));
 			const { data } = context.getImageData(
@@ -169,6 +185,22 @@ export async function canvasHasGraphics(page: Page): Promise<boolean> {
 	return false;
 }
 
+/** 破片のブルームのcanvasに何か描かれているか。 */
+export async function bloomHasGraphics(page: Page): Promise<boolean> {
+	return page.evaluate(() => {
+		const bloom = document.querySelector<HTMLCanvasElement>("main.display canvas.shard-bloom");
+		if (!bloom) return false;
+		const copy = document.createElement("canvas");
+		copy.width = bloom.width;
+		copy.height = bloom.height;
+		const context = copy.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+		context.drawImage(bloom, 0, 0);
+		const { data } = context.getImageData(0, 0, copy.width, copy.height);
+		for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
+		return false;
+	});
+}
+
 /** canvas全体の画素の要約（変化の検出に使う）。 */
 export async function canvasDigest(page: Page): Promise<string> {
 	const samples = await readCanvas(page, 0, 0, 1, 1, 1023);
@@ -186,21 +218,53 @@ export async function answerAllQuestions(page: Page): Promise<void> {
 		await answerQuestion(page, question, index * 3);
 		await page.getByRole("button", { name: "次へ" }).click();
 	}
-	await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 6_000 });
+	await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 16_000 });
 }
 
 /** `intro` でニックネームを入力して質問へ進む。 */
 export async function enterNickname(page: Page, nickname = "テスト"): Promise<void> {
-	await page.getByRole("textbox", { name: "ニックネームを入力して下さい" }).fill(nickname);
+	// 展示ディスプレイが説明の文を現れ終えるまで、入力欄は出ない。
+	const field = page.getByRole("textbox", { name: "ニックネームを入力して下さい" });
+	await field.waitFor({ timeout: 20_000 });
+	await field.fill(nickname);
 	await page.getByRole("button", { name: "進む" }).click();
 }
 
-/** 質問 `index`（0始まり）を表示していることを、進捗バーで確かめる。 */
+/**
+ * 質問 `index`（0始まり）を表示していることを、進捗バーで確かめる。質問の入れ替えの間は前の質問が
+ * DOMに残って `.body` が2つになり、次の質問は動いているため、入れ替えが終わるまで待つ
+ * （`data-transitioning` は入れ替えの間に下部のボタンを無効にするための属性で、テストもこれを使う）。
+ */
 export async function expectQuestion(page: Page, index: number): Promise<void> {
 	await expect(page.getByRole("progressbar")).toHaveAttribute(
 		"aria-valuetext",
 		`質問 ${index + 1} / ${QUESTIONS.length}`,
 	);
+	await expect(page.locator(".question .stage")).toHaveAttribute("data-transitioning", "false");
+	await expect(page.locator(".question .stage > .body")).toHaveCount(1);
+}
+
+/**
+ * iPadの質問画面で、同時に表示された質問の数の最大値を記録し始める。返す関数で記録を止めて最大値を得る。
+ * 質問の入れ替えでは、前後の質問が重なる間だけ2つになる。
+ */
+export async function recordQuestionOverlap(page: Page): Promise<() => Promise<number>> {
+	await page.evaluate(() => {
+		const count = () => document.querySelectorAll(".question .stage > .body").length;
+		const state = {
+			max: count(),
+			observer: new MutationObserver(() => (state.max = Math.max(state.max, count()))),
+		};
+		state.observer.observe(document.body, { childList: true, subtree: true });
+		(window as unknown as { __questionOverlap: typeof state }).__questionOverlap = state;
+	});
+	return () =>
+		page.evaluate(() => {
+			const state = (window as unknown as { __questionOverlap: { max: number; observer: MutationObserver } })
+				.__questionOverlap;
+			state.observer.disconnect();
+			return state.max;
+		});
 }
 
 /** iPadの質問画面で、スライダーの位置（0〜4）をタップする。 */
@@ -333,24 +397,6 @@ export async function answerQuestion(page: Page, question: Question, variant = 0
 				await choiceOption(page, question, choices[(variant + offset) % choices.length]).click();
 		}
 	}
-}
-
-/** 展示ディスプレイが先に読み込む結果写真がすべて読み込まれるまで待つ。 */
-export async function waitForResultPhotos(page: Page): Promise<void> {
-	await expect
-		.poll(() =>
-			page.evaluate(() =>
-				[...document.querySelectorAll<HTMLImageElement>(".photo[data-result-photo] img")].every(
-					(image) => image.complete && image.naturalWidth > 0,
-				),
-			),
-		)
-		.toBe(true);
-}
-
-/** 選定した写真から決まる結果表示の種類。写真が足りない画面はタイポグラフィ。 */
-export function expectedResultView(photoIds: readonly string[], displayOrder: number): "photo" | "typography" {
-	return resultPhotoFor(PHOTOS, photoIds, displayOrder) ? "photo" : "typography";
 }
 
 /**

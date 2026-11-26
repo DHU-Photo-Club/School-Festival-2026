@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTION_VERSION, QUESTIONS } from "../../src/data/questions.ts";
+import { checkColorOutput } from "../../src/server/ai/color.ts";
+import { answerInput, readJson } from "../../src/server/ai/input.ts";
+import type { JudgeOptions } from "../../src/server/ai/judge.ts";
+import { createJudge } from "../../src/server/ai/judge.ts";
+import { checkPhotoOutput, photoCatalogInput } from "../../src/server/ai/photos.ts";
+import type { PromptRequest } from "../../src/server/mistral.ts";
 import { colorMatch, selectPhotos } from "../../src/shared/photo-selection.ts";
 import type { Answer, Photo } from "../../src/shared/types.ts";
-import { checkColorOutput } from "../../src/worker/ai/color.ts";
-import { answerInput, readJson } from "../../src/worker/ai/input.ts";
-import type { JudgeOptions } from "../../src/worker/ai/judge.ts";
-import { createJudge } from "../../src/worker/ai/judge.ts";
-import { checkPhotoOutput, photoCatalogInput } from "../../src/worker/ai/photos.ts";
-import type { PromptRequest } from "../../src/worker/mistral.ts";
 
 const QUESTION_IDS = QUESTIONS.map((question) => question.id);
 
