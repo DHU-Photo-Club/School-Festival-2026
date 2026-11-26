@@ -111,12 +111,12 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 		}
 	}
 
-	// 判定: 即時に黒（判定は2秒なので、その間に黒になることを確かめる）。
+	// 判定: 即時に黒（判定は最短10秒なので、その間に黒になることを確かめる）。
 	// 画面中央は輪の内側で、破片のブルームも届かない（中央から最も近い破片まで、広い段のぼかし幅の約5倍ある）。
 	await expect
 		.poll(() => canvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
 		.toBe("#000000");
-	await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name, { timeout: 5_000 });
+	await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name, { timeout: 15_000 });
 
 	// 結果: 基準色の全面から完了状態へ一回だけ切り替わる。画面ごとに二色を交互に見せる。
 	for (const [displayOrder, display] of displays.entries()) {

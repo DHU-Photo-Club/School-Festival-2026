@@ -169,12 +169,22 @@ export interface RippleLayer {
 	elapsed: number;
 }
 
+/** 判定中に画面の外から中心へ集まる塵（`dustPoses` に渡す値）。 */
+export interface DustLayer {
+	/** `judging` の開始からの経過時間（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。 */
+	elapsed: number;
+	/** 全体の不透明度の倍率（0〜1）。結果の色づきに合わせて消えていく。 */
+	fade: number;
+}
+
 export interface Scene {
 	primitives: Primitive[];
 	/** WebGLの描画の上に重ねる破片。展示ディスプレイは写真を置かず、どの状態でも破片を描く。 */
 	shards: ShardLayer;
 	/** 回答の直後に中心から広がる波紋。広がっていなければ `null`。 */
 	ripple: RippleLayer | null;
+	/** 判定中に外から中心へ集まる塵。出していなければ `null`。 */
+	dust: DustLayer | null;
 	/** 結果の色名の層の不透明度。 */
 	resultLayer: number;
 	/** 前の結果色を1秒で消すための覆い。 */
@@ -558,7 +568,7 @@ function questionShards(input: SceneInput): ShardLayer {
 }
 
 /** 波紋以外の描画内容。 */
-type BaseScene = Omit<Scene, "ripple">;
+type BaseScene = Omit<Scene, "ripple" | "dust">;
 
 /**
  * 質問の回答の波紋。輪が縮み切って戻り始める瞬間（回答を受け付けた時刻 `answeredAt` から `ANSWER_PULSE_IN_MS` 後）に
@@ -574,11 +584,28 @@ function rippleLayer(input: SceneInput): RippleLayer | null {
 	return elapsed >= 0 && elapsed < RIPPLE_MS ? { elapsed } : null;
 }
 
+/**
+ * 判定中の塵。結果の二色が決まる前から、画面の外から中心へ集まり、少しずつ数と濃さを増す。結果の色づきが始まる
+ * 時刻（`phaseEndsAt - SHARD_TINT_MS`）からは、色づきに合わせて消える。reduced-motionでは出さない。
+ * 結果の開始時刻を過ぎたフレームでは出さない。
+ */
+function dustLayer(input: SceneInput): DustLayer | null {
+	const { state, now, reducedMotion } = input;
+	if (reducedMotion || state.phase !== "judging") return null;
+	if (state.phaseEndsAt !== null && now >= state.phaseEndsAt) return null;
+	const elapsed = now - state.phaseStartedAt;
+	if (elapsed <= 0) return null;
+	const fade =
+		state.phaseEndsAt === null ? 1 : 1 - easeInOutSine((now - (state.phaseEndsAt - SHARD_TINT_MS)) / SHARD_TINT_MS);
+	return { elapsed, fade };
+}
+
 /** 一フレームの描画内容を求める。同じ入力には同じ結果を返す。 */
 export function computeScene(input: SceneInput): Scene {
 	const ripple = rippleLayer(input);
+	const dust = dustLayer(input);
 	const scene = computeBaseScene(input);
-	return { ...scene, ripple, animating: scene.animating || ripple !== null };
+	return { ...scene, ripple, dust, animating: scene.animating || ripple !== null || dust !== null };
 }
 
 function computeBaseScene(input: SceneInput): BaseScene {

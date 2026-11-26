@@ -52,7 +52,7 @@ export interface ShardPose {
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /** 32ビットの種から [0, 1) の擬似乱数列を作る（mulberry32）。 */
-function random(seed: number): () => number {
+export function random(seed: number): () => number {
 	let s = seed >>> 0;
 	return () => {
 		s = (s + 0x6d2b79f5) >>> 0;

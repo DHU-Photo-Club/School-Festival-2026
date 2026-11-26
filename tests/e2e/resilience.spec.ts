@@ -20,7 +20,7 @@ async function answerQuestions(ipad: Device) {
 		await answerQuestion(ipad.page, QUESTIONS[index], index * 3);
 		await ipad.page.getByRole("button", { name: "次へ" }).click();
 	}
-	await expect(ipad.page.getByText("あなたの色は")).toBeVisible({ timeout: 6_000 });
+	await expect(ipad.page.getByText("あなたの色は")).toBeVisible({ timeout: 16_000 });
 }
 
 test("強制リセットで全端末が待機へ戻り、回答と結果とQRコードが残らない", async ({ browser }) => {

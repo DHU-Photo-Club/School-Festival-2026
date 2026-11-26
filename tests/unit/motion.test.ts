@@ -316,6 +316,21 @@ describe("判定と結果", () => {
 		expect(shardsOf(computeScene(base(waiting, { now: T0 + 20_000 })))).toMatchObject({ colors: null });
 	});
 
+	it("判定中は塵を出し、結果の色づきに合わせて消え、結果開始以降と判定以外、reduced-motionでは出さない", () => {
+		expect(computeScene(base(waiting, { now: T0 })).dust).toBeNull();
+		expect(computeScene(base(waiting, { now: T0 + 3_000 })).dust).toEqual({ elapsed: 3_000, fade: 1 });
+		const settled: Partial<DisplayState> = { ...judging("jade"), result: resultOf("jade", "rose") };
+		const tintAt = T0 + JUDGING_MS - SHARD_TINT_MS;
+		expect(computeScene(base(settled, { now: tintAt })).dust?.fade).toBe(1);
+		const middle = computeScene(base(settled, { now: tintAt + SHARD_TINT_MS / 2 })).dust?.fade;
+		expect(middle).toBeGreaterThan(0);
+		expect(middle).toBeLessThan(1);
+		expect(computeScene(base(settled, { now: T0 + JUDGING_MS })).dust).toBeNull();
+		expect(computeScene(base(waiting, { now: T0 + 3_000, reducedMotion: true })).dust).toBeNull();
+		expect(computeScene(base(questionState(T0), { now: T0 + 3_000 })).dust).toBeNull();
+		expect(computeScene(base({ phase: "idle" }, { now: T0 + 3_000 })).dust).toBeNull();
+	});
+
 	it("結果の二色が決まると、結果開始までに破片を二色へ色づける", () => {
 		const state: Partial<DisplayState> = { ...judging("jade"), result: resultOf("jade", "rose") };
 		const two = [baseColor(colorOf("jade")), baseColor(colorOf("rose"))];

@@ -218,7 +218,7 @@ export async function answerAllQuestions(page: Page): Promise<void> {
 		await answerQuestion(page, question, index * 3);
 		await page.getByRole("button", { name: "次へ" }).click();
 	}
-	await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 6_000 });
+	await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 16_000 });
 }
 
 /** `intro` でニックネームを入力して質問へ進む。 */

@@ -277,8 +277,8 @@ describe("状態遷移", () => {
 		const early = judged(1_000, 1_100);
 		expect(early).toMatchObject({ phase: "judging", result: RESULT, answers: {}, phaseEndsAt: 1_000 + JUDGING_MS });
 		// 最短の長さを過ぎてから終わったら、全画面へ届くまでの余裕を取る。
-		const late = judged(1_000, 10_000);
-		expect(late.phaseEndsAt).toBe(10_000 + SETTLE_MARGIN_MS);
+		const late = judged(1_000, 20_000);
+		expect(late.phaseEndsAt).toBe(20_000 + SETTLE_MARGIN_MS);
 		// 元の期限より遅くはしない。
 		const judging = finalAnswer(toLastQuestion(1_000), 1_000);
 		const end = 1_000 + DEFAULT_JUDGING_MAX_MS;
@@ -315,17 +315,18 @@ describe("状態遷移", () => {
 
 	it("judging は期限に結果があれば result へ、なければ最終問へ進み、result は60秒後に idle へ進む", () => {
 		const settled = judged(1_000, 1_100);
-		expect(advance(settled, 2_999)).toBe(settled);
-		const result = advance(settled, 3_000);
+		const endsAt = 1_000 + JUDGING_MS;
+		expect(advance(settled, endsAt - 1)).toBe(settled);
+		const result = advance(settled, endsAt);
 		expect(result).toMatchObject({
 			phase: "result",
 			questionIndex: null,
-			phaseStartedAt: 3_000,
-			phaseEndsAt: 3_000 + RESULT_MS,
+			phaseStartedAt: endsAt,
+			phaseEndsAt: endsAt + RESULT_MS,
 			revision: settled.revision + 1,
 			result: RESULT,
 		});
-		const idle = advance(result, 3_000 + RESULT_MS);
+		const idle = advance(result, endsAt + RESULT_MS);
 		expect(idle).toMatchObject({
 			phase: "idle",
 			sessionId: null,
@@ -343,10 +344,11 @@ describe("状態遷移", () => {
 
 	it("alarm が遅れても期限の時刻を開始時刻にして順に進める", () => {
 		const settled = judged(1_000, 1_100);
-		expect(advance(settled, 3_500).phaseStartedAt).toBe(3_000);
-		expect(advance(settled, 3_000 + RESULT_MS + 10)).toMatchObject({
+		const endsAt = 1_000 + JUDGING_MS;
+		expect(advance(settled, endsAt + 500).phaseStartedAt).toBe(endsAt);
+		expect(advance(settled, endsAt + RESULT_MS + 10)).toMatchObject({
 			phase: "idle",
-			phaseStartedAt: 3_000 + RESULT_MS,
+			phaseStartedAt: endsAt + RESULT_MS,
 			revision: settled.revision + 2,
 		});
 	});

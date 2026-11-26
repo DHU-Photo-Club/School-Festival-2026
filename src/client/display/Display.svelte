@@ -3,13 +3,15 @@ import { onDestroy, onMount } from "svelte";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
+import { dustPoses } from "../../shared/dust.ts";
+import { LAB_LOOP_NOTES, type LabCycle, labCycle, parseLab } from "../../shared/lab.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import {
 	computeScene,
 	IDLE_RETURN_MS,
+	introDescriptionOpacity,
 	screenColorId,
 	WELCOME_FADE_OUT_MS,
-	introDescriptionOpacity,
 	welcomeOpacity,
 } from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
@@ -17,6 +19,7 @@ import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId } from "../../shared/types.ts";
+import { drawDust } from "../common/dust.ts";
 import { drawRipple } from "../common/ripple.ts";
 import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
@@ -42,6 +45,7 @@ let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
 let bloomCanvas = $state<HTMLCanvasElement>();
 let rippleCanvas = $state<HTMLCanvasElement>();
+let dustCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
@@ -53,6 +57,8 @@ let frame = 0;
 let lastDrawn = "";
 let lastShards = "";
 let lastRipple = "";
+/** 塵を描いたままのフレームか。描いていないフレームでは、消した状態を一度だけ描く。 */
+let dustDrawn = false;
 let animateSessionId: string | null = null;
 /** 今の質問へ `intro` から入ったか。`intro` の大きく色づいた輪から、質問中の灰色の輪へ戻すために使う。 */
 let questionFromIntro = false;
@@ -61,6 +67,49 @@ let stopWatching = () => {};
 
 /** `intro` の直前に再生するシーケンス。歓迎の文字はここから現れ始める。 */
 const welcomeLead = sequenceBefore(SEQUENCES, "intro");
+
+/**
+ * 演出の調整用ループ（`/display/1?loop=result&color=jade`）。開発サーバーだけで有効にし、サーバーへは接続せず、
+ * 一つの演出の台本（`src/shared/lab.ts`）を繰り返す。`h` キーでHUDを隠す。
+ */
+const lab = import.meta.env.DEV ? parseLab(location.search) : null;
+let labOrigin = 0;
+let labCycleIndex = -1;
+let labPlan: LabCycle | null = null;
+let labStep = -1;
+let labHud = $state("");
+let labHudVisible = $state(true);
+
+/** 補正済みサーバー時刻。調整用ループでは端末の時計をそのまま使う。 */
+const serverTime = (timestamp: number) =>
+	lab ? performance.timeOrigin + timestamp : (client?.toServerTime(timestamp) ?? 0);
+
+/** 台本の時刻になった場面の状態を、サーバーから受信したのと同じ経路で流し込む。 */
+function driveLab(now: number) {
+	if (!lab) return;
+	if (labOrigin === 0) labOrigin = now;
+	// 一周の長さは台本ごとに違うので、周が変わるたびに台本を作り直して、その開始時刻から数える。
+	if (!labPlan || now - labOrigin >= labPlan.lengthMs) {
+		if (labPlan) labOrigin += labPlan.lengthMs;
+		labCycleIndex++;
+		labPlan = labCycle(lab, { index: labCycleIndex, startedAt: labOrigin, lead: welcomeLead });
+		labStep = -1;
+		// 前の周の結果の色や覆いを持ち越さない。
+		resultChoice = null;
+		previousBackground = null;
+	}
+	const elapsed = now - labOrigin;
+	while (labStep + 1 < labPlan.steps.length && labPlan.steps[labStep + 1].atMs <= elapsed) {
+		labStep++;
+		onState(labPlan.steps[labStep].state);
+	}
+	const text = `${lab.loop}${labPlan.colorId ? ` / ${labPlan.colorId}` : ""}  ${(elapsed / 1000).toFixed(1)} / ${(labPlan.lengthMs / 1000).toFixed(1)}s  #${labCycleIndex + 1}`;
+	if (text !== labHud) labHud = text;
+}
+
+function onKey(event: KeyboardEvent) {
+	if (lab && event.key === "h") labHudVisible = !labHudVisible;
+}
 
 const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
@@ -80,12 +129,8 @@ function onState(next: DisplayState) {
 	if (next.phase === "sequence" && previous?.phase !== "sequence") {
 		const sequence = findSequence(SEQUENCES, next.sequenceId);
 		sequenceT =
-			sequence && client
-				? sequenceTime(
-						sequenceDuration(sequence, next),
-						next.phaseStartedAt,
-						client.toServerTime(performance.now()),
-					)
+			sequence && (lab || client)
+				? sequenceTime(sequenceDuration(sequence, next), next.phaseStartedAt, serverTime(performance.now()))
 				: 0;
 	}
 	displayState = next;
@@ -110,6 +155,11 @@ function resize() {
 	if (rippleCanvas) {
 		rippleCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
 		rippleCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+	}
+	if (dustCanvas) {
+		dustCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
+		dustCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+		dustDrawn = true;
 	}
 	if (shardCanvas) {
 		shardCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
@@ -160,6 +210,23 @@ function drawRippleLayer(layer: Scene["ripple"]) {
 	drawRipple(context, rings, shardRatio());
 }
 
+/**
+ * 判定中に、画面の外から中心へ細かい塵を集め、少しずつ数と濃さを増す（docs/visual-language.md 3.3節）。
+ * 出していないフレームは、塵を消した状態を一度だけ描く。
+ */
+function drawDustLayer(layer: Scene["dust"]) {
+	const context = dustCanvas?.getContext("2d");
+	if (!context) return;
+	if (!layer) {
+		if (!dustDrawn) return;
+		dustDrawn = false;
+		drawDust(context, [], shardRatio());
+		return;
+	}
+	dustDrawn = true;
+	drawDust(context, dustPoses(layer.elapsed, window.innerWidth, window.innerHeight, layer.fade), shardRatio());
+}
+
 /** 結果表示でこの画面が見せる色を決める。 */
 function chooseResult(sessionId: string | null, colorId: PaletteId) {
 	resultChoice = { sessionId, colorId };
@@ -200,9 +267,10 @@ function applyWelcome(state: DisplayState, now: number) {
 
 function tick(timestamp: number) {
 	frame = requestAnimationFrame(tick);
+	const now = serverTime(timestamp);
+	driveLab(now);
 	const state = displayState;
-	if (!client || !state || !canvas) return;
-	const now = client.toServerTime(timestamp);
+	if (!(lab || client) || !state || !canvas) return;
 
 	if (sequence && state.phase === "sequence") {
 		const t = sequenceTime(sequenceMs, state.phaseStartedAt, now);
@@ -254,18 +322,22 @@ function tick(timestamp: number) {
 	}
 	drawShardLayer(scene.shards);
 	drawRippleLayer(scene.ripple);
+	drawDustLayer(scene.dust);
 }
 
 onMount(() => {
 	stopWatching = watchReducedMotion((reduced) => (reducedMotion = reduced));
-	client = new RealtimeClient({
-		role: "display",
-		screen,
-		onState: (state) => onState(state as DisplayState),
-		onStatus: () => {},
-	});
-	client.start();
+	if (!lab) {
+		client = new RealtimeClient({
+			role: "display",
+			screen,
+			onState: (state) => onState(state as DisplayState),
+			onStatus: () => {},
+		});
+		client.start();
+	}
 	window.addEventListener("resize", resize);
+	window.addEventListener("keydown", onKey);
 	resize();
 	frame = requestAnimationFrame(tick);
 });
@@ -275,6 +347,7 @@ onDestroy(() => {
 	client?.stop();
 	stopWatching();
 	window.removeEventListener("resize", resize);
+	window.removeEventListener("keydown", onKey);
 });
 
 const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
@@ -293,6 +366,7 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	<canvas class="shard-bloom" bind:this={bloomCanvas}></canvas>
 	<canvas class="shards" bind:this={shardCanvas}></canvas>
 	<canvas class="ripple" bind:this={rippleCanvas}></canvas>
+	<canvas class="dust" bind:this={dustCanvas}></canvas>
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
 		{#if shownColor && resultChoice}
@@ -321,6 +395,10 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 			<span>{line}</span>
 		{/each}
 	</p>
+
+	{#if lab && labHudVisible}
+		<p class="lab-hud" data-lab={lab.loop}>{labHud}<br>{LAB_LOOP_NOTES[lab.loop]}（h で隠す）</p>
+	{/if}
 </main>
 
 <style>
@@ -351,7 +429,8 @@ canvas,
 .shards {
 	mix-blend-mode: hard-light;
 }
-.ripple {
+.ripple,
+.dust {
 	pointer-events: none;
 }
 .sequence {
@@ -380,6 +459,18 @@ canvas,
 }
 .description {
 	line-height: 1.9;
+}
+.lab-hud {
+	position: absolute;
+	left: 12px;
+	bottom: 10px;
+	margin: 0;
+	font:
+		12px / 1.5 ui-monospace,
+		monospace;
+	color: #e8e6e3;
+	opacity: 0.55;
+	pointer-events: none;
 }
 .color-name {
 	position: absolute;

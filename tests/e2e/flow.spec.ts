@@ -278,7 +278,7 @@ for (const displayCount of [1, 3]) {
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
 
 		// iPadに色名と二色を表示し、展示ディスプレイは二色を画面の順に交互に見せる。
-		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 15_000 });
 		await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name);
 		await expect(page.locator(".palette-names")).toHaveText(
 			`${stubScreenColor(0).name} と ${stubScreenColor(1).name}`,

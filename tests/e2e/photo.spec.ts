@@ -38,7 +38,7 @@ test("写真用は診断中も8秒周期で写真を繰り返し表示する", a
 				await answerQuestion(controller.page, question, index);
 				await controller.page.getByRole("button", { name: "次へ" }).click();
 			}
-			await expect(harness.admin.page.getByTestId("phase")).toContainText("result");
+			await expect(harness.admin.page.getByTestId("phase")).toContainText("result", { timeout: 20_000 });
 			await expect(main).toHaveAttribute("data-photo-id", playlist[0].id);
 			await page.clock.fastForward(IDLE_FRAME_MS);
 			await expect(shown).toHaveAttribute("data-photo-id", playlist[1].id);
