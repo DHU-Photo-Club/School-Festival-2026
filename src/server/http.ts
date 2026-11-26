@@ -29,3 +29,27 @@ export async function writeResponse(res: ServerResponse, response: Response): Pr
 	});
 	res.end(Buffer.from(await response.arrayBuffer()));
 }
+
+/**
+ * `Range: bytes=...` の一つの範囲を `[start, end]`（両端を含む）へ直す。サウンド用の画面のBGM（`<audio>` のループ）が
+ * 先頭へ戻るときに使う。ヘッダーがない、または複数の範囲なら `null`（全体を返す）、満たせない範囲なら `"unsatisfiable"`。
+ */
+export function parseRange(header: string | undefined, size: number): [number, number] | null | "unsatisfiable" {
+	if (header === undefined) return null;
+	const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+	if (!match || (match[1] === "" && match[2] === "")) return null;
+	let start: number;
+	let end: number;
+	if (match[1] === "") {
+		// `bytes=-500` は末尾の500バイト。
+		const suffix = Number(match[2]);
+		if (suffix === 0) return "unsatisfiable";
+		start = Math.max(0, size - suffix);
+		end = size - 1;
+	} else {
+		start = Number(match[1]);
+		end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+	}
+	if (start >= size || start > end) return "unsatisfiable";
+	return [start, end];
+}

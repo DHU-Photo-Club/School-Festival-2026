@@ -8,8 +8,8 @@ import {
 	reconcileState,
 	settleJudging,
 } from "../shared/machine.ts";
-import type { AdminState, DeviceStatus, RoleState, ServerMessage } from "../shared/protocol.ts";
-import { parseClientMessage, toDisplayState } from "../shared/protocol.ts";
+import type { AdminState, AudioStatus, DeviceStatus, RoleState, ServerMessage } from "../shared/protocol.ts";
+import { parseClientMessage, toDisplayState, toSoundState } from "../shared/protocol.ts";
 import type { PublicResult, ResultRecord } from "../shared/result.ts";
 import { RESULT_ID_PATTERN } from "../shared/result.ts";
 import type { Answer, ExhibitState, Question, QuestionId, Role, Sequence, SessionResult } from "../shared/types.ts";
@@ -32,6 +32,8 @@ export interface ConnectionMeta {
 	/** 展示ディスプレイと写真用の画面番号（1始まり）。それ以外は `null`。 */
 	screen: number | null;
 	lastReceivedAt: number;
+	/** サウンド用の画面が最後に知らせた再生状態。 */
+	audio?: AudioStatus;
 }
 
 export interface Connection {
@@ -64,7 +66,13 @@ export interface CoreOptions {
 const KEY_STATE = "state";
 /** 結果の記録のキー。 */
 const resultKey = (id: string) => `result:${id}`;
-const ROLE_ORDER: Readonly<Record<DeviceStatus["role"], number>> = { controller: 0, display: 1, photo: 2, light: 3 };
+const ROLE_ORDER: Readonly<Record<DeviceStatus["role"], number>> = {
+	controller: 0,
+	display: 1,
+	photo: 2,
+	light: 3,
+	sound: 4,
+};
 
 /**
  * 展示状態の正本。Node.jsはメッセージを一件ずつ処理し、状態の読み書きは同期処理のため、競合はない。
@@ -117,7 +125,10 @@ export class ExhibitCore {
 		connection.send({ type: "state", serverTime: this.options.now(), state: this.viewFor(connection.meta, state) });
 	}
 
-	/** 役割別の配信範囲。回答内容とニックネームは診断用iPadにだけ送る。電球の中継には展示ディスプレイと同じ範囲を送る。 */
+	/**
+	 * 役割別の配信範囲。回答内容とニックネームは診断用iPadにだけ送る。電球の中継には展示ディスプレイと同じ範囲を、
+	 * サウンド用には展示ディスプレイと同じ範囲に質問の番号を加えて送る。
+	 */
 	private viewFor(meta: ConnectionMeta, state: ExhibitState): RoleState {
 		switch (meta.role) {
 			case "controller":
@@ -126,6 +137,8 @@ export class ExhibitCore {
 			case "photo":
 			case "light":
 				return toDisplayState(state);
+			case "sound":
+				return toSoundState(state);
 			case "admin":
 				return this.adminView(state);
 		}
@@ -155,6 +168,7 @@ export class ExhibitCore {
 				screen: meta.screen,
 				connected: now - meta.lastReceivedAt < STALE_AFTER_MS,
 				lastReceivedAt: meta.lastReceivedAt,
+				...(meta.role === "sound" ? { audio: meta.audio ?? null } : {}),
 			}))
 			.sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || (a.screen ?? 0) - (b.screen ?? 0));
 	}
@@ -188,6 +202,14 @@ export class ExhibitCore {
 		if (message.type === "ping") {
 			connection.send({ type: "pong", clientSentAt: message.clientSentAt, serverTime: now });
 			if (now - this.lastAdminRefreshAt >= ADMIN_REFRESH_MS) this.refreshAdmins(state);
+			return null;
+		}
+		if (message.type === "audio") {
+			if (connection.meta.role !== "sound") return null;
+			if (connection.meta.audio !== message.status) {
+				connection.setMeta({ ...connection.meta, audio: message.status });
+				this.refreshAdmins(state);
+			}
 			return null;
 		}
 		return this.handleCommand(connection, message.command, state);

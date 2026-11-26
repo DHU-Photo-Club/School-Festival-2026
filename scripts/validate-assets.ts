@@ -86,3 +86,10 @@ export function validateSequenceComponents(sequences: readonly Sequence[], dir: 
 	}
 	return errors;
 }
+
+/** サウンド用の画面が読む音源（`src/data/sound.ts` の `SOUND_FILES`）の欠落を確認する（仕様書11.2節）。 */
+export function validateSoundFiles(paths: readonly string[], publicDir: string): string[] {
+	return paths
+		.filter((path) => !existsSync(join(publicDir, path.slice(1))))
+		.map((path) => `${path.slice(1)}: ファイルがありません（pnpm export-sounds で書き出す）`);
+}

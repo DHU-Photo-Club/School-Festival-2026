@@ -5,6 +5,7 @@ import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
 import PhotoDisplay from "./photo/PhotoDisplay.svelte";
 import ResultPage from "./result/ResultPage.svelte";
+import SoundPage from "./sound/SoundPage.svelte";
 
 // ルート数が固定で少ないため、起動時のパスで最上位コンポーネントを決める。
 const path = location.pathname.replace(/\/+$/, "") || "/";
@@ -19,7 +20,9 @@ const pageLabel = display
 			? "診断用iPad"
 			: path === "/admin"
 				? "運営管理"
-				: "ページが見つかりません";
+				: path === "/sound"
+					? "サウンド"
+					: "ページが見つかりません";
 </script>
 
 <svelte:head>
@@ -34,6 +37,8 @@ const pageLabel = display
 	<Display screen={display} />
 {:else if photo}
 	<PhotoDisplay screen={photo} />
+{:else if path === "/sound"}
+	<SoundPage />
 {:else if path === "/admin"}
 	<!-- 管理画面は Tailwind CSS（要素の初期化を含む）を読み込むため、展示用の画面に影響しないよう別のチャンクに分ける。 -->
 	{#await import("./admin/Admin.svelte")}

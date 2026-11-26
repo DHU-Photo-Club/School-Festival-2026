@@ -9,7 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { validatePublicOrigin, validatePublishedUntil } from "../shared/data-validation.ts";
 import { ROOT, readWranglerConfig, serverConfig } from "./config.ts";
 import { Exhibit } from "./exhibit.ts";
-import { resultReply, writeResponse } from "./http.ts";
+import { parseRange, resultReply, writeResponse } from "./http.ts";
 import { attachRealtime } from "./realtime.ts";
 
 const DIST = join(ROOT, "dist");
@@ -28,6 +28,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 	".ico": "image/x-icon",
 	".otf": "font/otf",
 	".woff2": "font/woff2",
+	".m4a": "audio/mp4",
+	".ogg": "audio/ogg",
 };
 
 /** `dist/` の中のファイルなら、その絶対パスとサイズ。`..` などで外へ出るパスは `null`。 */
@@ -98,13 +100,25 @@ const server = createServer(async (req, res) => {
 			res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not Found");
 			return;
 		}
-		res.writeHead(200, {
+		const headers = {
 			"Content-Type": CONTENT_TYPES[extname(file.path)] ?? "application/octet-stream",
-			"Content-Length": file.size,
 			"Cache-Control": file.path === index ? "no-store" : cacheControl,
+			"Accept-Ranges": "bytes",
+		};
+		// 音声の `<audio>` は範囲を指定して読む。範囲がなければ全体を返す。
+		const range = parseRange(req.headers.range, file.size);
+		if (range === "unsatisfiable") {
+			res.writeHead(416, { "Content-Range": `bytes */${file.size}` }).end();
+			return;
+		}
+		const [start, end] = range ?? [0, file.size - 1];
+		res.writeHead(range ? 206 : 200, {
+			...headers,
+			"Content-Length": file.size === 0 ? 0 : end - start + 1,
+			...(range ? { "Content-Range": `bytes ${start}-${end}/${file.size}` } : {}),
 		});
-		if (req.method === "HEAD") res.end();
-		else await pipeline(createReadStream(file.path), res);
+		if (req.method === "HEAD" || file.size === 0) res.end();
+		else await pipeline(createReadStream(file.path, { start, end }), res);
 	} catch (error) {
 		// 端末が読み込みの途中で切断した場合は、ログに出さない。
 		const code = (error as NodeJS.ErrnoException).code;

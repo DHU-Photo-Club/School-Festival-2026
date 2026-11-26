@@ -6,6 +6,7 @@ for (const [path, label] of [
 	["/display/2", "展示ディスプレイ 2"],
 	["/photo/1", "写真用 1"],
 	["/admin", "運営管理"],
+	["/sound", "サウンド"],
 ]) {
 	test(`${path} のタイトルに端末・画面の識別を表示する`, async ({ page }) => {
 		await page.goto(path);

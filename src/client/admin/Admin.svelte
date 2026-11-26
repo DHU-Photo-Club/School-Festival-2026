@@ -13,6 +13,7 @@ import PauseIcon from "@lucide/svelte/icons/pause";
 import PlayIcon from "@lucide/svelte/icons/play";
 import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 import TabletIcon from "@lucide/svelte/icons/tablet";
+import Volume2Icon from "@lucide/svelte/icons/volume-2";
 import { onDestroy, onMount } from "svelte";
 import { Badge } from "$lib/components/ui/badge/index.js";
 import { Button } from "$lib/components/ui/button/index.js";
@@ -22,25 +23,40 @@ import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import type { Command } from "../../shared/machine.ts";
 import { backgroundColor, baseColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
-import type { AdminState, DeviceStatus } from "../../shared/protocol.ts";
+import type { AdminState, AudioStatus, DeviceStatus } from "../../shared/protocol.ts";
 import type { DeviceRole } from "../../shared/types.ts";
 import type { ConnectionStatus } from "../lib/realtime.ts";
 import { RealtimeClient } from "../lib/realtime.ts";
 
-const DEVICE_ROLES = ["controller", "display", "photo", "light"] as const;
+const DEVICE_ROLES = ["controller", "display", "photo", "light", "sound"] as const;
 const DEVICE_LABELS = {
 	controller: "診断用iPad",
 	display: "展示ディスプレイ",
 	photo: "写真用",
 	light: "電球の中継",
+	sound: "サウンド",
 } as const;
-const DEVICE_ICONS = { controller: TabletIcon, display: MonitorIcon, photo: ImageIcon, light: LightbulbIcon } as const;
+const DEVICE_ICONS = {
+	controller: TabletIcon,
+	display: MonitorIcon,
+	photo: ImageIcon,
+	light: LightbulbIcon,
+	sound: Volume2Icon,
+} as const;
+/** サウンド用の画面の再生状態。`null` はまだ届いていない。 */
+const AUDIO_LABELS: Record<AudioStatus, string> = {
+	blocked: "クリック待ち",
+	loading: "読み込み中",
+	playing: "再生中",
+	degraded: "一部の音源なし",
+};
 /** 各端末で開くURL。展示ディスプレイは来場者から見た順に1から番号を振る。電球の中継はURLではなくコマンドで動かす。 */
 const DEVICE_PATHS = {
 	controller: "/",
 	display: "/display/1, /display/2…",
 	photo: "/photo/1, /photo/2…",
 	light: "pnpm lights",
+	sound: "/sound",
 } as const;
 const PHASE_LABELS = {
 	idle: "待機",
@@ -319,7 +335,7 @@ onDestroy(() => client?.stop());
 						</Card.Header>
 						<Card.Content class="wide:min-h-0 wide:flex-1">
 							<div
-								class="device-columns grid gap-3 md:grid-cols-2 wide:h-full wide:grid-cols-4 wide:grid-rows-[minmax(0,1fr)]"
+								class="device-columns grid gap-3 md:grid-cols-2 wide:h-full wide:grid-cols-5 wide:grid-rows-[minmax(0,1fr)]"
 							>
 								{#each DEVICE_ROLES as role (role)}
 									{@const devices = devicesOf(role)}
@@ -367,6 +383,14 @@ onDestroy(() => client?.stop());
 														<dl class={cn(DETAILS, "text-xs")}>
 															<dt>最終受信</dt>
 															<dd class="font-mono">{time(device.lastReceivedAt)}</dd>
+															{#if device.role === "sound"}
+																<dt>音</dt>
+																<dd data-testid="device-audio">
+																	{device.audio
+																		? AUDIO_LABELS[device.audio]
+																		: "未報告"}
+																</dd>
+															{/if}
 														</dl>
 													</article>
 												{:else}
