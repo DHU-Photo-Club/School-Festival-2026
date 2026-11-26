@@ -57,8 +57,16 @@ export function createJudge(options: JudgeOptions): Judge {
 		check: (value: unknown) => Checked<T>,
 		signal: AbortSignal,
 	): Promise<T | null> {
+		const maxAttempts = settings.retries + 1;
 		for (let attempt = 0; attempt <= settings.retries; attempt += 1) {
 			if (signal.aborted) return null;
+			const next =
+				attempt < settings.retries
+					? "再試行します"
+					: settings.retries > 0
+						? "再試行の上限に達しました"
+						: "終了します";
+			const status = `試行 ${attempt + 1}/${maxAttempts}・${next}`;
 			try {
 				const reply = await options.send({
 					...request,
@@ -66,10 +74,10 @@ export function createJudge(options: JudgeOptions): Judge {
 				});
 				const checked = check(readJson(reply));
 				if (checked.ok) return checked.value;
-				log(`${label}の出力を使えません（${attempt + 1}回目）: ${checked.error}: ${reply}`);
+				log(`${label}: AIの出力が条件を満たしません（${status}）: ${checked.error} / 応答: ${reply}`);
 			} catch (error) {
 				log(
-					`${label}に失敗しました（${attempt + 1}回目）: ${error instanceof Error ? error.message : String(error)}`,
+					`${label}: AIの呼び出しに失敗しました（${status}）: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			}
 		}

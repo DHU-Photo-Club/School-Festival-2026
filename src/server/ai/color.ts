@@ -11,9 +11,16 @@ const isObject = (value: unknown): value is Json =>
 /** 文字数（サロゲートペアを1文字として数える）。 */
 const length = (text: string) => Array.from(text).length;
 
-/** 空でない文字列で、`max` 文字以内か。前後の空白は除いて数える。 */
-const text = (value: unknown, max: number): value is string =>
-	typeof value === "string" && value.trim().length > 0 && length(value.trim()) <= max;
+/** 空でない文字列で、`max` 文字以内かを検証する。前後の空白は除いて数える。 */
+function checkText(value: unknown, field: string, max: number): Checked<string> {
+	if (value === undefined) return { ok: false, error: `${field}がありません` };
+	if (typeof value !== "string") return { ok: false, error: `${field}が文字列ではありません` };
+	const trimmed = value.trim();
+	if (trimmed.length === 0) return { ok: false, error: `${field}が空です` };
+	const count = length(trimmed);
+	if (count > max) return { ok: false, error: `${field}が上限（${max}文字）を超えています（${count}文字）` };
+	return { ok: true, value: trimmed };
+}
 
 /** 二色の列挙に使う記号（refs/handoff 実装仕様書5章）。 */
 const ENUMERATION = /[×＋+/／]/;
@@ -31,41 +38,49 @@ export function checkColorOutput(
 ): Checked<ColorOutput> {
 	const fail = (error: string): Checked<ColorOutput> => ({ ok: false, error });
 	const limits = COLOR_OUTPUT_LIMITS;
-	if (!isObject(value)) return fail("JSONのオブジェクトではありません");
-	if (!text(value.name, limits.name)) return fail(`name は${limits.name}文字以内の色名にします`);
-	if (ENUMERATION.test(value.name) || /\n/.test(value.name)) return fail("name に二色の列挙や改行があります");
-	if (!text(value.nameReason, limits.nameReason)) return fail(`nameReason は${limits.nameReason}文字以内にします`);
-	if (!text(value.reading, limits.reading)) return fail(`reading は${limits.reading}文字以内にします`);
-	if (!text(value.relationship, limits.relationship))
-		return fail(`relationship は${limits.relationship}文字以内にします`);
-	if (!Array.isArray(value.colors) || value.colors.length !== 2) return fail("colors は2件にします");
+	if (!isObject(value)) return fail("応答からJSONオブジェクトを読み取れません");
+	const name = checkText(value.name, "色名（name）", limits.name);
+	if (!name.ok) return name;
+	if (ENUMERATION.test(name.value) || /\n/.test(String(value.name)))
+		return fail("色名（name）に二色の列挙記号や改行が含まれています");
+	const nameReason = checkText(value.nameReason, "命名理由（nameReason）", limits.nameReason);
+	if (!nameReason.ok) return nameReason;
+	const reading = checkText(value.reading, "回答全体の読み取り（reading）", limits.reading);
+	if (!reading.ok) return reading;
+	const relationship = checkText(value.relationship, "二色の関係（relationship）", limits.relationship);
+	if (!relationship.ok) return relationship;
+	if (!Array.isArray(value.colors)) return fail("選定色（colors）が配列ではありません");
+	if (value.colors.length !== 2) return fail(`選定色（colors）は2件必要ですが${value.colors.length}件でした`);
 	const ids = new Set(palette.colors.map((color) => color.id));
 	const colors: ColorChoice[] = [];
-	for (const color of value.colors as unknown[]) {
-		if (!isObject(color)) return fail("colors の要素がオブジェクトではありません");
-		if (["h", "s", "l"].some((key) => Object.hasOwn(color, key))) return fail("自由な h/s/l は受け付けません");
+	for (const [index, color] of (value.colors as unknown[]).entries()) {
+		const nth = `選定色（colors）の${index + 1}件目`;
+		if (!isObject(color)) return fail(`${nth}がオブジェクトではありません`);
+		if (["h", "s", "l"].some((key) => Object.hasOwn(color, key)))
+			return fail(`${nth}に禁止された自由なHSL値（h/s/l）が含まれています`);
 		if (typeof color.id !== "string" || !ids.has(color.id as PaletteId))
-			return fail(`色ID ${String(color.id)} はパレットにありません`);
-		if (!text(color.reason, limits.reason)) return fail(`各色の reason は${limits.reason}文字以内にします`);
+			return fail(`${nth}の色ID「${String(color.id)}」はパレットに存在しません`);
+		const reason = checkText(color.reason, `${nth}の理由（reason）`, limits.reason);
+		if (!reason.ok) return reason;
 		const evidence = color.evidence;
 		if (
 			!Array.isArray(evidence) ||
 			evidence.length === 0 ||
 			!evidence.every((id) => typeof id === "string" && questionIds.includes(id))
 		)
-			return fail("各色の evidence は有効な質問IDの配列にします");
-		colors.push({ id: color.id as PaletteId, reason: color.reason.trim(), evidence: [...new Set(evidence)] });
+			return fail(`${nth}の根拠（evidence）が有効な質問IDの配列ではありません`);
+		colors.push({ id: color.id as PaletteId, reason: reason.value, evidence: [...new Set(evidence)] });
 	}
-	if (colors[0].id === colors[1].id) return fail("二色は異なるIDにします");
+	if (colors[0].id === colors[1].id) return fail(`選定色（colors）の2色が同じ色ID（${colors[0].id}）です`);
 	return {
 		ok: true,
 		value: {
 			paletteVersion: palette.version,
-			name: value.name.trim(),
-			nameReason: value.nameReason.trim(),
-			reading: value.reading.trim(),
+			name: name.value,
+			nameReason: nameReason.value,
+			reading: reading.value,
 			colors: [colors[0], colors[1]],
-			relationship: value.relationship.trim(),
+			relationship: relationship.value,
 		},
 	};
 }
