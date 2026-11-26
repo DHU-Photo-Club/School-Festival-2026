@@ -4,7 +4,7 @@ import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { idlePlaylist } from "../../src/shared/assignment.ts";
 import { IDLE_FRAME_MS } from "../../src/shared/motion.ts";
-import { answerQuestion, ExhibitHarness, enterNickname } from "./fixtures.ts";
+import { answerQuestion, ExhibitHarness, enterNickname, expectQuestion } from "./fixtures.ts";
 
 const playlist = idlePlaylist(PHOTOS);
 
@@ -32,6 +32,8 @@ test("写真用は診断中も8秒周期で写真を繰り返し表示する", a
 			await controller.page.getByRole("button", { name: "はじめる" }).click();
 			await enterNickname(controller.page);
 			for (const [index, question] of QUESTIONS.entries()) {
+				// 質問の入れ替えの間は入力が操作を受け付けないため、入れ替えが終わるまで待つ。
+				await expectQuestion(controller.page, index);
 				await expect(controller.page.getByRole("heading", { name: question.prompt })).toBeVisible();
 				await answerQuestion(controller.page, question, index);
 				await controller.page.getByRole("button", { name: "次へ" }).click();

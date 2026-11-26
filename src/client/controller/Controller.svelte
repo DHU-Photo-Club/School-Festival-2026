@@ -24,12 +24,11 @@ import MapPad from "./MapPad.svelte";
 import ProgressBar from "./ProgressBar.svelte";
 import QrCode from "./QrCode.svelte";
 import {
-	QUESTION_TRANSITION_MS,
-	type QuestionPart,
-	questionDirectionOf,
-	questionEnter,
+	isQuestionSwitch,
+	markDescendOrder,
+	QUESTION_LOCK_MS,
 	questionLeave,
-	questionMotion,
+	questionMotionStyle,
 } from "./question-transition.ts";
 import Slider from "./Slider.svelte";
 
@@ -51,16 +50,13 @@ let startPressed = $state(false);
 /** `intro` で入力中のニックネーム。 */
 let nicknameDraft = $state("");
 let nicknameInput = $state<HTMLInputElement | null>(null);
-/** 直前の質問の切り替えの向き。`1` は次の質問へ進んだとき、`-1` は前の質問へ戻ったとき。 */
-let questionDirection: 1 | -1 = 1;
 /**
- * 去る質問の入力方式。去る質問の入れ替えの設定を求める時点では `question` がすでに次の質問を指すため、
- * 切り替える前に控える。
- */
-let leavingKind: Question["kind"] | null = null;
-/**
- * 質問の入れ替えの間は `true`。入れ替えの途中で次の切り替えが起きると、入りかけの質問が去る動きの始めに
- * 不透明へ戻って見えるため、入れ替えが終わるまで下部のボタンを無効にする。
+ * 質問の入れ替えの間は `true`。この間だけ次の質問に降りてくる動きを掛ける。入れ替えの途中で次の切り替えが
+ * 起きると、降りかけの質問が動きを失って一瞬はっきり見えるため、入れ替えが終わるまで下部のボタンを無効にする。
+ * 質問の区画（`.stage`）も `inert` にし、降りかけの入力に指、キーボード、読み上げのどれでも触れられないようにする
+ * （要素ごとに表示が切り替わる間、読み上げに半端な質問を出さない）。
+ * 質問の番号はこのiPadの「次へ」「戻る」でしか変わらないため、ボタンを無効にすれば途中の切り替えは起きない
+ * （強制リセットは `idle` を経由するため入れ替えにならない）。
  */
 let transitioning = $state(false);
 let transitionTimer: ReturnType<typeof setTimeout> | undefined;
@@ -107,17 +103,10 @@ function initialDraft(question: Question): Answer | null {
 
 function onState(next: ExhibitState) {
 	const previousIndex = exhibit?.phase === "question" ? exhibit.questionIndex : null;
-	const direction = questionDirectionOf(previousIndex, next.phase === "question" ? next.questionIndex : null);
-	// `direction` が値を持てば `previousIndex` も値を持つが、型の絞り込みのために両方を確かめる。
-	if (previousIndex !== null && direction !== null) {
-		questionDirection = direction;
-		leavingKind = QUESTIONS[previousIndex].kind;
-		if (!reducedMotion) {
-			transitioning = true;
-			clearTimeout(transitionTimer);
-			// 入る質問の最後のフレームより先に解除しないよう、1フレーム分（約17ms）待ってから解除する。
-			transitionTimer = setTimeout(() => (transitioning = false), QUESTION_TRANSITION_MS + 17);
-		}
+	if (isQuestionSwitch(previousIndex, next.phase === "question" ? next.questionIndex : null) && !reducedMotion) {
+		transitioning = true;
+		clearTimeout(transitionTimer);
+		transitionTimer = setTimeout(() => (transitioning = false), QUESTION_LOCK_MS);
 	}
 	exhibit = next;
 	pending = null;
@@ -133,16 +122,9 @@ function onState(next: ExhibitState) {
 	}
 }
 
-/** 次の質問の入り方。入る質問は表示中の `question`。 */
-function enterQuestion(node: Element, part: QuestionPart) {
-	if (!question) return { duration: 0 };
-	return questionEnter(node, questionMotion(part, question.kind, questionDirection, reducedMotion));
-}
-
-/** 前の質問の去り方。去る質問は切り替える前に控えた `leavingKind`。 */
-function leaveQuestion(node: Element, part: QuestionPart) {
-	if (!leavingKind) return { duration: 0 };
-	return questionLeave(node, questionMotion(part, leavingKind, questionDirection, reducedMotion));
+/** 前の質問の去り方。 */
+function leaveQuestion(node: Element) {
+	return questionLeave(node, { reducedMotion });
 }
 
 function send(command: Command) {
@@ -358,20 +340,28 @@ $effect(() => {
 					label="質問 {exhibit.questionIndex + 1} / {QUESTIONS.length}"
 				/>
 				<!--
-					前後の質問を同じ区画に重ねて入れ替える（docs/visual-language.md 4.5節）。次の動きはSvelte 5の
+					前後の質問を同じ区画に重ねて入れ替える（docs/visual-language.md 4.5節）。前の質問の消え方はSvelte 5の
 					仕組みに頼る: `{#key}` は去る質問の `out:` が終わるまで旧DOMを残し、`out:` は旧要素を `inert` にする。
-					`in:` / `out:` はローカル（`|global` なし）のため、`{#if}` の分岐ごと作り直す `intro` から最初の質問、
-					最後の質問から `judging` では動かない。重なりはE2Eテスト（flow.spec.ts）で確かめる。
+					`out:` はローカル（`|global` なし）のため、`{#if}` の分岐ごと消える最後の質問から `judging` へ移るときは動かない。
+					前後の質問とも、`markDescendOrder` が順番を付けた要素ごとにCSSで動きを掛ける。次の質問は `data-transitioning="true"` の間だけ降りてきて、
+					前の質問は `questionLeave` で `data-leaving` が付き、DOMに残る間だけ奥へ落ちる。`out:` は最後の要素が落ち終わるまで前の質問を残すだけで、
+					質問全体には何も掛けない。
+					重なりはE2Eテスト（flow.spec.ts）で確かめる。
 				-->
-				<div class="stage" data-transitioning={transitioning}>
+				<div
+					class="stage"
+					data-transitioning={transitioning}
+					inert={transitioning}
+					style={questionMotionStyle()}
+				>
 					{#key exhibit.questionIndex}
 						<div
 							class="body"
 							class:split={question.kind === "slider"}
-							in:enterQuestion={"body"}
-							out:leaveQuestion={"body"}
+							use:markDescendOrder
+							out:leaveQuestion
 						>
-							<div class="heading" in:enterQuestion={"heading"} out:leaveQuestion={"heading"}>
+							<div class="heading">
 								<h1 class="prompt">{question.prompt}</h1>
 								<p class="guide">{question.guide}</p>
 								{#if exhibit.judgeFailed}
@@ -648,12 +638,81 @@ p {
 	align-items: center;
 	justify-items: center;
 }
+/*
+ * 前後の質問ごとに重なり順を独立させる。独立させないと、前の質問のスライダーの操作面（`position: absolute`）や
+ * 2Dマップの平面（`position: relative`）など `position` を指定した要素が、`position` を指定していない次の質問の
+ * 要素より手前に描かれる。`isolation` は絶対配置の基準を作らないため、
+ * スライダーの操作面は今までどおり画面全体を基準にする（`position: relative` にすると操作面が縮む）。
+ */
 .stage > .body {
 	grid-area: 1 / 1;
+	isolation: isolate;
 }
-/* 入れ替えの間は、ずれて半透明の質問に触れて回答が変わらないよう、下部のボタンと同じく入力も受け付けない。 */
-.stage[data-transitioning="true"] > .body {
+/* 入れ替えの間は `.stage` を `inert` にする。`inert` に対応しない古いブラウザでも指で触れないよう、指の入力も止める。 */
+.stage[data-transitioning="true"] {
 	pointer-events: none;
+}
+/*
+ * 次の質問は、要素ごとに少しずつ遅れて、画面の手前から拡大されてぼけた状態で降りてきて、画面に貼り付く。
+ * 前の質問は、それより先に、要素ごとに少しずつ遅れて、画面の奥へ縮んでぼけながら落ちて消える（docs/visual-language.md 4.5節）。
+ * 動かす要素の印（`data-descend`）と順番は `markDescendOrder` が付ける。前の質問は `questionLeave` が付ける `data-leaving` で見分ける（実行時に
+ * 付けるため、`:global` にしないと使われないセレクタとして削られる）。Svelteも去る質問にプロパティとして `inert` を設定するが、
+ * `inert` に対応しない古いブラウザでは属性にならないため、見分けには使わない。
+ * 前の質問の動きは `data-transitioning` を条件にしない。`data-leaving` は去る質問がDOMに残る間だけ存在するため、それだけで
+ * 足りる。描画が遅れて `data-transitioning="true"` が先に外れても、前の質問は透明のままDOMから消える。
+ */
+.stage[data-transitioning="true"] > .body:not([data-leaving]) :global([data-descend]),
+.stage > .body:global([data-leaving]) :global([data-descend]) {
+	/* 拡大縮小とぼかしを毎フレーム描き直すため、入れ替えの間だけ合成用の層に分ける。 */
+	will-change: scale, filter, opacity;
+}
+.stage[data-transitioning="true"] > .body:not([data-leaving]) :global([data-descend]) {
+	/* 次の質問は、前の質問がすべて落ちきるまでの時間 `--enter-delay` だけ待ってから降り始める。 */
+	--descend-delay: calc(var(--enter-delay) + var(--descend-step, 0) * var(--motion-stagger));
+	animation:
+		question-descend var(--enter-duration) var(--enter-easing) var(--descend-delay) both,
+		question-appear var(--enter-fade) ease-out var(--descend-delay) both;
+}
+.stage > .body:global([data-leaving]) :global([data-descend]) {
+	--descend-delay: calc(var(--descend-step, 0) * var(--motion-stagger));
+	animation:
+		question-recede var(--leave-duration) var(--leave-easing) var(--descend-delay) both,
+		question-vanish var(--leave-fade) var(--leave-easing) var(--descend-delay) both;
+}
+/*
+ * 四つのキーフレームは、要素の本来の見た目になる側（入る動きの `to` と去る動きの `from`）を書かない。書かない側は要素自身の値になるため、上限に達して
+ * 薄くした選択肢（不透明度0.35）は、0.35まで現れ、0.35から消える。ぼかしの本来の値 `none` はぼかし0と同じように
+ * 補間され、終わったときにフィルタを残さない。
+ */
+@keyframes question-descend {
+	from {
+		scale: var(--enter-scale);
+		filter: blur(var(--enter-blur));
+	}
+}
+/*
+ * 降り始めるまでは見えないだけでなく `visibility: hidden` にし、読み上げにも出さない。reduced-motionでは
+ * `data-transitioning` を立てず、前の質問もすぐに消すため、この動きは掛からない。CSS側の `prefers-reduced-motion` で止めると、
+ * 動かないのにボタンを無効にする時間だけが残るため、reduced-motionの判定は `onState` にまとめる。
+ */
+@keyframes question-appear {
+	from {
+		opacity: 0;
+		visibility: hidden;
+	}
+}
+@keyframes question-recede {
+	to {
+		scale: var(--leave-scale);
+		filter: blur(var(--leave-blur));
+	}
+}
+/* 透明になった各要素は、前の質問がDOMから消えるまで `animation-fill-mode: both` で透明のままにする。 */
+@keyframes question-vanish {
+	to {
+		opacity: 0;
+		visibility: hidden;
+	}
 }
 .question .body {
 	display: grid;

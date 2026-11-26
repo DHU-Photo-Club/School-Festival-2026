@@ -1,103 +1,153 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+	DESCEND_TARGETS,
+	descendStep,
+	isQuestionSwitch,
+	QUESTION_ENTER_BLUR_PX,
+	QUESTION_ENTER_DELAY_MS,
+	QUESTION_ENTER_EASING,
+	QUESTION_ENTER_FADE_MS,
 	QUESTION_ENTER_MS,
+	QUESTION_ENTER_SCALE,
+	QUESTION_ENTER_TOTAL_MS,
+	QUESTION_LEAVE_BLUR_PX,
+	QUESTION_LEAVE_EASING,
+	QUESTION_LEAVE_FADE_MS,
 	QUESTION_LEAVE_MS,
-	QUESTION_SHIFT_PX,
-	type QuestionTransitionParams,
-	questionDirectionOf,
-	questionEnter,
+	QUESTION_LEAVE_SCALE,
+	QUESTION_LEAVE_TOTAL_MS,
+	QUESTION_LOCK_MARGIN_MS,
+	QUESTION_LOCK_MS,
+	QUESTION_STAGGER_MAX,
+	QUESTION_STAGGER_MS,
+	QUESTION_TRANSITION_MS,
 	questionLeave,
-	questionMotion,
+	questionMotionStyle,
 } from "../../src/client/controller/question-transition.ts";
 
-const node = {} as Element;
-const params = (overrides: Partial<QuestionTransitionParams> = {}): QuestionTransitionParams => ({
-	direction: 1,
-	move: true,
-	fade: true,
-	reducedMotion: false,
-	...overrides,
-});
+/** `setAttribute` で付けた属性だけを覚える、要素の代わり。 */
+function fakeNode(): Element & { attributes: Record<string, string> } {
+	const attributes: Record<string, string> = {};
+	return { attributes, setAttribute: (name: string, value: string) => (attributes[name] = value) } as never;
+}
 
 describe("質問の入れ替え", () => {
-	it("次の質問は前の質問が消えてから現れる", () => {
-		const enter = questionEnter(node, params());
-		expect(enter.delay).toBe(QUESTION_LEAVE_MS);
-		expect(enter.duration).toBe(QUESTION_ENTER_MS);
-		expect(questionLeave(node, params()).duration).toBe(QUESTION_LEAVE_MS);
-		expect(questionLeave(node, params()).delay).toBeUndefined();
+	it("前の質問は、最後の要素が奥へ落ち終わるまで残り、質問全体には何も掛けない", () => {
+		const node = fakeNode();
+		const leave = questionLeave(node, { reducedMotion: false });
+		// 前の質問の動きは、この属性で見分ける（Svelteの `inert` は、対応しないブラウザでは属性にならない）。
+		expect(node.attributes["data-leaving"]).toBe("");
+		expect(leave.duration).toBe(QUESTION_LEAVE_TOTAL_MS);
+		expect(leave.delay).toBeUndefined();
+		// 質問全体に `scale` や `filter` を掛けると、スライダーの操作面の基準が変わって縮む。
+		expect(leave.css).toBeUndefined();
+		expect(QUESTION_LEAVE_TOTAL_MS).toBe(QUESTION_STAGGER_MAX * QUESTION_STAGGER_MS + QUESTION_LEAVE_MS);
 	});
 
-	it("進むときは右から入って左へ去り、戻るときは逆になる", () => {
-		// Svelteは `css(t, u)` の `t` を、入るときは0から1へ、去るときは1から0へ進める。どちらも `t = 0` が画面の外側。
-		expect(questionEnter(node, params()).css?.(0, 1)).toContain(`translate: ${QUESTION_SHIFT_PX.toFixed(2)}px 0;`);
-		expect(questionLeave(node, params()).css?.(0, 1)).toContain(`translate: -${QUESTION_SHIFT_PX.toFixed(2)}px 0;`);
-		expect(questionEnter(node, params({ direction: -1 })).css?.(0, 1)).toContain(
-			`translate: -${QUESTION_SHIFT_PX.toFixed(2)}px 0;`,
+	it("次の質問は前の質問がすべて落ちきってから降り始め、入れ替え全体は次の質問の最後の要素が降り終わるまで続く", () => {
+		// 前の質問の最後の要素が落ち終わり、透明になるのと同時に降り始める。
+		expect(QUESTION_ENTER_DELAY_MS).toBe(QUESTION_LEAVE_TOTAL_MS);
+		// docs/visual-language.md 4.5節に書いた値。定数を変えたら、ドキュメントも合わせて直す。
+		expect([QUESTION_ENTER_DELAY_MS, QUESTION_TRANSITION_MS, QUESTION_LOCK_MS]).toEqual([1660, 3320, 3420]);
+		expect(QUESTION_LEAVE_TOTAL_MS).toBeGreaterThanOrEqual(
+			QUESTION_STAGGER_MAX * QUESTION_STAGGER_MS + QUESTION_LEAVE_FADE_MS,
 		);
-		expect(questionLeave(node, params({ direction: -1 })).css?.(0, 1)).toContain(
-			`translate: ${QUESTION_SHIFT_PX.toFixed(2)}px 0;`,
+		expect(QUESTION_ENTER_TOTAL_MS).toBe(
+			QUESTION_ENTER_DELAY_MS + QUESTION_STAGGER_MAX * QUESTION_STAGGER_MS + QUESTION_ENTER_MS,
 		);
+		expect(QUESTION_TRANSITION_MS).toBe(Math.max(QUESTION_ENTER_TOTAL_MS, QUESTION_LEAVE_TOTAL_MS));
+		// 見え始めと消え終わりは、それぞれ降りてくる動きと落ちていく動きの中で終わるため、ロックに収まる。
+		expect(QUESTION_ENTER_FADE_MS).toBeLessThan(QUESTION_ENTER_MS);
+		// 前の質問は、落ちる動きを最後まで見せながら透明になる。
+		expect(QUESTION_LEAVE_FADE_MS).toBe(QUESTION_LEAVE_MS);
 	});
 
-	it("終わりの見た目は元の位置で不透明", () => {
-		const css = questionEnter(node, params()).css?.(1, 0);
-		expect(css).toContain("translate: 0.00px 0;");
-		expect(css).toContain("opacity: 1.000;");
+	it("ボタンと質問の操作は、最後の要素が動き終わってから数フレームの余裕をおいて戻る", () => {
+		const step = descendStep(Number.MAX_SAFE_INTEGER) * QUESTION_STAGGER_MS;
+		const lastEnd = Math.max(QUESTION_ENTER_DELAY_MS + step + QUESTION_ENTER_MS, step + QUESTION_LEAVE_MS);
+		expect(QUESTION_LOCK_MS).toBe(lastEnd + QUESTION_LOCK_MARGIN_MS);
+		// 前の質問がDOMから消える前にロックが解けない。
+		expect(QUESTION_LOCK_MS).toBeGreaterThan(QUESTION_LEAVE_TOTAL_MS);
+		// 30fpsに落ちた端末の三フレーム分（約33ms × 3）以上。
+		expect(QUESTION_LOCK_MARGIN_MS).toBeGreaterThanOrEqual(100);
 	});
 
-	it("ずらさない、または透明度を変えない指定では、その値を書かない", () => {
-		expect(questionEnter(node, params({ move: false })).css?.(0.5, 0.5)).toBe("opacity: 0.500;");
-		expect(questionEnter(node, params({ fade: false })).css?.(0.5, 0.5)).not.toContain("opacity");
+	it("要素ごとに順に遅れて降り、上限より後の要素は上限の要素と同時に降りる", () => {
+		expect([0, 1, 2].map(descendStep)).toEqual([0, 1, 2]);
+		expect(descendStep(QUESTION_STAGGER_MAX)).toBe(QUESTION_STAGGER_MAX);
+		expect(descendStep(QUESTION_STAGGER_MAX + 3)).toBe(QUESTION_STAGGER_MAX);
 	});
 
-	it("現れるのを待つ間は見えない入力に触れないよう隠し、動き始めたら表示する", () => {
-		const enter = questionEnter(node, params());
-		expect(enter.css?.(0, 1)).toContain("visibility: hidden;");
-		expect(enter.css?.(0.01, 0.99)).not.toContain("visibility");
-		expect(questionLeave(node, params()).css?.(0, 1)).not.toContain("visibility");
+	it("降りる要素は質問文と各入力の部品で、質問全体やスライダーの外側の箱は含めない", () => {
+		const targets = DESCEND_TARGETS.split(", ");
+		expect(targets).toContain(".heading > *");
+		expect(targets).toContain(".choices .option");
+		expect(targets).toContain(".slider > .area > .handle");
+		// `.slider` や `.body` を動かすと、画面全体に広がるスライダーの操作面の基準になって縮む。
+		// 操作面（`.area`）そのものを拡大すると、画面からはみ出して画面が縦にスクロールできるようになる。
+		expect(targets).not.toContain(".slider");
+		expect(targets).not.toContain(".slider > .area");
+		expect(targets.some((target) => target.startsWith(".body"))).toBe(false);
 	});
 
-	it("ずらさず透明度も変えない部分は、アニメーションを作らない", () => {
-		const none = params({ move: false, fade: false });
-		expect(questionEnter(node, none)).toEqual({ duration: 0 });
-		expect(questionLeave(node, none)).toEqual({ duration: 0 });
+	it("降り始めは手前にあるように大きく、ぼけている", () => {
+		expect(QUESTION_ENTER_SCALE).toBeGreaterThan(1);
+		expect(QUESTION_ENTER_BLUR_PX).toBeGreaterThan(0);
+	});
+
+	it("落ちきった前の質問は奥にあるように小さく、ぼけている", () => {
+		expect(QUESTION_LEAVE_SCALE).toBeLessThan(1);
+		expect(QUESTION_LEAVE_SCALE).toBeGreaterThan(0);
+		expect(QUESTION_LEAVE_BLUR_PX).toBeGreaterThan(0);
+	});
+
+	it("動きの値をCSSのカスタムプロパティで渡す", () => {
+		const style = questionMotionStyle();
+		expect(style).toContain(`--motion-stagger: ${QUESTION_STAGGER_MS}ms`);
+		expect(style).toContain(`--enter-delay: ${QUESTION_ENTER_DELAY_MS}ms`);
+		expect(style).toContain(`--enter-easing: ${QUESTION_ENTER_EASING}`);
+		expect(style).toContain(`--leave-easing: ${QUESTION_LEAVE_EASING}`);
+		expect(style).toContain(`--enter-duration: ${QUESTION_ENTER_MS}ms`);
+		expect(style).toContain(`--enter-fade: ${QUESTION_ENTER_FADE_MS}ms`);
+		expect(style).toContain(`--enter-scale: ${QUESTION_ENTER_SCALE}`);
+		expect(style).toContain(`--enter-blur: ${QUESTION_ENTER_BLUR_PX}px`);
+		expect(style).toContain(`--leave-duration: ${QUESTION_LEAVE_MS}ms`);
+		expect(style).toContain(`--leave-fade: ${QUESTION_LEAVE_FADE_MS}ms`);
+		expect(style).toContain(`--leave-scale: ${QUESTION_LEAVE_SCALE}`);
+		expect(style).toContain(`--leave-blur: ${QUESTION_LEAVE_BLUR_PX}px`);
+	});
+
+	it("前の質問は、落ちる動きも消える動きもイーズインで、次の質問はイーズアウトで動く", () => {
+		const source = readFileSync(new URL("../../src/client/controller/Controller.svelte", import.meta.url), "utf8");
+		expect(source).toMatch(/question-recede var\(--leave-duration\) var\(--leave-easing\)/);
+		expect(source).toMatch(/question-vanish var\(--leave-fade\) var\(--leave-easing\)/);
+		expect(source).toMatch(/question-descend var\(--enter-duration\) var\(--enter-easing\)/);
+		expect(QUESTION_LEAVE_EASING).toBe("cubic-bezier(0.12, 0, 0.39, 0)");
+	});
+
+	it("渡したカスタムプロパティを、Controller.svelteのCSSがすべて使う", () => {
+		// 名前が食い違うと、アニメーションの値が無効になって動きが止まる。
+		const source = readFileSync(new URL("../../src/client/controller/Controller.svelte", import.meta.url), "utf8");
+		const names = [...questionMotionStyle().matchAll(/(--[\w-]+):/g)].map((match) => match[1]);
+		expect(names.length).toBeGreaterThan(0);
+		for (const name of names) expect(source).toContain(`var(${name})`);
 	});
 
 	it("reduced-motionでは時間をかけずに切り替える", () => {
-		expect(questionEnter(node, params({ reducedMotion: true }))).toEqual({ duration: 0 });
-		expect(questionLeave(node, params({ reducedMotion: true }))).toEqual({ duration: 0 });
+		expect(questionLeave(fakeNode(), { reducedMotion: true })).toEqual({ duration: 0 });
 	});
 });
 
-describe("質問の切り替えの向き", () => {
-	it("後の質問へ移ると進む、前の質問へ移ると戻る", () => {
-		expect(questionDirectionOf(0, 1)).toBe(1);
-		expect(questionDirectionOf(3, 1)).toBe(-1);
+describe("質問の切り替えの判定", () => {
+	it("質問から別の質問へ移るときだけ入れ替える", () => {
+		expect(isQuestionSwitch(0, 1)).toBe(true);
+		expect(isQuestionSwitch(3, 1)).toBe(true);
 	});
 
 	it("質問の外から入る、質問の外へ出る、同じ質問のままのときは入れ替えない", () => {
-		expect(questionDirectionOf(null, 0)).toBeNull();
-		expect(questionDirectionOf(4, null)).toBeNull();
-		expect(questionDirectionOf(2, 2)).toBeNull();
-	});
-});
-
-describe("入れ替えで動かす部分", () => {
-	it("スライダー以外は質問全体をずらしながら透明度を変え、質問文は質問全体と一緒に動く", () => {
-		for (const kind of ["single", "multiple", "ranked", "map"] as const) {
-			expect(questionMotion("body", kind, 1, false)).toMatchObject({ move: true, fade: true });
-			expect(questionMotion("heading", kind, 1, false)).toMatchObject({ move: false, fade: false });
-		}
-	});
-
-	it("スライダーは質問全体の透明度だけを変え、質問文だけをずらす", () => {
-		expect(questionMotion("body", "slider", -1, false)).toEqual({
-			direction: -1,
-			move: false,
-			fade: true,
-			reducedMotion: false,
-		});
-		expect(questionMotion("heading", "slider", -1, false)).toMatchObject({ move: true, fade: false });
+		expect(isQuestionSwitch(null, 0)).toBe(false);
+		expect(isQuestionSwitch(4, null)).toBe(false);
+		expect(isQuestionSwitch(2, 2)).toBe(false);
 	});
 });

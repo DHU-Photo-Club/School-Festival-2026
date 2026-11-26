@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { descendStep } from "../../src/client/controller/question-transition.ts";
 import { SPLIT_MAX, SPLIT_MIN } from "../../src/client/controller/split.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
@@ -242,6 +243,17 @@ for (const displayCount of [1, 3]) {
 			if (overlap) {
 				await expectQuestion(page, 1);
 				expect(await overlap()).toBe(2);
+				// 次の質問の要素は、文書順に遅れの段数が付き、上限より後は上限の段数で降りる。段数は降りた後も残る。
+				// 2問目は選択式で、質問文、案内文、各選択肢、選択肢の下のラベルが降りる。
+				const second = QUESTIONS[1];
+				if (second.kind !== "multiple") throw new Error(`${second.id} は複数選択ではありません`);
+				const steps = await page
+					.locator(".question .stage > .body [data-descend]")
+					.evaluateAll((elements) =>
+						elements.map((element) => (element as HTMLElement).style.getPropertyValue("--descend-step")),
+					);
+				expect(steps).toHaveLength(2 + second.options.length + 1);
+				expect(steps).toEqual(steps.map((_, order) => String(descendStep(order))));
 			}
 			if (index < QUESTIONS.length - 1) {
 				// 一問確定するたびに全画面の revision が増える。展示ディスプレイの演出が回答に反応しないことは単体テスト（motion.test.ts）で確かめる。

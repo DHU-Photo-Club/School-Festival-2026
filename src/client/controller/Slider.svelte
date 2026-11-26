@@ -147,10 +147,22 @@ function up(event: PointerEvent) {
 	position: absolute;
 	inset: 0;
 	z-index: 0;
+	/*
+	 * 質問の入れ替えで中の語、仕切り線、つまみが拡大された状態から降りてくる（docs/visual-language.md 4.5節）。
+	 * 画面からはみ出した分で画面が縦にスクロールできるようにならないよう、操作面（画面全体）の外を切り落とす。
+	 * `clip` はスクロールの枠を作らないため、中の語や仕切り線がずれたまま固まることもない（`clip` に対応しない
+	 * ブラウザでは `hidden` で切り落とす）。
+	 */
+	overflow: hidden;
 	touch-action: none;
 	cursor: ew-resize;
 	user-select: none;
 	-webkit-user-select: none;
+}
+@supports (overflow: clip) {
+	.area {
+		overflow: clip;
+	}
 }
 /* 見えないラジオボタンにフォーカスがあるときは、つまみに枠を出す。 */
 .area:has(input:focus-visible) .handle {
@@ -168,12 +180,17 @@ function up(event: PointerEvent) {
 	white-space: nowrap;
 	border: 0;
 }
+/*
+ * 語、仕切り線、つまみの位置合わせは `transform` ではなく `translate` で書く。質問の入れ替えで掛ける `scale` は
+ * `transform` より外側で合成されるため、`transform` で書くと位置合わせの移動分まで拡大縮小され、要素がその場に
+ * とどまらず、位置がずれながら大きさを変えてしまう（docs/visual-language.md 4.5節）。
+ */
 .label {
 	position: absolute;
 	top: 50%;
 	padding: 0 8px;
 	box-sizing: border-box;
-	transform: translateY(-50%);
+	translate: 0 -50%;
 	text-align: center;
 	font-weight: 600;
 	letter-spacing: 0.08em;
@@ -196,7 +213,7 @@ function up(event: PointerEvent) {
 	bottom: 0;
 	left: calc(100% * var(--split));
 	width: 2px;
-	transform: translateX(-50%);
+	translate: -50% 0;
 	background: var(--text);
 	mask-image: linear-gradient(to bottom, transparent 0, transparent 22%, #000 36%);
 	pointer-events: none;
@@ -210,7 +227,7 @@ function up(event: PointerEvent) {
 	width: 40px;
 	height: 40px;
 	border-radius: 50%;
-	transform: translate(-50%, -50%);
+	translate: -50% -50%;
 	background: var(--idle);
 	color: var(--text);
 	pointer-events: none;
