@@ -48,7 +48,11 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	// 説明の文が現れている途中でも、入力欄は出ない。現れ終えると出る。
 	await expect(nicknameField).toHaveCount(0);
 	await expect(description).toHaveCSS("opacity", "1", { timeout: 10_000 });
-	await expect(nicknameField).toBeVisible({ timeout: 10_000 });
+	await expect(display.page.locator(".description")).toHaveCSS("opacity", "0", { timeout: 10_000 });
+	await expect(display.page.locator(".invitation")).toHaveCSS("opacity", "1", { timeout: 3_000 });
+	await expect(display.page.locator(".invitation span")).toHaveText(["さあ、あなただけの色を", "見つけましょう"]);
+	await expect(nicknameField).toHaveCount(0);
+	await expect(nicknameField).toBeVisible({ timeout: 15_000 });
 	await enterNickname(ipad.page);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "question");
 	await expect(description).toHaveCSS("opacity", "0", { timeout: 4_000 });

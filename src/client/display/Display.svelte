@@ -10,6 +10,7 @@ import {
 	computeScene,
 	IDLE_RETURN_MS,
 	introDescriptionOpacity,
+	introInvitationOpacity,
 	screenColorId,
 	WELCOME_FADE_OUT_MS,
 	welcomeOpacity,
@@ -50,6 +51,7 @@ let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
 let description = $state<HTMLParagraphElement>();
+let invitation = $state<HTMLParagraphElement>();
 
 let client: RealtimeClient | null = null;
 let renderer: SceneRenderer | null = null;
@@ -263,6 +265,10 @@ function applyWelcome(state: DisplayState, now: number) {
 	const descriptionTransition = state.phase === "intro" || reducedMotion ? "none" : transition;
 	if (description.style.transition !== descriptionTransition) description.style.transition = descriptionTransition;
 	setStyle(description, "opacity", opacity(introDescriptionOpacity(state, now, reducedMotion, welcomeLead)));
+	if (invitation) {
+		if (invitation.style.transition !== descriptionTransition) invitation.style.transition = descriptionTransition;
+		setStyle(invitation, "opacity", opacity(introInvitationOpacity(state, now, reducedMotion, welcomeLead)));
+	}
 }
 
 function tick(timestamp: number) {
@@ -396,6 +402,11 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 		{/each}
 	</p>
 
+	<p class="invitation" bind:this={invitation} style="opacity: 0">
+		<span>さあ、あなただけの色を</span>
+		<span>見つけましょう</span>
+	</p>
+
 	{#if lab && labHudVisible}
 		<p class="lab-hud" data-lab={lab.loop}>{labHud}<br>{LAB_LOOP_NOTES[lab.loop]}（h で隠す）</p>
 	{/if}
@@ -443,7 +454,8 @@ canvas,
 	will-change: opacity;
 }
 .welcome,
-.description {
+.description,
+.invitation {
 	position: absolute;
 	inset: 0;
 	margin: 0;
@@ -457,7 +469,8 @@ canvas,
 	pointer-events: none;
 	will-change: opacity;
 }
-.description {
+.description,
+.invitation {
 	line-height: 1.9;
 }
 .lab-hud {

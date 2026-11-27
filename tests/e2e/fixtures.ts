@@ -225,7 +225,7 @@ export async function answerAllQuestions(page: Page): Promise<void> {
 export async function enterNickname(page: Page, nickname = "テスト"): Promise<void> {
 	// 展示ディスプレイが説明の文を現れ終えるまで、入力欄は出ない。
 	const field = page.getByRole("textbox", { name: "ニックネームを入力して下さい" });
-	await field.waitFor({ timeout: 20_000 });
+	await field.waitFor({ timeout: 30_000 });
 	await field.fill(nickname);
 	await page.getByRole("button", { name: "進む" }).click();
 }

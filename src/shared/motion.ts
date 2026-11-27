@@ -1,4 +1,5 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
+import { INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
 import { SETTLE_MARGIN_MS } from "./machine.ts";
 import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
 import { RIPPLE_MS } from "./ripple.ts";
@@ -493,7 +494,7 @@ export function welcomeOpacity(
 
 /**
  * `intro` の説明の文の不透明度。歓迎の文字が消え終えてから（`INTRO_DESCRIPTION_AT_MS`）、`intro` の間だけ
- * ゆっくり現れ、`intro` を終えるまで見せ続ける。時刻の数え方は `welcomeOpacity` と同じ。
+ * ゆっくり現れ、ナレーション02が終わるまで見せる。時刻の数え方は `welcomeOpacity` と同じ。
  * `intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
 export function introDescriptionOpacity(
@@ -504,14 +505,28 @@ export function introDescriptionOpacity(
 ): number {
 	if (state.phase !== "intro") return 0;
 	const elapsed = openingElapsed(state, now, lead);
+	if (elapsed >= INTRO_INVITATION_AT_MS) return 0;
 	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 0 : 1;
 	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS);
 }
 
+/** 02の終了で表示し、03の間は白い輪の中央に見せる案内文。 */
+export function introInvitationOpacity(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	if (state.phase !== "intro") return 0;
+	const elapsed = openingElapsed(state, now, lead) - INTRO_INVITATION_AT_MS;
+	if (elapsed < 0) return 0;
+	return reducedMotion ? 1 : easeInOutSine(elapsed / 800);
+}
+
 /**
- * `intro` の説明の文が現れ終えるまでの残り時間（ミリ秒）。0以下なら現れ終えている。iPadは、これが0以下に
+ * 導入ナレーション03が終わるまでの残り時間（ミリ秒）。0以下なら読み終えている。iPadは、これが0以下に
  * なるまでニックネームの入力欄を出さない。時刻の数え方は `welcomeOpacity` と同じ。
- * reduced-motionでは、説明の文が即時に現れる時刻（`WELCOME_LEAVE_AT_MS`）までの残り時間。
+ * reduced-motionでも音声を省略しないため、同じ長さを待つ。
  */
 export function introDescriptionRemainingMs(
 	state: Pick<DisplayState, "phaseStartedAt">,
@@ -519,7 +534,7 @@ export function introDescriptionRemainingMs(
 	reducedMotion: boolean,
 	lead: WelcomeLead | null = null,
 ): number {
-	const doneAt = reducedMotion ? WELCOME_LEAVE_AT_MS : INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS;
+	const doneAt = INTRO_NICKNAME_AT_MS;
 	return doneAt - openingElapsed({ ...state, phase: "intro" }, now, lead);
 }
 
@@ -542,29 +557,23 @@ function openingElapsed(
  */
 function openingShards(input: SceneInput): ShardLayer {
 	const { state, now, reducedMotion } = input;
-	const p = reducedMotion ? 1 : easeInOutSine(openingElapsed(state, now, input.lead ?? null) / SHARD_SCALE_MS);
+	const elapsed = openingElapsed(state, now, input.lead ?? null);
+	const p = reducedMotion ? 1 : easeInOutSine(elapsed / SHARD_SCALE_MS);
+	const returnToRing = elapsed < INTRO_INVITATION_AT_MS ? 0
+		: reducedMotion ? 1 : easeInOutSine((elapsed - INTRO_INVITATION_AT_MS) / SHARD_SCALE_MS);
 	return shardLayer(input, 1, {
 		colors: input.colors.map(baseColor),
-		tint: p,
+		tint: p * (1 - returnToRing),
 		scale: lerp(SHARD_IDLE_SCALE, 1, p),
 		density: lerp(SHARD_IDLE_DENSITY, 1, p),
-		size: lerp(1, SHARD_OPENING_SIZE, p),
-		spread: lerp(0, SHARD_OPENING_SPREAD, p),
+		size: lerp(1, SHARD_OPENING_SIZE, p * (1 - returnToRing)),
+		spread: lerp(0, SHARD_OPENING_SPREAD, p * (1 - returnToRing)),
 	});
 }
 
-/** `intro` から質問へ移った直後の破片。`intro` の色づいて散らばった破片が、質問中の灰色の輪へ戻る。 */
+/** 追加の案内場面で白い輪へ戻っているため、質問でも同じ輪を保つ。 */
 function questionShards(input: SceneInput): ShardLayer {
-	const { state, now, reducedMotion } = input;
-	const p =
-		reducedMotion || !input.questionFromIntro ? 1 : easeInOutSine((now - state.phaseStartedAt) / SHARD_SCALE_MS);
-	if (p >= 1) return shardLayer(input, 1);
-	return shardLayer(input, 1, {
-		colors: input.colors.map(baseColor),
-		tint: 1 - p,
-		size: lerp(SHARD_OPENING_SIZE, 1, p),
-		spread: lerp(SHARD_OPENING_SPREAD, 0, p),
-	});
+	return shardLayer(input, 1);
 }
 
 /** 波紋以外の描画内容。 */

@@ -90,3 +90,14 @@ export const GLASS_SETTINGS = {
 	/** ガラス音の系統の後ろに置くコンプレッサー。 */
 	compressor: { threshold: -10, knee: 12, ratio: 6 },
 } as const;
+
+/** 導入音源の実尺（Opusの総サンプル数から算出）。音源を差し替えたら更新する。
+ * サーバーの進行を変えず、画面と音声が同じ導入の時刻を参照する。
+ */
+export const INTRO_AUDIO = {
+	narration01Ms: 6174.541666666667,
+	narration02Ms: 9598.979166666666,
+	narration03Ms: 9125.958333333334,
+} as const;
+export const INTRO_INVITATION_AT_MS = INTRO_AUDIO.narration01Ms + SOUND_MIX.narrationGapMs + INTRO_AUDIO.narration02Ms;
+export const INTRO_NICKNAME_AT_MS = INTRO_INVITATION_AT_MS + INTRO_AUDIO.narration03Ms;

@@ -205,7 +205,7 @@ export class SoundEngine {
 			case "narration": {
 				const fading = this.stopNarration();
 				const delay = NARRATION_DELAY_MS[cue.scene] / 1000;
-				this.playNarration(cue.numbers, this.context.currentTime + Math.max(fading, delay));
+				this.playNarration(cue.numbers, this.context.currentTime + Math.max(fading, delay), cue.scene === "welcome");
 				return;
 			}
 		}
@@ -220,7 +220,7 @@ export class SoundEngine {
 	}
 
 	/** `numbers` のナレーションを `startAt` から間をあけて順に読み、その間はBGMとガラス音を下げる。 */
-	private playNarration(numbers: readonly number[], startAt: number): void {
+	private playNarration(numbers: readonly number[], startAt: number, welcome = false): void {
 		const gain = new GainNode(this.context, { gain: 1 });
 		gain.connect(this.gains.narration);
 		const sources: AudioBufferSourceNode[] = [];
@@ -232,7 +232,8 @@ export class SoundEngine {
 			source.connect(gain);
 			source.start(at);
 			sources.push(source);
-			at += buffer.duration + SOUND_MIX.narrationGapMs / 1000;
+			// 02の終了と同時に追加場面へ切り替わるため、導入の02→03だけ間を空けない。
+			at += buffer.duration + (welcome && number === 2 ? 0 : SOUND_MIX.narrationGapMs / 1000);
 		}
 		if (sources.length === 0) {
 			gain.disconnect();

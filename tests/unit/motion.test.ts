@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../../src/data/sound.ts";
 import { PALETTE } from "../../src/data/palette.ts";
 import { INACTIVITY_MS, JUDGING_MS } from "../../src/shared/machine.ts";
 import type { Primitive, Scene, SceneInput } from "../../src/shared/motion.ts";
@@ -12,6 +13,7 @@ import {
 	INTRO_DESCRIPTION_AT_MS,
 	INTRO_DESCRIPTION_FADE_MS,
 	introDescriptionOpacity,
+	introInvitationOpacity,
 	introDescriptionRemainingMs,
 	JUDGING_SHARD_DIM,
 	RESULT_FORMS,
@@ -571,7 +573,7 @@ describe("intro の説明の文", () => {
 		expect(mid).toBeGreaterThan(0);
 		expect(mid).toBeLessThan(1);
 		expect(introDescriptionOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS, false)).toBe(1);
-		expect(introDescriptionOpacity(intro, T0 + 60_000, false)).toBe(1);
+		expect(introDescriptionOpacity(intro, T0 + INTRO_INVITATION_AT_MS + 1, false)).toBe(0);
 	});
 
 	it("歓迎の文字と同時には見えない", () => {
@@ -606,21 +608,21 @@ describe("ニックネームの入力欄を出す時刻", () => {
 	const lead = { id: "opening", durationMs: 3_600 };
 
 	it("説明の文が現れ終えるまでの残り時間を返し、現れ終えると0以下になる", () => {
-		const doneAt = INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS;
+		const doneAt = INTRO_NICKNAME_AT_MS;
 		expect(introDescriptionRemainingMs(intro, T0, false)).toBe(doneAt);
-		expect(introDescriptionRemainingMs(intro, T0 + doneAt - 1, false)).toBe(1);
-		expect(introDescriptionRemainingMs(intro, T0 + doneAt, false)).toBeLessThanOrEqual(0);
+		expect(introDescriptionRemainingMs(intro, T0 + doneAt - 1, false)).toBeCloseTo(1, 3);
+		expect(introDescriptionRemainingMs(intro, T0 + doneAt + 1, false)).toBeLessThanOrEqual(0);
 	});
 
 	it("直前のシーケンスの長さを足して数える", () => {
 		expect(introDescriptionRemainingMs(intro, T0, false, lead)).toBe(
-			INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS - lead.durationMs,
+			INTRO_NICKNAME_AT_MS - lead.durationMs,
 		);
 	});
 
-	it("reduced-motion では説明の文が即時に現れる時刻まで", () => {
-		expect(introDescriptionRemainingMs(intro, T0, true)).toBe(WELCOME_LEAVE_AT_MS);
-		expect(introDescriptionRemainingMs(intro, T0 + WELCOME_LEAVE_AT_MS, true)).toBeLessThanOrEqual(0);
+	it("reduced-motion でもナレーション03を読み終えるまで待つ", () => {
+		expect(introDescriptionRemainingMs(intro, T0, true)).toBe(INTRO_NICKNAME_AT_MS);
+		expect(introDescriptionRemainingMs(intro, T0 + INTRO_NICKNAME_AT_MS + 1, true)).toBeLessThanOrEqual(0);
 	});
 });
 
@@ -648,7 +650,7 @@ describe("opening と intro の破片", () => {
 
 	it("intro に入っても散らばったまま続き、途中から接続した画面も同じになる", () => {
 		expect(at(intro, intro.phaseStartedAt)).toMatchObject(scattered);
-		expect(at(intro, intro.phaseStartedAt + 60_000)).toMatchObject(scattered);
+		expect(at(intro, T0 + INTRO_INVITATION_AT_MS - 1)).toMatchObject(scattered);
 		// シーケンスの終わりと intro の始まりで、破片は途切れない。
 		expect(at(intro, T0 + lead.durationMs)).toEqual(at(sequence, T0 + lead.durationMs));
 	});
@@ -657,18 +659,25 @@ describe("opening と intro の破片", () => {
 		expect(at(sequence, T0, { reducedMotion: true })).toMatchObject(scattered);
 	});
 
-	it("intro から質問へ移ると、色づいて散らばった破片が灰色の質問中の輪へ戻る", () => {
-		const question = questionState(T0 + 10_000);
-		const from = (offset: number) =>
-			computeScene(base(question, { now: T0 + offset, lead, questionFromIntro: true })).shards;
-		expect(from(0)).toMatchObject({ tint: 1, spread: SHARD_OPENING_SPREAD, size: SHARD_OPENING_SIZE });
-		const mid = from(SHARD_SCALE_MS / 2);
+	it("02の終了で白い輪へ移行し、03の途中で接続しても同じ形になる", () => {
+		expect(at(intro, T0 + INTRO_INVITATION_AT_MS - 1)).toMatchObject(scattered);
+		const mid = at(intro, T0 + INTRO_INVITATION_AT_MS + SHARD_SCALE_MS / 2);
 		expect(mid.tint).toBeGreaterThan(0);
 		expect(mid.tint).toBeLessThan(1);
 		expect(mid.spread).toBeGreaterThan(0);
-		expect(mid.spread).toBeLessThan(SHARD_OPENING_SPREAD);
-		expect(from(SHARD_SCALE_MS)).toMatchObject({ colors: null, tint: 0, scale: 1, size: 1, density: 1, spread: 0 });
+		expect(mid.spread).toBeLessThan(1);
+		const ring = { tint: 0, spread: 0, size: 1, scale: 1, density: 1 };
+		expect(at(intro, T0 + INTRO_INVITATION_AT_MS + SHARD_SCALE_MS + 1)).toMatchObject(ring);
+		expect(at(intro, T0 + INTRO_INVITATION_AT_MS + 1, { reducedMotion: true })).toMatchObject(ring);
+		expect(computeScene(base(questionState(T0), { now: T0, questionFromIntro: true })).shards).toMatchObject(ring);
 	});
+
+	it("02の間は案内文を出さず、終了後に2行の案内を現す", () => {
+		expect(introInvitationOpacity(intro, T0 + INTRO_INVITATION_AT_MS - 1, false, lead)).toBe(0);
+		expect(introInvitationOpacity(intro, T0 + INTRO_INVITATION_AT_MS + 801, false, lead)).toBe(1);
+		expect(introInvitationOpacity(intro, T0 + INTRO_INVITATION_AT_MS + 1, true, lead)).toBe(1);
+	});
+
 });
 
 describe("待機", () => {
