@@ -283,8 +283,8 @@ $effect(() => {
 		class="screen"
 		class:blank-intro={pending === "start" || (exhibit.phase === "sequence" && exhibit.sequenceId === introLead?.id) || (exhibit.phase === "intro" && !nicknameReady)}
 		data-phase={exhibit.phase}
-		style:background={exhibit.phase === "result" && resultColors ? backgroundColor(resultColors[0]) : undefined}
-		style:color={exhibit.phase === "result" && resultColors ? foregroundColor(resultColors[0]) : undefined}
+		style:background={exhibit.phase === "judging" ? "#000000" : exhibit.phase === "result" && resultColors ? backgroundColor(resultColors[0]) : undefined}
+		style:color={exhibit.phase === "judging" ? "#ffffff" : exhibit.phase === "result" && resultColors ? foregroundColor(resultColors[0]) : undefined}
 	>
 		{#if exhibit.phase === "idle" && !exhibit.accepting}
 			<section class="center stack top">
