@@ -54,6 +54,7 @@
 	let selectedIndex = $state(0);
 	let searchRequest = $state(0);
 	let gridScroll = $state<HTMLElement>();
+	let gridScrolled = $state(false);
 	let matches = $derived(searchQuery ? entries.filter((entry) =>
 		entry.nickname.normalize("NFKC").toLocaleLowerCase("ja").includes(searchQuery.normalize("NFKC").toLocaleLowerCase("ja"))
 	) : []);
@@ -96,6 +97,7 @@
 		if (mode === viewMode) return;
 		hasSwitchedView = true;
 		initialEntrance = false;
+		gridScrolled = false;
 		viewMode = mode;
 		if (mode === "grid" && targetId) void centerGridTarget();
 	}
@@ -113,12 +115,12 @@
 	</div>
 {/snippet}
 
-<main class="archive-page" data-layout={viewMode} inert={!!selectedEntry} aria-hidden={!!selectedEntry}>
+<main class="archive-page" class:grid-scrolled={gridScrolled} data-layout={viewMode} inert={!!selectedEntry} aria-hidden={!!selectedEntry}>
 	<div bind:this={canvas} class="archive-canvas">
 
 	{#if viewMode === "grid"}
 		<div class="mode-layer" transition:blur={viewTransition} inert={viewMode !== "grid"} aria-hidden={viewMode !== "grid"}>
-		<section bind:this={gridScroll} class="grid-scroll" aria-label="写真のグリッド">
+		<section bind:this={gridScroll} class="grid-scroll" onscroll={(event) => { gridScrolled = event.currentTarget.scrollTop > 0; }} aria-label="写真のグリッド">
 			<header class="grid-header">{@render brand()}</header>
 			<div class="photo-grid">
 				{#each entries as entry (entry.id)}
@@ -407,14 +409,16 @@
 		--grid-edge-fade: min(40px, 25%);
 		position: absolute;
 		inset: 0 0 calc(var(--bottom-gap) + 70px);
+		overflow-x: hidden;
 		overflow-y: auto;
+		touch-action: pan-y;
 		overscroll-behavior-y: contain;
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: thin;
 		scrollbar-color: #555 transparent;
-		/* Keep the scroll boundaries fixed, with zero opacity exactly at each edge. */
-		-webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 var(--grid-edge-fade), #000 calc(100% - var(--grid-edge-fade)), transparent 100%);
-		mask-image: linear-gradient(to bottom, transparent 0%, #000 var(--grid-edge-fade), #000 calc(100% - var(--grid-edge-fade)), transparent 100%);
+		/* The top overlay fades in after scrolling; keep only the bottom mask here. */
+		-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--grid-edge-fade)), transparent 100%);
+		mask-image: linear-gradient(to bottom, #000 calc(100% - var(--grid-edge-fade)), transparent 100%);
 		-webkit-mask-size: 100% 100%;
 		mask-size: 100% 100%;
 		-webkit-mask-repeat: no-repeat;
@@ -484,6 +488,8 @@
 
 	.edge-fade { position: absolute; z-index: 3; left: 0; right: 0; pointer-events: none; }
 	.edge-fade-top { top: 0; height: max(180px, calc(env(safe-area-inset-top) + 140px)); background: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.9) 35%, transparent 100%); }
+	.archive-page[data-layout="grid"] .edge-fade-top { opacity: 0; transition: opacity 240ms ease-out; }
+	.archive-page[data-layout="grid"].grid-scrolled .edge-fade-top { opacity: 1; }
 	.edge-fade-bottom { bottom: 0; height: calc(var(--bottom-gap) + 150px); background: linear-gradient(to top, #000 0%, rgba(0,0,0,.9) 35%, transparent 100%); }
 	.search-results { position: absolute; z-index: 4; bottom: calc(var(--bottom-gap) + 62px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; white-space: nowrap; font: 13px system-ui, sans-serif; color: #ddd; }
 	.search-results button { width: 36px; height: 36px; border: 0; border-radius: 6px; color: #fff; background: #303030c0; font: 24px system-ui; cursor: pointer; }
@@ -495,6 +501,7 @@
 		.search-results button:hover { background-color: #484848df; }
 	}
 	@media (prefers-reduced-motion: reduce) {
+		.archive-page[data-layout="grid"] .edge-fade-top { transition: none; }
 		.ui-surface, .view-switch button, .search-clear, .search-results button { transition: none; }
 	}
 	.grid-card:focus-visible { outline: 1px solid #fff; outline-offset: 4px; }

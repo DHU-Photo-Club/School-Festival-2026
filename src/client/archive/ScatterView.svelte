@@ -6,7 +6,7 @@
 	import { entranceFilter, entrancePose, orbEntranceDelay } from "./entrance";
 	import { UI_ENTRANCE_CONTEXT, type UiEntranceController } from "./ui-entrance";
 	const uiIntro = getContext<UiEntranceController>(UI_ENTRANCE_CONTEXT);
-	import { ScatterCamera, MIN_SCALE, MAX_SCALE, floatingLagSeconds, limitVector, stepFloating, centeredPose, type FloatingState } from "./scatter-camera";
+	import { ScatterCamera, LOGO_TARGET, MIN_SCALE, MAX_SCALE, floatingLagSeconds, limitVector, stepFloating, centeredPose, type FloatingState } from "./scatter-camera";
 
 	let { entries, children, targetId = null, searchRequest = 0, onSelect = () => {}, intro = false, onIntroComplete = () => {}, paused = false }: { paused?: boolean; entries: ArchiveEntry[]; children: Snippet; targetId?: string | null; searchRequest?: number; onSelect?: (id: string) => void; intro?: boolean; onIntroComplete?: (interrupted: boolean) => void } = $props();
 	let introActive = $state(untrack(() => intro));
@@ -260,7 +260,9 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div bind:this={viewport} class="scatter-viewport" data-entering={introActive} class:dragging role="application" aria-label="写真の散らばりビュー。スワイプで移動、ピンチで拡大縮小。操作終了後は最寄りのオーブへ移動します。矢印キーで移動、プラスとマイナスで拡大縮小、Homeで初期位置。" tabindex="0" onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onkeydown={keydown}>
 	<div class="scatter-world" style:transform={`translate(${pose.x}px, ${pose.y}px) scale(${pose.scale})`}>
-		<div bind:this={logoArrival} class="logo-arrival">{@render children()}</div>
+		<div bind:this={logoArrival} class="logo-arrival">
+			<div class="logo-floating" use:registerFloat={LOGO_TARGET.id}>{@render children()}</div>
+		</div>
 		{#each entries as entry (entry.id)}
 			<div class="orb-anchor" style:--intro-x={`${entry.x * 1.5}px`} style:--intro-y={`${entry.y * 1.5}px`} style:left={`calc(50% + ${entry.x}px)`} style:top={`calc(50% + ${entry.y}px)`}>
 				<div class="orb-arrival">
@@ -288,6 +290,7 @@
 	.scatter-world { position: absolute; inset: 0; transform-origin: 0 0; background: #000; pointer-events: none; --brand-center-y: 50%; }
 	.orb-anchor { position: absolute; width: 150px; transform: translate(-50%, -69.1055px); text-align: center; }
 	.logo-arrival { position: absolute; inset: 0; transform-origin: 50% 50%; }
+	.logo-floating { position: absolute; inset: 0; }
 	.orb-arrival { transform-origin: 75px 69.1055px; }
 	.scatter-viewport[data-entering="true"] .logo-arrival {
 		transform: scale(var(--intro-scale, 2.5));
