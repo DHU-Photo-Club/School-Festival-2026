@@ -1,5 +1,5 @@
-import { random, shardPoses, type ShardPose } from "./shards.ts";
-import type { DustPose } from "./dust.ts";
+import { random, shardPoses, SHARD_RING_RADIUS, type ShardPose } from "./shards.ts";
+import { dustPoses, type DustPose } from "./dust.ts";
 export const FINALE_SHRINK_MS = 1200;
 export const FINALE_BURST_MS = 800;
 export const FINALE_SETTLE_MS = 1800;
@@ -45,22 +45,17 @@ export function burstShards(width: number, height: number, startAt: number, elap
 		return { ...piece, x, y, alpha: mix(piece.alpha, 0.6 + seed[7] * 0.3, p), vertices: piece.vertices.map(([vx, vy]) => [x + (vx - piece.x) * c - (vy - piece.y) * s, y + (vx - piece.x) * s + (vy - piece.y) * c] as const) };
 	});
 }
-/** 同じ粒子IDを集約から爆発へ引き継ぐ。中央で消さず、少し留まって次の流入へ循環する。 */
+/** 既存の塵のサイズ・軌道・消え方を流用し、集約先だけ小リングの半径へ移す。 */
 export function finaleDust(width: number, height: number, gatherElapsed: number, colors: readonly string[], burstElapsed: number | null = null): DustPose[] {
-	const short = Math.min(width, height), diagonal = Math.hypot(width, height) / 2;
+	const diagonal = Math.hypot(width, height) / 2;
 	const fade = burstElapsed === null ? 1 : 1 - smooth((burstElapsed - FINALE_BURST_MS) / 1000);
 	if (gatherElapsed <= 0 || fade <= 0) return [];
+	const sinkRadius = Math.min(width, height) * SHARD_RING_RADIUS * 0.3;
 	const gatheringColors = colors.map((_, i) => finaleColor(i, gatherElapsed, colors, true));
-	return seeds.flatMap((seed, i): DustPose[] => {
-		const age = gatherElapsed - i / seeds.length * 9200;
-		if (age < 0) return [];
-		const period = 5500 + seed[0] * 3000;
-		const phase = (age % period) / period;
-		const angle = seed[1] * Math.PI * 2 + seed[2] * smooth(phase / 0.75);
-		const radius = mix(diagonal * 1.1, short * (0.015 + seed[3] * 0.035), smooth(phase / 0.75));
-		const launch = burstElapsed === null ? 0 : diagonal * 2.2 * out(burstElapsed / 1200);
-		const alpha = (0.4 + seed[4] * 0.55) * smooth(phase / 0.12) * (1 - smooth((phase - 0.94) / 0.06)) * fade;
-		if (alpha < 0.004) return [];
-		return [{ x: width / 2 + Math.cos(angle) * (radius + launch), y: height / 2 + Math.sin(angle) * (radius + launch), size: 1.5 + seed[5] * 3, alpha, color: burstElapsed === null ? gatheringColors[i % Math.max(1, colors.length)] : finaleColor(i, gatherElapsed, colors, false) }];
+	const launch = burstElapsed === null ? 0 : diagonal * 2.2 * out(burstElapsed / 1200);
+	return dustPoses(gatherElapsed, width, height, 1, sinkRadius).map((pose, i) => {
+		const angle = Math.atan2(pose.y - height / 2, pose.x - width / 2);
+		return { ...pose, x: pose.x + Math.cos(angle) * launch, y: pose.y + Math.sin(angle) * launch,
+			alpha: pose.alpha * fade, color: burstElapsed === null ? gatheringColors[i % Math.max(1, colors.length)] : finaleColor(i, gatherElapsed, colors, false) };
 	});
 }

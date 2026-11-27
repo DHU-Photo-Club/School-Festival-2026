@@ -302,9 +302,7 @@ function judgingShards(input: SceneInput): ShardLayer {
 	const p = input.reducedMotion ? 1 : easeInOutSine(elapsed / FINALE_SHRINK_MS);
 	return { ...shardLayer(input, 1, {
 		colors: finaleColors(input.reducedMotion ? 0 : elapsed, input.colors.map(baseColor), true), tint: p,
-		scale: input.reducedMotion ? SHARD_IDLE_SCALE : elapsed <= ANSWER_PULSE_IN_MS
-			? 1 - ANSWER_PULSE_DEPTH * easeInOutSine(elapsed / ANSWER_PULSE_IN_MS)
-			: lerp(1 - ANSWER_PULSE_DEPTH, SHARD_IDLE_SCALE, easeInOutSine((elapsed - ANSWER_PULSE_IN_MS) / (FINALE_SHRINK_MS - ANSWER_PULSE_IN_MS))),
+		scale: lerp(1, SHARD_IDLE_SCALE, p),
 		density: lerp(1, SHARD_IDLE_DENSITY, p), idleFit: p,
 	}), orbitExtra: input.reducedMotion ? 0 : gatheringOrbit(elapsed) };
 }

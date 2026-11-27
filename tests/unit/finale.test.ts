@@ -3,7 +3,8 @@ import { PALETTE } from "../../src/data/palette.ts";
 import type { SceneInput } from "../../src/shared/motion.ts";
 import { expect, it } from "vitest";
 import { finaleColors, finaleDust, burstShards, gatheringOrbit } from "../../src/shared/finale.ts";
-import { shardPoses } from "../../src/shared/shards.ts";
+import { dustPoses } from "../../src/shared/dust.ts";
+import { shardPoses, SHARD_RING_RADIUS } from "../../src/shared/shards.ts";
 const palette = ["#ff3300", "#00cc66", "#3366ff", "#cc44aa"];
 it("色の入れ替えは再現可能で、フレーム境界で大きく飛ばない", () => {
 	expect(finaleColors(1200, palette, true)).toEqual(finaleColors(1200, palette, true));
@@ -56,4 +57,23 @@ it("最終回答はバウンスせず縮み続け、外向きの波紋は0.45秒
 		const scene = computeScene({ ...input, state: { ...input.state, phase }, now: 20000 });
 		expect(scene.dust).toBeNull(); expect(scene.shards.burst).toBeUndefined();
 	}
+});
+
+it("集約粒子は既存の塵のサイズ・動きを使い、リングの内側へ溜め込まない", () => {
+	const radius = 1080 * SHARD_RING_RADIUS * 0.3;
+	for (const time of [3000, 10000, 30000]) {
+		const poses = finaleDust(1920, 1080, time, palette);
+		const original = dustPoses(time, 1920, 1080, 1, radius);
+		expect(poses.map(({ x, y, size, alpha }) => ({ x, y, size, alpha }))).toEqual(original);
+		for (const pose of poses) expect(Math.hypot(pose.x - 960, pose.y - 540)).toBeGreaterThanOrEqual(radius);
+	}
+});
+it("最終縮小は途中の0.45秒で停止せず、単一のカーブで進む", () => {
+	const input: SceneInput = { state: { phase: "judging", phaseStartedAt: 0, phaseEndsAt: 10000, answeredAt: 0, sessionId: "test", sequenceId: null, previewColorId: null, revision: 1, result: null }, now: 0, width: 1920, height: 1080, displayOrder: 0, reducedMotion: false, colors: PALETTE.colors, resultMode: "animate", previousBackground: null };
+	const scale = (now: number) => computeScene({ ...input, now }).shards.scale;
+	const before = scale(449) - scale(450), after = scale(450) - scale(451);
+	expect(before).toBeGreaterThan(0.0005);
+	expect(after).toBeCloseTo(before, 5);
+	expect(scale(600)).toBeCloseTo(0.65);
+	expect(scale(1200)).toBeCloseTo(0.3);
 });

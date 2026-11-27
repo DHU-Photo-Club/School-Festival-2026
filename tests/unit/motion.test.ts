@@ -149,7 +149,7 @@ describe("回答の瞬間の輪の収縮", () => {
 
 	it("全画面で同じ倍率になり、最終問の回答で入った judging でも縮む", () => {
 		expect(at(300, {}, { displayOrder: 1 })).toBe(at(300, {}, { displayOrder: 0 }));
-		expect(at(ANSWER_PULSE_IN_MS, { phase: "judging", phaseStartedAt: T0 + 1000 })).toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
+		expect(at(ANSWER_PULSE_IN_MS, { phase: "judging", phaseStartedAt: T0 + 1000 })).toBeLessThan(1 - ANSWER_PULSE_DEPTH);
 	});
 
 	it("回答がなければ、reduced-motionなら、question と judging 以外なら縮めない", () => {
