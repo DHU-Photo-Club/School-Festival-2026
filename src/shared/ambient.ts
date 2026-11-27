@@ -22,8 +22,13 @@ export function ambientPoses(width: number, height: number, now: number, state: 
 		let x = width * (.025 + seed[0] * .95 + Math.sin(time * .055 + seed[1] * 6.28) * .035);
 		let y = height * (.70 + seed[2] * .28 + Math.sin(time * .16 + seed[3] * 6.28) * .009);
 		if (!reduced) {
-			const wave = Math.sin(x / width * Math.PI * 8 - now / 320) * .65 + Math.sin(x / width * Math.PI * 17 + now / 210) * .35;
-			y = mix(y, height * .84 + wave * short * .025, speech * .65);
+			// 元の高さを保ち、声への反応の速さ・位相・振幅を粒ごとに変える。
+			const phase = seed[1] * Math.PI * 2;
+			const individual = Math.sin(now / (160 + seed[3] * 340) + phase)
+				+ .35 * Math.sin(now / (95 + seed[4] * 210) + seed[5] * 12);
+			const wave = Math.sin(x / width * Math.PI * 8 - now / 320 + phase * .3);
+			y += speech * short * (.006 + seed[2] * .017) * (individual * .8 + wave * .2);
+			x += speech * short * (.002 + seed[4] * .004) * Math.sin(now / (250 + seed[2] * 400) + phase);
 			const dx = x - width / 2, dy = y - height / 2, radius = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
 			let push = waves.reduce((sum, wave) => sum + Math.exp(-(((radius - wave.radius) / (short * .13)) ** 2)) * wave.alpha * short * .08, 0);
 			// 通常の輪とは重なり、画面を覆うほど拡大したときだけ押しのける。
