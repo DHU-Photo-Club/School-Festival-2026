@@ -557,9 +557,8 @@ canvas,
 	position: absolute;
 	inset: 0;
 	display: grid;
-	place-content: center;
+	grid-template-rows: 1fr auto 1fr;
 	justify-items: center;
-	gap: 4vmin;
 	text-align: center;
 	font-size: 4.2vmin;
 	font-weight: 500;
@@ -570,6 +569,7 @@ canvas,
 	will-change: opacity, filter;
 }
 .nickname-prompt p {
+	grid-row: 2;
 	margin: 0;
 	line-height: 1.45;
 }
@@ -577,6 +577,9 @@ canvas,
 	display: block;
 }
 .nickname-prompt :global(.nickname-arrow) {
+	grid-row: 3;
+	align-self: start;
+	margin-top: 4vmin;
 	width: 3.6vmin;
 	height: 3.6vmin;
 	stroke-width: 2;
