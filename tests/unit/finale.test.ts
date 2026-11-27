@@ -37,10 +37,10 @@ it("粒子は集約の位置から連続して飛び出し、二色に変わっ�
 	// 配色・不透明度別にまとめて描けるよう、集約中の色数をパレット数以下に制限する。
 	expect(new Set(gather.map((p) => p.color)).size).toBeLessThanOrEqual(palette.length);
 });
-it("待機の追加回転は逆戻りせず、長い判定でも2倍回転へ落ち着く", () => {
+it("待機の追加回転は逆戻りせず、長い判定でも4倍回転へ落ち着く", () => {
 	expect(gatheringOrbit(0)).toBe(0);
 	expect(gatheringOrbit(2000)).toBeGreaterThan(gatheringOrbit(1500));
-	expect(gatheringOrbit(30001) - gatheringOrbit(30000)).toBeCloseTo(1, 5);
+	expect(gatheringOrbit(30001) - gatheringOrbit(30000)).toBeCloseTo(3, 5);
 });
 
 it("最終回答はバウンスせず縮み続け、外向きの波紋は0.45秒後に出る", () => {

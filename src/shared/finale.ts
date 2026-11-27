@@ -23,10 +23,10 @@ export function finaleColor(index: number, elapsed: number, colors: readonly str
 	return cycling ? hexMix(pick(n), pick(n + 1), smooth((phase % period) / 1500)) : pick(0);
 }
 export const finaleColors = (elapsed: number, colors: readonly string[], cycling: boolean) => Array.from({ length: 130 }, (_, i) => finaleColor(i, elapsed, colors, cycling));
-/** 通常の回答加速に、判定待ち中の約2倍回転を滑らかに足す。 */
+/** 通常の回答加速に、判定待ち中の約4倍回転を滑らかに足す。 */
 export function gatheringOrbit(elapsed: number): number {
 	const t = Math.max(0, elapsed - FINALE_SHRINK_MS);
-	return t - 700 * (1 - Math.exp(-t / 700));
+	return 3 * (t - 700 * (1 - Math.exp(-t / 700)));
 }
 /** 小リングの同じ破片から始まり、画面全体へ飛び出してそのまま漂う。 */
 export function burstShards(width: number, height: number, startAt: number, elapsed: number, orbitAdvance: number): ShardPose[] {
@@ -42,7 +42,9 @@ export function burstShards(width: number, height: number, startAt: number, elap
 		const y = mix(piece.y, height / 2 + Math.sin(angle) * distance, p) + Math.sin(drift * 0.14 + seed[5] * 6.28) * Math.min(width, height) * 0.025 * (1 - Math.exp(-drift));
 		const spin = elapsed / 1000 * (seed[6] - 0.5) * 0.18;
 		const c = Math.cos(spin), s = Math.sin(spin);
-		return { ...piece, x, y, alpha: mix(piece.alpha, 0.6 + seed[7] * 0.3, p), vertices: piece.vertices.map(([vx, vy]) => [x + (vx - piece.x) * c - (vy - piece.y) * s, y + (vx - piece.x) * s + (vy - piece.y) * c] as const) };
+		// 爆発とともに拡大し、結果画面を大きな破片の重なりで覆う。
+		const size = mix(1, 4.2 + seed[5] * 1.2, p);
+		return { ...piece, x, y, alpha: mix(piece.alpha, 0.6 + seed[7] * 0.3, p), vertices: piece.vertices.map(([vx, vy]) => [x + ((vx - piece.x) * c - (vy - piece.y) * s) * size, y + ((vx - piece.x) * s + (vy - piece.y) * c) * size] as const) };
 	});
 }
 /** 既存の塵のサイズ・軌道・消え方を流用し、集約先だけ小リングの半径へ移す。 */
