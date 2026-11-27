@@ -181,7 +181,7 @@ test("展示に各質問文を表示し、戻る・途中接続・判定への�
 		for (const [index, question] of QUESTIONS.entries()) {
 			await expectQuestion(ipad.page, index);
 			await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
-			await expect(display.page.locator(".question-prompt svg")).toBeVisible();
+			await expect(display.page.locator(".question-prompt svg")).toHaveCount(0);
 			if (index === 1) {
 				await ipad.page.getByRole("button", { name: "戻る", exact: true }).click();
 				await expectQuestion(ipad.page, 0);

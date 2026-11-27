@@ -483,7 +483,6 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 				style:transition={reducedMotion ? "none" : `opacity ${questionTextLeaving ? questionTextFadeOutMs : 300}ms ease-in-out, filter ${questionTextLeaving ? questionTextFadeOutMs : 300}ms ease-in-out`}
 				transition:fadeBlur>
 				<p>{#each questionPromptLines as line}<span>{line}</span>{/each}</p>
-				<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
 			</div>
 	{/if}
 
