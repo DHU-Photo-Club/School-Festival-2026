@@ -26,7 +26,8 @@ it("導入の画面時刻が配信する音源01〜03の実尺と一致する", 
 it("01・02の余韻へ次の音声を重ね、画面も各再生開始と一致する", () => {
 	expect(welcomeNarrationGapAfterMs(1)).toBe(-1_500);
 	expect(welcomeNarrationGapAfterMs(2)).toBe(-1_500);
-	expect(welcomeNarrationGapAfterMs(3)).toBe(SOUND_MIX.narrationGapMs);
+	expect(welcomeNarrationGapAfterMs(3)).toBe(-1_500);
+	expect(welcomeNarrationGapAfterMs(4)).toBe(SOUND_MIX.narrationGapMs);
 	expect(welcomeNarrationGapAfterMs(7)).toBe(SOUND_MIX.narrationGapMs);
 	expect(INTRO_EXPLANATION_AT_MS).toBe(INTRO_AUDIO.narration01Ms - INTRO_WELCOME_OVERLAP_MS);
 	expect(INTRO_INVITATION_AT_MS).toBe(INTRO_AUDIO.narration01Ms - INTRO_WELCOME_OVERLAP_MS + INTRO_AUDIO.narration02Ms - INTRO_EXPLANATION_OVERLAP_MS);

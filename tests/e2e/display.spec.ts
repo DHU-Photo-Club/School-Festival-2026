@@ -56,6 +56,10 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	const nicknamePrompt = display.page.locator(".nickname-prompt");
 	await expect(nicknamePrompt).toHaveCSS("opacity", "1");
 	await expect(nicknamePrompt).toHaveText("ニックネームを入力して下さい");
+	await expect(nicknamePrompt.locator("p span")).toHaveText(["ニックネームを", "入力して下さい"]);
+	expect(await nicknamePrompt.evaluate((node) => getComputedStyle(node).fontSize)).toBe(
+		await display.page.locator(".invitation").evaluate((node) => getComputedStyle(node).fontSize),
+	);
 	await expect(nicknamePrompt.locator("svg")).toBeVisible();
 	await expect(display.page.locator(".invitation")).toHaveCSS("opacity", "0");
 	await enterNickname(ipad.page);

@@ -415,7 +415,7 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	</p>
 
 	<div class="nickname-prompt" bind:this={nicknamePrompt} style="opacity: 0">
-		<p>ニックネームを入力して下さい</p>
+		<p><span>ニックネームを</span><span>入力して下さい</span></p>
 		<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
 	</div>
 
@@ -493,7 +493,7 @@ canvas,
 	justify-items: center;
 	gap: 4vmin;
 	text-align: center;
-	font-size: 3vmin;
+	font-size: 5vmin;
 	font-weight: 500;
 	letter-spacing: 0.08em;
 	line-height: 1.5;
@@ -503,6 +503,10 @@ canvas,
 }
 .nickname-prompt p {
 	margin: 0;
+	line-height: 1.9;
+}
+.nickname-prompt p span {
+	display: block;
 }
 .nickname-prompt :global(.nickname-arrow) {
 	width: 3.6vmin;
