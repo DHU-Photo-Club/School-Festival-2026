@@ -276,7 +276,7 @@ for (const displayCount of [1, 3]) {
 		for (const display of displays)
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
 
-		// iPadは結果開始の時刻に、黒の画面へ二色の破片の束、色名、「扉を開く」を表示する。
+		// iPadは結果開始の時刻に、黒の画面へ二色のオーブ、色名、「扉を開く」を表示する。
 		// 展示ディスプレイは二色を画面の順に交互に見せる。
 		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 15_000 });
 		await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name);

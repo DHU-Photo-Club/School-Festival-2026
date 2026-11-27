@@ -42,7 +42,7 @@ import {
 	questionLeave,
 	questionMotionStyle,
 } from "./question-transition.ts";
-import ResultEmblem from "./ResultEmblem.svelte";
+import ResultOrb from "./ResultOrb.svelte";
 import Slider from "./Slider.svelte";
 
 /** 結果の色面が広がる時間（docs/visual-language.md 4.2節）。 */
@@ -553,7 +553,10 @@ $effect(() => {
 			</div>
 		{:else if resultStarted && exhibit.result && resultColors && !doorOpened}
 			<section class="reveal">
-				<ResultEmblem colors={[baseColor(resultColors[0]), baseColor(resultColors[1])]} />
+				<ResultOrb
+					colors={[baseColor(resultColors[0]), baseColor(resultColors[1])]}
+					motionKey={exhibit.result.id}
+				/>
 				<div class="reveal-title">
 					<p class="reveal-lead">あなたの色は</p>
 					<h1 class="reveal-name">
@@ -908,7 +911,7 @@ p {
 	position: relative;
 	z-index: 1;
 }
-/* 結果の最初の画面。破片の束の後ろに、中心が明るい灰色の光を敷く。 */
+/* 結果の最初の画面。オーブの後ろに、中心が明るい灰色の光を敷く。 */
 .reveal {
 	display: grid;
 	align-content: center;
