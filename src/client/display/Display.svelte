@@ -23,7 +23,7 @@ import {
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
 import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
-import { answerOrbitAdvance, shardPoses } from "../../shared/shards.ts";
+import { ANSWER_ORBIT_BOOST_MS, answerOrbitAdvance, shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId } from "../../shared/types.ts";
 import { drawDust } from "../common/dust.ts";
 import { drawRipple } from "../common/ripple.ts";
@@ -132,8 +132,8 @@ function onState(next: DisplayState) {
 	}
 	if (next.answeredAt !== null && next.answeredAt !== previous?.answeredAt && (next.phase === "question" || next.phase === "judging")) {
 		const now = serverTime(performance.now());
-		completedOrbitAdvance += orbitAnswers.filter((at) => now - at >= 2200).reduce((sum, at) => sum + answerOrbitAdvance(now - at), 0);
-		orbitAnswers = orbitAnswers.filter((at) => now - at < 2200);
+		completedOrbitAdvance += orbitAnswers.filter((at) => now - at >= ANSWER_ORBIT_BOOST_MS).reduce((sum, at) => sum + answerOrbitAdvance(now - at), 0);
+		orbitAnswers = orbitAnswers.filter((at) => now - at < ANSWER_ORBIT_BOOST_MS);
 		orbitAnswers.push(next.answeredAt);
 	}
 	if (next.phase === "question" && previous?.phase === "question" && next.questionIndex !== previous.questionIndex) {

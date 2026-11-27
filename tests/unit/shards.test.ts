@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	ANSWER_ORBIT_BOOST_MS,
 	answerOrbitAdvance,
 	BREATH_CYCLE,
 	BREATH_DEPTH,
@@ -328,8 +329,8 @@ it("回答の加速は角度を逆戻りさせず、終わると一定の追加�
 	expect(answerOrbitAdvance(-1)).toBe(0);
 	expect(answerOrbitAdvance(0)).toBe(0);
 	for (let t = 1; t <= 3000; t += 20) expect(answerOrbitAdvance(t)).toBeGreaterThanOrEqual(answerOrbitAdvance(t - 1));
-	expect(answerOrbitAdvance(2200)).toBeCloseTo(4400);
-	expect(answerOrbitAdvance(10000)).toBe(answerOrbitAdvance(2200));
+	expect(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS)).toBeCloseTo(12600);
+	expect(answerOrbitAdvance(10000)).toBe(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS));
 	expect(answerOrbitAdvance(1)).toBeLessThan(0.001);
-	expect(answerOrbitAdvance(2200) - answerOrbitAdvance(2199)).toBeLessThan(0.001);
+	expect(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS) - answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS - 1)).toBeLessThan(0.001);
 });

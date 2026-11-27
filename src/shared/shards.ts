@@ -251,9 +251,10 @@ export function shardOutlineColor(fill: Rgb): [number, number, number] {
 	return [lift(fill[0]), lift(fill[1]), lift(fill[2])];
 }
 
-/** 回答後2.2秒だけ回転をふわっと加速する積分値。終了後も角度を保ち、逆戻りさせない。 */
+/** 回答後3.6秒だけ回転をふわっと加速する積分値。終了後も角度を保ち、逆戻りさせない。 */
+export const ANSWER_ORBIT_BOOST_MS = 3600;
 export function answerOrbitAdvance(elapsed: number): number {
-	const duration = 2200;
+	const duration = ANSWER_ORBIT_BOOST_MS;
 	const t = Math.max(0, Math.min(duration, elapsed));
-	return 4 * (t / 2 - duration * Math.sin(2 * Math.PI * t / duration) / (4 * Math.PI));
+	return 7 * (t / 2 - duration * Math.sin(2 * Math.PI * t / duration) / (4 * Math.PI));
 }
