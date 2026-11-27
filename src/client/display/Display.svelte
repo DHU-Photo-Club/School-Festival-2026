@@ -3,6 +3,9 @@ import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 import { onDestroy, onMount, untrack } from "svelte";
 import type { TransitionConfig } from "svelte/transition";
 import { DISPLAY_QUESTION_LINES } from "../../data/display-questions.ts";
+import { SOUND_CUES } from "../../data/sound.ts";
+import { soundCues } from "../../shared/sound.ts";
+import { planSpeech, speechLevel, speakingShards, type SpeechPlan } from "./speech-motion.ts";
 import { QUESTIONS } from "../../data/questions.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
@@ -24,7 +27,7 @@ import { backgroundColor, foregroundColor, paletteColor } from "../../shared/pal
 import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses } from "../../shared/shards.ts";
-import type { DisplayState, PaletteId } from "../../shared/types.ts";
+import type { DisplayState, PaletteId, SoundState } from "../../shared/types.ts";
 import { drawDust } from "../common/dust.ts";
 import { drawRipple } from "../common/ripple.ts";
 import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
@@ -122,8 +125,22 @@ function onKey(event: KeyboardEvent) {
 
 const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
+let speechPlan: SpeechPlan | null = null;
 function onState(next: DisplayState) {
 	const previous = displayState;
+	if (!lab) {
+		const soundState = (state: DisplayState): SoundState => ({ ...state, questionIndex: state.questionIndex ?? null });
+		const now = serverTime(performance.now());
+		for (const cue of soundCues(previous ? soundState(previous) : null, soundState(next), QUESTIONS.map((q) => q.id), SOUND_CUES)) {
+			if (cue.kind === "stopNarration") speechPlan = null;
+			if (cue.kind === "narration") {
+				const at = cue.scene === "welcome" || cue.scene === "question" || cue.scene === "judging" || cue.scene === "result"
+					? next.phaseStartedAt : now;
+				speechPlan = planSpeech(cue, at, speechPlan);
+			}
+		}
+	}
+
 	if (next.phase === "question" && previous?.phase === "question" && next.questionIndex !== previous.questionIndex) {
 		// 「戻る」には縮小がないため短いフェード、回答による前進にはリングの縮小完了時刻を使う。
 		questionTextSwitchAt = next.answeredAt !== previous.answeredAt && next.answeredAt !== null
@@ -199,13 +216,14 @@ function drawShardLayer(layer: ShardLayer) {
 	if (key === lastShards) return;
 	lastShards = key;
 	const bloom = bloomCanvas?.getContext("2d");
-	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, {
+	const basePoses = shardPoses(window.innerWidth, window.innerHeight, layer.time, {
 		scale: layer.scale,
 		density: layer.density,
 		size: layer.size,
 		spread: layer.spread,
 		idleFit: layer.idleFit,
 	});
+	const poses = reducedMotion ? basePoses : speakingShards(basePoses, layer.time, speechLevel(speechPlan, layer.time));
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
 	if (bloom) {
