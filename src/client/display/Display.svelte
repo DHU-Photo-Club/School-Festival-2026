@@ -1,10 +1,9 @@
 <script lang="ts">
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 import { onDestroy, onMount, untrack } from "svelte";
-import { fade } from "svelte/transition";
+import type { TransitionConfig } from "svelte/transition";
 import { DISPLAY_QUESTION_LINES } from "../../data/display-questions.ts";
 import { QUESTIONS } from "../../data/questions.ts";
-import { SOUND_MIX } from "../../data/sound.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
@@ -12,13 +11,13 @@ import { dustPoses } from "../../shared/dust.ts";
 import { LAB_LOOP_NOTES, type LabCycle, labCycle, parseLab } from "../../shared/lab.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import {
+	ANSWER_PULSE_IN_MS,
 	computeScene,
 	IDLE_RETURN_MS,
 	introDescriptionOpacity,
 	introInvitationOpacity,
 	introNicknameOpacity,
 	screenColorId,
-	WELCOME_FADE_OUT_MS,
 	welcomeOpacity,
 } from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
@@ -71,6 +70,7 @@ let dustDrawn = false;
 let animateSessionId: string | null = null;
 /** 今の質問へ `intro` から入ったか。`intro` の大きく色づいた輪から、質問中の灰色の輪へ戻すために使う。 */
 let questionFromIntro = false;
+let questionTextSwitchAt = $state<number | null>(null);
 let previousBackground: string | null = null;
 let stopWatching = () => {};
 
@@ -124,6 +124,14 @@ const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
 function onState(next: DisplayState) {
 	const previous = displayState;
+	if (next.phase === "question" && previous?.phase === "question" && next.questionIndex !== previous.questionIndex) {
+		// 「戻る」には縮小がないため短いフェード、回答による前進にはリングの縮小完了時刻を使う。
+		questionTextSwitchAt = next.answeredAt !== previous.answeredAt && next.answeredAt !== null
+			? next.answeredAt + ANSWER_PULSE_IN_MS
+			: serverTime(performance.now()) + 300;
+	} else if (next.phase !== "question") {
+		questionTextSwitchAt = null;
+	}
 	if (next.phase === "idle") {
 		if (previous && previous.phase !== "idle" && resultChoice) {
 			const color = colorOf(resultChoice.colorId);
@@ -242,14 +250,22 @@ function chooseResult(sessionId: string | null, colorId: PaletteId) {
 }
 
 /** 値が変わったときだけ書き換え、変化のないフレームでスタイルの再計算を起こさない。 */
-function setStyle(element: HTMLElement | undefined, property: "opacity" | "backgroundColor", value: string) {
+function setStyle(element: HTMLElement | undefined, property: "opacity" | "backgroundColor" | "filter", value: string) {
 	if (element && element.style[property] !== value) element.style[property] = value;
 }
 
 const opacity = (value: number) => String(Math.round(value * 1000) / 1000);
+const textBlur = (value: number) => `blur(${reducedMotion ? 0 : Math.round((1 - value) * 80) / 10}px)`;
+function fadeBlur(_node: Element): TransitionConfig {
+	return {
+		duration: reducedMotion ? 0 : 300,
+		css: (t) => `opacity: ${t}; filter: blur(${(1 - t) * 8}px)`,
+	};
+}
 
 function applyLayers(scene: Scene) {
 	setStyle(resultLayer, "opacity", opacity(scene.resultLayer));
+	setStyle(resultLayer, "filter", textBlur(scene.resultLayer));
 	setStyle(veil, "opacity", opacity(scene.veil?.opacity ?? 0));
 	if (scene.veil) setStyle(veil, "backgroundColor", scene.veil.color);
 }
@@ -264,21 +280,28 @@ function applyWelcome(state: DisplayState, now: number) {
 	const visiblePhase =
 		state.phase === "intro" ||
 		(state.phase === "sequence" && welcomeLead !== null && state.sequenceId === welcomeLead.id);
-	const transition = visiblePhase || reducedMotion ? "none" : `opacity ${WELCOME_FADE_OUT_MS}ms ease-in-out`;
+	const transition = visiblePhase || reducedMotion ? "none" : "opacity 200ms ease-in-out, filter 200ms ease-in-out";
 	if (welcome.style.transition !== transition) welcome.style.transition = transition;
 	setStyle(welcome, "opacity", opacity(shown));
+	setStyle(welcome, "filter", textBlur(shown));
 	// 説明の文は `intro` の間だけ見せる。`intro` を終えるときの消える変化は歓迎の文字と同じ。
 	if (!description) return;
 	const descriptionTransition = state.phase === "intro" || reducedMotion ? "none" : transition;
 	if (description.style.transition !== descriptionTransition) description.style.transition = descriptionTransition;
-	setStyle(description, "opacity", opacity(introDescriptionOpacity(state, now, reducedMotion, welcomeLead)));
+	const value = introDescriptionOpacity(state, now, reducedMotion, welcomeLead);
+	setStyle(description, "opacity", opacity(value));
+	setStyle(description, "filter", textBlur(value));
 	if (invitation) {
 		if (invitation.style.transition !== descriptionTransition) invitation.style.transition = descriptionTransition;
-		setStyle(invitation, "opacity", opacity(introInvitationOpacity(state, now, reducedMotion, welcomeLead)));
+		const value = introInvitationOpacity(state, now, reducedMotion, welcomeLead);
+		setStyle(invitation, "opacity", opacity(value));
+		setStyle(invitation, "filter", textBlur(value));
 	}
 	if (nicknamePrompt) {
 		if (nicknamePrompt.style.transition !== descriptionTransition) nicknamePrompt.style.transition = descriptionTransition;
-		setStyle(nicknamePrompt, "opacity", opacity(introNicknameOpacity(state, now, reducedMotion, welcomeLead)));
+		const value = introNicknameOpacity(state, now, reducedMotion, welcomeLead);
+		setStyle(nicknamePrompt, "opacity", opacity(value));
+		setStyle(nicknamePrompt, "filter", textBlur(value));
 	}
 }
 
@@ -367,23 +390,30 @@ onDestroy(() => {
 	window.removeEventListener("keydown", onKey);
 });
 
-// 初回・途中接続では現在の質問をすぐ表示する。質問間の切り替えは音声と同じ遅れに揃える。
+// 回答時はサーバーの回答時刻から、リングが縮み切る瞬間に文字を入れ替える。
 let questionPromptIndex = $state<number | null>(null);
+let questionTextLeaving = $state(false);
+let questionTextFadeOutMs = $state(ANSWER_PULSE_IN_MS);
 $effect(() => {
 	const index = displayState?.questionIndex ?? null;
 	const phase = displayState?.phase;
+	const switchAt = questionTextSwitchAt;
 	const previous = untrack(() => questionPromptIndex);
 	if (phase !== "question" || index === null) {
 		questionPromptIndex = null;
+		questionTextLeaving = false;
 		return;
 	}
-	if (previous === null || previous === index) {
-		questionPromptIndex = index;
-		return;
-	}
+	if (previous === index) return;
+	const now = serverTime(performance.now());
+	// 最初の質問ではニックネーム案内のフェードアウトを待つ。
+	const remaining = reducedMotion ? 0 : previous === null ? 200 : Math.max(0, (switchAt ?? now + 300) - now);
+	questionTextFadeOutMs = remaining;
+	questionTextLeaving = true;
 	const timer = window.setTimeout(() => {
 		questionPromptIndex = index;
-	}, SOUND_MIX.questionSwitchNarrationDelayMs);
+		questionTextLeaving = false;
+	}, remaining);
 	return () => window.clearTimeout(timer);
 });
 const questionPromptLines = $derived(
@@ -447,12 +477,14 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	</div>
 
 	{#if displayState?.phase === "question" && questionPromptLines}
-		{#key questionPromptIndex}
-			<div class="nickname-prompt question-prompt" transition:fade={{ duration: reducedMotion ? 0 : 600 }}>
+			<div class="nickname-prompt question-prompt"
+				style:opacity={questionTextLeaving ? 0 : 1}
+				style:filter={textBlur(questionTextLeaving ? 0 : 1)}
+				style:transition={reducedMotion ? "none" : `opacity ${questionTextLeaving ? questionTextFadeOutMs : 300}ms ease-in-out, filter ${questionTextLeaving ? questionTextFadeOutMs : 300}ms ease-in-out`}
+				transition:fadeBlur>
 				<p>{#each questionPromptLines as line}<span>{line}</span>{/each}</p>
 				<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
 			</div>
-		{/key}
 	{/if}
 
 	{#if lab && labHudVisible}
@@ -499,7 +531,7 @@ canvas,
 .layer,
 .veil {
 	pointer-events: none;
-	will-change: opacity;
+	will-change: opacity, filter;
 }
 .welcome,
 .description,
@@ -510,12 +542,12 @@ canvas,
 	display: grid;
 	place-content: center;
 	text-align: center;
-	font-size: 5vmin;
+	font-size: 4.2vmin;
 	font-weight: 500;
 	letter-spacing: 0.12em;
 	color: #e8e6e3;
 	pointer-events: none;
-	will-change: opacity;
+	will-change: opacity, filter;
 }
 .description,
 .invitation {
@@ -529,13 +561,13 @@ canvas,
 	justify-items: center;
 	gap: 4vmin;
 	text-align: center;
-	font-size: 5vmin;
+	font-size: 4.2vmin;
 	font-weight: 500;
 	letter-spacing: 0.08em;
 	line-height: 1.5;
 	color: #e8e6e3;
 	pointer-events: none;
-	will-change: opacity;
+	will-change: opacity, filter;
 }
 .nickname-prompt p {
 	margin: 0;

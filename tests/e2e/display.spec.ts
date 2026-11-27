@@ -191,6 +191,12 @@ test("展示に各質問文を表示し、戻る・途中接続・判定への�
 			}
 			await answerQuestion(ipad.page, question, index * 3);
 			await ipad.page.getByRole("button", { name: "次へ", exact: true }).click();
+			if (index < QUESTIONS.length - 1) {
+				// リングの縮小完了（450ms）に合わせて更新され、以前の音声待ち（1660ms）を待たない。
+				await expect(display.page.locator(".question-prompt p span")).toHaveText(
+					[...DISPLAY_QUESTION_LINES[QUESTIONS[index + 1].id]], { timeout: 1_000 },
+				);
+			}
 		}
 		await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
 		await expect(display.page.locator(".question-prompt")).toHaveCount(0);

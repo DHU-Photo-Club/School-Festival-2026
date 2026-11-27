@@ -41,8 +41,8 @@ export const WELCOME_HOLD_MS = INTRO_EXPLANATION_AT_MS - WELCOME_FADE_MS;
 export const WELCOME_LEAVE_AT_MS = WELCOME_FADE_MS + WELCOME_HOLD_MS;
 /** 01の読み上げが終わり、歓迎の文字から説明の文へ切り替え始める時刻（現れ始めからの経過時間）。 */
 export const INTRO_DESCRIPTION_AT_MS = INTRO_EXPLANATION_AT_MS;
-/** 01〜03の文字がクロスフェードする時間。 */
-export const INTRO_DESCRIPTION_FADE_MS = 600;
+/** 01〜03の文字がフェードアウトしてから入れ替える時間。 */
+export const INTRO_DESCRIPTION_FADE_MS = 300;
 /** iPadの `intro` で、説明の文を現れ終えたあとに、進捗バーとニックネームの入力欄が現れる時間。 */
 export const NICKNAME_FADE_IN_MS = 800;
 /** 判定中に灰色の破片を沈める不透明度。 */
@@ -472,7 +472,7 @@ export interface WelcomeLead {
 /**
  * 歓迎の文字の不透明度。`intro` と、その直前に再生するシーケンス `lead` の間だけ見せる。現れ始めるのは
  * シーケンスの開始（シーケンスがなければ `intro` の開始）で、`intro` に入っても途切れずにゆっくり現れ続ける。
- * 01の終了で説明の文へクロスフェードする（`INTRO_DESCRIPTION_FADE_MS`）。
+ * 01の終了で説明の文へフェードアウトしてから入れ替える（`INTRO_DESCRIPTION_FADE_MS`）。
  * `intro` の経過時間にシーケンスの定義上の長さを足すので、`intro` の途中から接続した画面も同じ不透明度になる。
  * 見せない段階では0で、`intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
@@ -488,7 +488,7 @@ export function welcomeOpacity(
 	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 1 : 0;
 	return (
 		easeInOutSine(elapsed / WELCOME_FADE_MS) *
-		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS) / INTRO_DESCRIPTION_FADE_MS))
+		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS + INTRO_DESCRIPTION_FADE_MS) / INTRO_DESCRIPTION_FADE_MS))
 	);
 }
 
@@ -507,7 +507,7 @@ export function introDescriptionOpacity(
 	const elapsed = openingElapsed(state, now, lead);
 	if (reducedMotion) return elapsed >= INTRO_DESCRIPTION_AT_MS && elapsed < INTRO_INVITATION_AT_MS ? 1 : 0;
 	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS) *
-		(1 - easeInOutSine((elapsed - INTRO_INVITATION_AT_MS) / INTRO_DESCRIPTION_FADE_MS));
+		(1 - easeInOutSine((elapsed - INTRO_INVITATION_AT_MS + INTRO_DESCRIPTION_FADE_MS) / INTRO_DESCRIPTION_FADE_MS));
 }
 
 /** 02の終了で表示し、03の間は白い輪の中央に見せる案内文。 */
@@ -523,7 +523,7 @@ export function introInvitationOpacity(
 	const leave = openingElapsed(state, now, lead) - INTRO_NICKNAME_AT_MS;
 	if (reducedMotion) return leave < 0 ? 1 : 0;
 	return easeInOutSine(elapsed / INTRO_DESCRIPTION_FADE_MS) *
-		(1 - easeInOutSine(leave / INTRO_DESCRIPTION_FADE_MS));
+		(1 - easeInOutSine((leave + INTRO_DESCRIPTION_FADE_MS) / INTRO_DESCRIPTION_FADE_MS));
 }
 
 /** 04の読み上げ開始から、展示のニックネーム入力案内を見せる。 */

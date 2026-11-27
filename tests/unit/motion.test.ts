@@ -529,11 +529,11 @@ describe("歓迎の文字", () => {
 		expect(mid).toBeGreaterThan(0);
 		expect(mid).toBeLessThan(1);
 		expect(welcomeOpacity(intro, T0 + WELCOME_FADE_MS, false)).toBe(1);
-		expect(welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS - 1, false)).toBeCloseTo(1, 3);
+		expect(welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS - INTRO_DESCRIPTION_FADE_MS - 1, false)).toBeCloseTo(1, 3);
 	});
 
 	it("現れ終えてしばらく見せたあと、説明の文へ入れ替えるために消える", () => {
-		const half = welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS + INTRO_DESCRIPTION_FADE_MS / 2, false);
+		const half = welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS - INTRO_DESCRIPTION_FADE_MS / 2, false);
 		expect(half).toBeGreaterThan(0);
 		expect(half).toBeLessThan(1);
 		expect(welcomeOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS + 1, false)).toBe(0);
@@ -576,12 +576,15 @@ describe("intro の説明の文", () => {
 		expect(introDescriptionOpacity(intro, T0 + INTRO_INVITATION_AT_MS + INTRO_DESCRIPTION_FADE_MS + 1, false)).toBe(0);
 	});
 
-	it("01→02と02→03は音源の境界でクロスフェードし、文字が消えきる待ち時間を作らない", () => {
+	it("01→02と02→03は音源の境界で新旧の文字が重ならず入れ替わる", () => {
 		for (const boundary of [INTRO_DESCRIPTION_AT_MS, INTRO_INVITATION_AT_MS]) {
-			for (const offset of [0, 100, 300, 500, 600]) {
+			for (const offset of [-300, -150, -1, 0, 100, 300, 500, 600]) {
 				const now = T0 + boundary + offset;
 				const sum = welcomeOpacity(intro, now, false) + introDescriptionOpacity(intro, now, false) + introInvitationOpacity(intro, now, false);
-				expect(sum).toBeCloseTo(1, 5);
+				expect(sum).toBeGreaterThanOrEqual(0);
+				expect(sum).toBeLessThanOrEqual(1);
+				const visible = [welcomeOpacity(intro, now, false), introDescriptionOpacity(intro, now, false), introInvitationOpacity(intro, now, false)].filter((value) => value > 0);
+				expect(visible.length).toBeLessThanOrEqual(1);
 			}
 		}
 	});
@@ -741,11 +744,12 @@ describe("シーケンス", () => {
 
 describe("展示のニックネーム入力案内", () => {
 	const intro = { phase: "intro" as const, phaseStartedAt: T0, sequenceId: null };
-	it("04の開始前は出さず、開始と同時に前の案内とクロスフェードする", () => {
+	it("04の開始前は出さず、開始前に前の案内を消し、開始と同時に現れる", () => {
 		expect(introNicknameOpacity(intro, T0 + INTRO_NICKNAME_AT_MS - 1, false)).toBe(0);
 		for (const offset of [1, 100, 300, 600, 601]) {
 			const now = T0 + INTRO_NICKNAME_AT_MS + offset;
-			expect(introNicknameOpacity(intro, now, false) + introInvitationOpacity(intro, now, false)).toBeCloseTo(1, 5);
+			expect(introInvitationOpacity(intro, now, false)).toBe(0);
+			expect(introNicknameOpacity(intro, now, false)).toBeGreaterThan(0);
 		}
 		expect(introNicknameOpacity(intro, T0 + INTRO_NICKNAME_AT_MS + 601, false)).toBe(1);
 	});
