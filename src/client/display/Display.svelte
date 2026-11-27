@@ -25,6 +25,8 @@ import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { ANSWER_ORBIT_BOOST_MS, answerOrbitAdvance, shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId } from "../../shared/types.ts";
+import { ambientPoses } from "../../shared/ambient.ts";
+import { AmbientSpeech } from "../../shared/ambient-speech.ts";
 import { drawDust } from "../common/dust.ts";
 import { drawRipple } from "../common/ripple.ts";
 import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
@@ -51,6 +53,8 @@ let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
 let bloomCanvas = $state<HTMLCanvasElement>();
 let rippleCanvas = $state<HTMLCanvasElement>();
+let ambientCanvas = $state<HTMLCanvasElement>();
+const ambientSpeech = new AmbientSpeech();
 let dustCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
@@ -129,6 +133,7 @@ function onState(next: DisplayState) {
 	if (next.phase === "judging") judgingStartedAt = next.phaseStartedAt;
 	if (next.phase === "idle" || next.phase === "question") judgingStartedAt = undefined;
 	const previous = displayState;
+	ambientSpeech.update(previous, next, serverTime(performance.now()));
 	// ニックネーム送信も、展示の描画上では他の回答と同じ反応にする。
 	if (next.phase === "question" && next.questionIndex === 0 && next.answeredAt === null) {
 		next = { ...next, answeredAt: next.phaseStartedAt };
@@ -187,6 +192,10 @@ function resize() {
 	if (rippleCanvas) {
 		rippleCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
 		rippleCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+	}
+	if (ambientCanvas) {
+		ambientCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
+		ambientCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
 	}
 	if (dustCanvas) {
 		dustCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
@@ -383,6 +392,8 @@ function tick(timestamp: number) {
 	drawShardLayer(scene.shards);
 	drawRippleLayer(scene.ripple);
 	drawDustLayer(scene.dust);
+	const ambientContext = ambientCanvas?.getContext("2d");
+	if (ambientContext) drawDust(ambientContext, ambientPoses(window.innerWidth, window.innerHeight, now, state, scene, ambientSpeech.level(now), reducedMotion), shardRatio());
 }
 
 onMount(() => {
@@ -457,6 +468,7 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	<canvas class="shards" bind:this={shardCanvas}></canvas>
 	<canvas class="ripple" bind:this={rippleCanvas}></canvas>
 	<canvas class="dust" bind:this={dustCanvas}></canvas>
+	<canvas class="ambient" bind:this={ambientCanvas}></canvas>
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
 		{#if shownColor && resultChoice}
@@ -542,6 +554,7 @@ canvas,
 	mix-blend-mode: hard-light;
 }
 .ripple,
+.ambient,
 .dust {
 	pointer-events: none;
 }
