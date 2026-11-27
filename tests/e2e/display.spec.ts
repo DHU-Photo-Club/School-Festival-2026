@@ -53,9 +53,15 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	await expect(display.page.locator(".invitation span")).toHaveText(["さあ、あなただけの色を", "見つけましょう"]);
 	await expect(nicknameField).toHaveCount(0);
 	await expect(nicknameField).toBeVisible({ timeout: 15_000 });
+	const nicknamePrompt = display.page.locator(".nickname-prompt");
+	await expect(nicknamePrompt).toHaveCSS("opacity", "1");
+	await expect(nicknamePrompt).toHaveText("ニックネームを入力して下さい");
+	await expect(nicknamePrompt.locator("svg")).toBeVisible();
+	await expect(display.page.locator(".invitation")).toHaveCSS("opacity", "0");
 	await enterNickname(ipad.page);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "question");
 	await expect(description).toHaveCSS("opacity", "0", { timeout: 4_000 });
+	await expect(nicknamePrompt).toHaveCSS("opacity", "0", { timeout: 4_000 });
 	await display.context.close();
 	await ipad.context.close();
 	await harness.close();

@@ -14,6 +14,7 @@ import {
 	INTRO_DESCRIPTION_FADE_MS,
 	introDescriptionOpacity,
 	introInvitationOpacity,
+	introNicknameOpacity,
 	introDescriptionRemainingMs,
 	JUDGING_SHARD_DIM,
 	RESULT_FORMS,
@@ -735,5 +736,24 @@ describe("シーケンス", () => {
 			shards: { colors: null, tint: 0, intensity: 1 },
 			resultLayer: 0,
 		});
+	});
+});
+
+describe("展示のニックネーム入力案内", () => {
+	const intro = { phase: "intro" as const, phaseStartedAt: T0, sequenceId: null };
+	it("04の開始前は出さず、開始と同時に前の案内とクロスフェードする", () => {
+		expect(introNicknameOpacity(intro, T0 + INTRO_NICKNAME_AT_MS - 1, false)).toBe(0);
+		for (const offset of [1, 100, 300, 600, 601]) {
+			const now = T0 + INTRO_NICKNAME_AT_MS + offset;
+			expect(introNicknameOpacity(intro, now, false) + introInvitationOpacity(intro, now, false)).toBeCloseTo(1, 5);
+		}
+		expect(introNicknameOpacity(intro, T0 + INTRO_NICKNAME_AT_MS + 601, false)).toBe(1);
+	});
+	it("途中接続・動きを減らす設定・質問へ移った後も表示を正しく決める", () => {
+		const lead = { id: "opening", durationMs: 3600 };
+		const state = { ...intro, phaseStartedAt: T0 + lead.durationMs };
+		expect(introNicknameOpacity(state, T0 + INTRO_NICKNAME_AT_MS + 1, true, lead)).toBe(1);
+		expect(introInvitationOpacity(state, T0 + INTRO_NICKNAME_AT_MS + 1, true, lead)).toBe(0);
+		expect(introNicknameOpacity({ ...state, phase: "question" }, T0 + 60_000, false, lead)).toBe(0);
 	});
 });

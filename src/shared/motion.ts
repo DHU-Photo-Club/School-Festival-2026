@@ -520,11 +520,27 @@ export function introInvitationOpacity(
 	if (state.phase !== "intro") return 0;
 	const elapsed = openingElapsed(state, now, lead) - INTRO_INVITATION_AT_MS;
 	if (elapsed < 0) return 0;
+	const leave = openingElapsed(state, now, lead) - INTRO_NICKNAME_AT_MS;
+	if (reducedMotion) return leave < 0 ? 1 : 0;
+	return easeInOutSine(elapsed / INTRO_DESCRIPTION_FADE_MS) *
+		(1 - easeInOutSine(leave / INTRO_DESCRIPTION_FADE_MS));
+}
+
+/** 04の読み上げ開始から、展示のニックネーム入力案内を見せる。 */
+export function introNicknameOpacity(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	if (state.phase !== "intro") return 0;
+	const elapsed = openingElapsed(state, now, lead) - INTRO_NICKNAME_AT_MS;
+	if (elapsed < 0) return 0;
 	return reducedMotion ? 1 : easeInOutSine(elapsed / INTRO_DESCRIPTION_FADE_MS);
 }
 
 /**
- * 導入ナレーション03が終わるまでの残り時間（ミリ秒）。0以下なら読み終えている。iPadは、これが0以下に
+ * 導入ナレーション04が始まるまでの残り時間（ミリ秒）。0以下なら案内を始めている。iPadは、これが0以下に
  * なるまでニックネームの入力欄を出さない。時刻の数え方は `welcomeOpacity` と同じ。
  * reduced-motionでも音声を省略しないため、同じ長さを待つ。
  */

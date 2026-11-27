@@ -1,4 +1,5 @@
 <script lang="ts">
+import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 import { onDestroy, onMount } from "svelte";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
@@ -11,6 +12,7 @@ import {
 	IDLE_RETURN_MS,
 	introDescriptionOpacity,
 	introInvitationOpacity,
+	introNicknameOpacity,
 	screenColorId,
 	WELCOME_FADE_OUT_MS,
 	welcomeOpacity,
@@ -52,6 +54,7 @@ let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
 let description = $state<HTMLParagraphElement>();
 let invitation = $state<HTMLParagraphElement>();
+let nicknamePrompt = $state<HTMLDivElement>();
 
 let client: RealtimeClient | null = null;
 let renderer: SceneRenderer | null = null;
@@ -269,6 +272,10 @@ function applyWelcome(state: DisplayState, now: number) {
 		if (invitation.style.transition !== descriptionTransition) invitation.style.transition = descriptionTransition;
 		setStyle(invitation, "opacity", opacity(introInvitationOpacity(state, now, reducedMotion, welcomeLead)));
 	}
+	if (nicknamePrompt) {
+		if (nicknamePrompt.style.transition !== descriptionTransition) nicknamePrompt.style.transition = descriptionTransition;
+		setStyle(nicknamePrompt, "opacity", opacity(introNicknameOpacity(state, now, reducedMotion, welcomeLead)));
+	}
 }
 
 function tick(timestamp: number) {
@@ -407,6 +414,11 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 		<span>見つけましょう</span>
 	</p>
 
+	<div class="nickname-prompt" bind:this={nicknamePrompt} style="opacity: 0">
+		<p>ニックネームを入力して下さい</p>
+		<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
+	</div>
+
 	{#if lab && labHudVisible}
 		<p class="lab-hud" data-lab={lab.loop}>{labHud}<br>{LAB_LOOP_NOTES[lab.loop]}（h で隠す）</p>
 	{/if}
@@ -472,6 +484,30 @@ canvas,
 .description,
 .invitation {
 	line-height: 1.9;
+}
+.nickname-prompt {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-content: center;
+	justify-items: center;
+	gap: 4vmin;
+	text-align: center;
+	font-size: 3vmin;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	line-height: 1.5;
+	color: #e8e6e3;
+	pointer-events: none;
+	will-change: opacity;
+}
+.nickname-prompt p {
+	margin: 0;
+}
+.nickname-prompt :global(.nickname-arrow) {
+	width: 3.6vmin;
+	height: 3.6vmin;
+	stroke-width: 2;
 }
 .lab-hud {
 	position: absolute;

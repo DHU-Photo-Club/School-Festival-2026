@@ -111,4 +111,5 @@ export function welcomeNarrationGapAfterMs(number: number): number {
 }
 export const INTRO_EXPLANATION_AT_MS = INTRO_AUDIO.narration01Ms + welcomeNarrationGapAfterMs(1);
 export const INTRO_INVITATION_AT_MS = INTRO_EXPLANATION_AT_MS + INTRO_AUDIO.narration02Ms + welcomeNarrationGapAfterMs(2);
-export const INTRO_NICKNAME_AT_MS = INTRO_INVITATION_AT_MS + INTRO_AUDIO.narration03Ms;
+/** 04の再生開始。03→04の既存の間隔も含めて、展示と入力画面を揃える。 */
+export const INTRO_NICKNAME_AT_MS = INTRO_INVITATION_AT_MS + INTRO_AUDIO.narration03Ms + welcomeNarrationGapAfterMs(3);
