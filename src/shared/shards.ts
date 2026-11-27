@@ -176,8 +176,7 @@ function ringPoses(
 		if (idleFit > 0) {
 			// 位置・自転・呼吸の計算はそのまま。接線方向を残し、外へ突き出す幅だけ抑える。
 			const fit = clamp01(idleFit);
-			const compact = 1 - 0.25 * fit;
-			const radialScale = 1 - 0.6 * fit;
+			const radialScale = 1 - 0.3 * fit;
 			const rx = Math.cos(theta);
 			const ry = Math.sin(theta);
 			base.vertices = base.vertices.map(([vx, vy]): Point => {
@@ -185,7 +184,7 @@ function ringPoses(
 				const dy = vy - y;
 				const radial = (dx * rx + dy * ry) * radialScale;
 				const tangent = -dx * ry + dy * rx;
-				return [x + (radial * rx - tangent * ry) * compact, y + (radial * ry + tangent * rx) * compact];
+				return [x + radial * rx - tangent * ry, y + radial * ry + tangent * rx];
 			});
 		}
 		const visible = clamp01((density * (RING_COUNT + DENSITY_FADE_COUNT) - index) / DENSITY_FADE_COUNT);

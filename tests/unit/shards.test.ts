@@ -307,7 +307,8 @@ describe("待機用の円形に沿った破片", () => {
 				const [rx, ry] = [(piece.x - 960) / r, (piece.y - 540) / r];
 				for (const [vertexIndex, [x, y]] of piece.vertices.entries()) {
 					const [ox, oy] = original.vertices[vertexIndex];
-					expect((x - piece.x) * rx + (y - piece.y) * ry).toBeCloseTo(((ox - piece.x) * rx + (oy - piece.y) * ry) * 0.3, 5);
+					expect((x - piece.x) * rx + (y - piece.y) * ry).toBeCloseTo(((ox - piece.x) * rx + (oy - piece.y) * ry) * 0.7, 5);
+					expect(-(x - piece.x) * ry + (y - piece.y) * rx).toBeCloseTo(-(ox - piece.x) * ry + (oy - piece.y) * rx, 5);
 				}
 			}
 			// 待機の整形を使わない質問・結果は元の幾何形状のまま。
