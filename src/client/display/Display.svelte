@@ -1,6 +1,10 @@
 <script lang="ts">
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
-import { onDestroy, onMount } from "svelte";
+import { onDestroy, onMount, untrack } from "svelte";
+import { fade } from "svelte/transition";
+import { DISPLAY_QUESTION_LINES } from "../../data/display-questions.ts";
+import { QUESTIONS } from "../../data/questions.ts";
+import { SOUND_MIX } from "../../data/sound.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
@@ -363,6 +367,29 @@ onDestroy(() => {
 	window.removeEventListener("keydown", onKey);
 });
 
+// 初回・途中接続では現在の質問をすぐ表示する。質問間の切り替えは音声と同じ遅れに揃える。
+let questionPromptIndex = $state<number | null>(null);
+$effect(() => {
+	const index = displayState?.questionIndex ?? null;
+	const phase = displayState?.phase;
+	const previous = untrack(() => questionPromptIndex);
+	if (phase !== "question" || index === null) {
+		questionPromptIndex = null;
+		return;
+	}
+	if (previous === null || previous === index) {
+		questionPromptIndex = index;
+		return;
+	}
+	const timer = window.setTimeout(() => {
+		questionPromptIndex = index;
+	}, SOUND_MIX.questionSwitchNarrationDelayMs);
+	return () => window.clearTimeout(timer);
+});
+const questionPromptLines = $derived(
+	questionPromptIndex === null ? null : DISPLAY_QUESTION_LINES[QUESTIONS[questionPromptIndex]?.id ?? ""] ?? null,
+);
+
 const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
 const sequence = $derived(displayState?.phase === "sequence" ? findSequence(SEQUENCES, displayState.sequenceId) : null);
 const SequenceView = $derived(sequence ? displaySequence(sequence.id) : null);
@@ -418,6 +445,15 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 		<p><span>ニックネームを</span><span>入力して下さい</span></p>
 		<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
 	</div>
+
+	{#if displayState?.phase === "question" && questionPromptLines}
+		{#key questionPromptIndex}
+			<div class="nickname-prompt question-prompt" transition:fade={{ duration: reducedMotion ? 0 : 600 }}>
+				<p>{#each questionPromptLines as line}<span>{line}</span>{/each}</p>
+				<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
+			</div>
+		{/key}
+	{/if}
 
 	{#if lab && labHudVisible}
 		<p class="lab-hud" data-lab={lab.loop}>{labHud}<br>{LAB_LOOP_NOTES[lab.loop]}（h で隠す）</p>

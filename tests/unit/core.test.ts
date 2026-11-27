@@ -58,6 +58,7 @@ describe("接続と配信", () => {
 				"phaseEndsAt",
 				"phaseStartedAt",
 				"previewColorId",
+				"questionIndex",
 				"result",
 				"revision",
 				"sequenceId",

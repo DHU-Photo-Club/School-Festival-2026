@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DISPLAY_QUESTION_LINES } from "../../src/data/display-questions.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import {
 	answerQuestion,
@@ -53,7 +54,7 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	await expect(display.page.locator(".invitation span")).toHaveText(["さあ、あなただけの色を", "見つけましょう"]);
 	await expect(nicknameField).toHaveCount(0);
 	await expect(nicknameField).toBeVisible({ timeout: 15_000 });
-	const nicknamePrompt = display.page.locator(".nickname-prompt");
+	const nicknamePrompt = display.page.locator(".nickname-prompt:not(.question-prompt)");
 	await expect(nicknamePrompt).toHaveCSS("opacity", "1");
 	await expect(nicknamePrompt).toHaveText("ニックネームを入力して下さい");
 	await expect(nicknamePrompt.locator("p span")).toHaveText(["ニックネームを", "入力して下さい"]);
@@ -164,4 +165,38 @@ test("開いた台数の展示ディスプレイで動き、管理画面に接�
 	}
 	for (const display of displays) await display.context.close();
 	await harness.close();
+});
+
+test("展示に各質問文を表示し、戻る・途中接続・判定への移行にも追従する", async ({ browser }) => {
+	const harness = await ExhibitHarness.open(browser);
+	const [display] = await harness.openDisplays(1);
+	const ipad = await harness.openDevice("controller");
+	try {
+		await ipad.page.getByRole("button", { name: "はじめる" }).click();
+		await enterNickname(ipad.page);
+		for (const [index, question] of QUESTIONS.entries()) {
+			await expectQuestion(ipad.page, index);
+			await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
+			await expect(display.page.locator(".question-prompt svg")).toBeVisible();
+			if (index === 1) {
+				await ipad.page.getByRole("button", { name: "戻る", exact: true }).click();
+				await expectQuestion(ipad.page, 0);
+				await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[QUESTIONS[0].id]]);
+				await ipad.page.getByRole("button", { name: "次へ", exact: true }).click();
+				await expectQuestion(ipad.page, 1);
+				await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
+				const late = await harness.openDevice("display");
+				await expect(late.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
+				await late.context.close();
+			}
+			await answerQuestion(ipad.page, question, index * 3);
+			await ipad.page.getByRole("button", { name: "次へ", exact: true }).click();
+		}
+		await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
+		await expect(display.page.locator(".question-prompt")).toHaveCount(0);
+	} finally {
+		await display.context.close();
+		await ipad.context.close();
+		await harness.close();
+	}
 });
