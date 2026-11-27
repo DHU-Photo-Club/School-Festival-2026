@@ -1,6 +1,7 @@
 <script lang="ts">
 import { EXHIBIT } from "../data/exhibit.ts";
 import { parseScreenNumber, parseSplitScreen } from "../shared/screens.ts";
+import Fullscreen from "./common/Fullscreen.svelte";
 import Keystone from "./common/Keystone.svelte";
 import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
@@ -43,10 +44,13 @@ const pageLabel = split
 	<Controller />
 {:else if split}
 	<Keystone storageKey={keystoneKey}><SplitDisplay screen={split} /></Keystone>
+	<Fullscreen />
 {:else if display}
 	<Keystone storageKey={keystoneKey}><Display screen={display} /></Keystone>
+	<Fullscreen />
 {:else if photo}
 	<Keystone storageKey={keystoneKey}><PhotoDisplay screen={photo} /></Keystone>
+	<Fullscreen />
 {:else if path === "/sound"}
 	<SoundPage />
 {:else if path === "/admin"}
