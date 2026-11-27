@@ -16,7 +16,6 @@ import {
 	introInvitationOpacity,
 	introNicknameOpacity,
 	introDescriptionRemainingMs,
-	JUDGING_SHARD_DIM,
 	RESULT_FORMS,
 	resultFormPrimitives,
 	SHARD_IDLE_DENSITY,
@@ -24,7 +23,6 @@ import {
 	SHARD_OPENING_SIZE,
 	SHARD_OPENING_SPREAD,
 	SHARD_SCALE_MS,
-	SHARD_TINT_MS,
 	screenColorId,
 	WELCOME_FADE_MS,
 	WELCOME_LEAVE_AT_MS,
@@ -151,7 +149,7 @@ describe("回答の瞬間の輪の収縮", () => {
 
 	it("全画面で同じ倍率になり、最終問の回答で入った judging でも縮む", () => {
 		expect(at(300, {}, { displayOrder: 1 })).toBe(at(300, {}, { displayOrder: 0 }));
-		expect(at(ANSWER_PULSE_IN_MS, { phase: "judging" })).toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
+		expect(at(ANSWER_PULSE_IN_MS, { phase: "judging", phaseStartedAt: T0 + 1000 })).toBeCloseTo(1 - ANSWER_PULSE_DEPTH);
 	});
 
 	it("回答がなければ、reduced-motionなら、question と judging 以外なら縮めない", () => {
@@ -293,62 +291,41 @@ describe("判定と結果", () => {
 		}
 	});
 
-	it("色づき始めるまでの破片は、結果色によって変わらない", () => {
-		const tintAt = T0 + JUDGING_MS - SHARD_TINT_MS;
-		for (const now of [T0, T0 + 600, tintAt]) {
-			for (const colorId of PALETTE_IDS) {
-				expect(shardsOf(computeScene(base(judging(colorId), { now })))).toMatchObject({ tint: 0 });
-			}
+	it("結果開始直前まで全色パレットを使い、結果の二色を先に見せない", () => {
+		for (const now of [T0, T0 + 600, T0 + JUDGING_MS - 1]) {
+			const reference = computeScene(base(judging("jade"), { now })).shards.colors;
+			for (const colorId of PALETTE_IDS) expect(computeScene(base(judging(colorId), { now })).shards.colors).toEqual(reference);
 		}
 	});
 
-	it("判定の期限が短い設定でも、暗転を終えてから色づく", () => {
-		const state: Partial<DisplayState> = { ...judging("jade"), phaseEndsAt: T0 + 1_000 };
-		expect(shardsOf(computeScene(base(state, { now: T0 + 999 })))?.tint).toBe(0);
+	it("短い判定でも開始時刻まではカラフルな輪で待つ", () => {
+		const state = { ...judging("jade"), phaseEndsAt: T0 + 1000 };
+		expect(computeScene(base(state, { now: T0 + 999 })).shards.burst).toBeUndefined();
 	});
 
-	/** AIの選定を待っている判定。 */
-	const waiting: Partial<DisplayState> = { phase: "judging", phaseStartedAt: T0, phaseEndsAt: T0 + 30_000 };
-
-	it("判定は1.2秒で黒へ沈み、灰色の破片は薄くなって残る", () => {
-		const scene = computeScene(base(waiting, { now: T0 + 1_500 }));
+	it("判定は黒背景のカラフルな小リングへ1.2秒で縮む", () => {
+		const state = { phase: "judging" as const, phaseStartedAt: T0, phaseEndsAt: T0 + 30000 };
+		const scene = computeScene(base(state, { now: T0 + 1500 }));
 		expect(scene.primitives).toContainEqual({ type: "fill", color: COLORS.dark, alpha: 1 });
-		expect(shardsOf(scene)).toMatchObject({ colors: null, tint: 0 });
-		expect(shardsOf(scene)?.intensity).toBeCloseTo(JUDGING_SHARD_DIM);
-		expect(shardsOf(computeScene(base(waiting, { now: T0 + 20_000 })))).toMatchObject({ colors: null });
+		expect(scene.shards.scale).toBeCloseTo(SHARD_IDLE_SCALE);
+		expect(scene.shards.density).toBeCloseTo(SHARD_IDLE_DENSITY);
+		expect(scene.shards.colors!.length).toBeGreaterThan(2);
 	});
 
-	it("判定中は塵を出し、結果の色づきに合わせて消え、結果開始以降と判定以外、reduced-motionでは出さない", () => {
-		expect(computeScene(base(waiting, { now: T0 })).dust).toBeNull();
-		expect(computeScene(base(waiting, { now: T0 + 3_000 })).dust).toEqual({ elapsed: 3_000, fade: 1 });
-		const settled: Partial<DisplayState> = { ...judging("jade"), result: resultOf("jade", "rose") };
-		const tintAt = T0 + JUDGING_MS - SHARD_TINT_MS;
-		expect(computeScene(base(settled, { now: tintAt })).dust?.fade).toBe(1);
-		const middle = computeScene(base(settled, { now: tintAt + SHARD_TINT_MS / 2 })).dust?.fade;
-		expect(middle).toBeGreaterThan(0);
-		expect(middle).toBeLessThan(1);
-		expect(computeScene(base(settled, { now: T0 + JUDGING_MS })).dust).toBeNull();
-		expect(computeScene(base(waiting, { now: T0 + 3_000, reducedMotion: true })).dust).toBeNull();
-		expect(computeScene(base(questionState(T0), { now: T0 + 3_000 })).dust).toBeNull();
-		expect(computeScene(base({ phase: "idle" }, { now: T0 + 3_000 })).dust).toBeNull();
+	it("粒子は結果開始まで集まり、開始後は同じ集約時間から外へ散る", () => {
+		const state = judging("jade");
+		expect(computeScene(base(state, { now: T0 })).dust).toBeNull();
+		expect(computeScene(base(state, { now: T0 + 3000 })).dust).toMatchObject({ elapsed: 3000, fade: 1 });
+		expect(computeScene(base(state, { now: T0 + JUDGING_MS })).dust).toMatchObject({ elapsed: JUDGING_MS, burstElapsed: 0 });
+		expect(computeScene(base(state, { now: T0 + JUDGING_MS + 1800 })).dust).toBeNull();
+		expect(computeScene(base(state, { now: T0 + 3000, reducedMotion: true })).dust).toBeNull();
+		expect(computeScene(base(questionState(T0), { now: T0 + 3000 })).dust).toBeNull();
 	});
 
-	it("結果の二色が決まると、結果開始までに破片を二色へ色づける", () => {
-		const state: Partial<DisplayState> = { ...judging("jade"), result: resultOf("jade", "rose") };
-		const two = [baseColor(colorOf("jade")), baseColor(colorOf("rose"))];
-		const tintAt = T0 + JUDGING_MS - SHARD_TINT_MS;
-		const at = (now: number) => shardsOf(computeScene(base(state, { now })));
-		expect(at(tintAt - 1)).toMatchObject({ colors: two, tint: 0 });
-		expect(at(tintAt - 1)?.intensity).toBeCloseTo(JUDGING_SHARD_DIM);
-		const half = at(tintAt + SHARD_TINT_MS / 2);
-		expect(half?.tint).toBeCloseTo(0.5);
-		expect(half?.intensity).toBeGreaterThan(JUDGING_SHARD_DIM);
-		expect(half?.intensity).toBeLessThan(1);
-		// 結果開始の最初のフレームで色づき終えている。画面ごとの色に関わらず、全画面が同じ二色で描く。
-		for (const displayOrder of [0, 1]) {
-			const start = shardsOf(computeScene(base(state, { now: T0 + JUDGING_MS, displayOrder })));
-			expect(start).toMatchObject({ colors: two, tint: 1, intensity: 1 });
-		}
+	it("爆発開始で決定した二色だけを破片に割り当てる", () => {
+		const state = { ...judging("jade"), result: resultOf("jade", "rose") };
+		const colors = computeScene(base(state, { now: T0 + JUDGING_MS })).shards.colors!;
+		expect(new Set(colors)).toEqual(new Set([baseColor(colorOf("jade")), baseColor(colorOf("rose"))]));
 	});
 
 	it("色づいた破片は、結果色が広がった後も消えずに残る", () => {
@@ -367,15 +344,9 @@ describe("判定と結果", () => {
 		expect(complete.colors).not.toBeNull();
 	});
 
-	it("reduced-motion の判定は、灰色の破片から二色の破片へ一回だけ切り替わる", () => {
-		const state: Partial<DisplayState> = { ...judging("jade"), result: resultOf("jade", "rose") };
-		const tintAt = T0 + JUDGING_MS - SHARD_TINT_MS;
-		const at = (now: number) => computeScene(base(state, { now, reducedMotion: true }));
-		expect(at(T0).primitives).toEqual([{ type: "fill", color: COLORS.dark }]);
-		expect(shardsOf(at(T0))).toEqual(shardsOf(at(tintAt - 1)));
-		expect(shardsOf(at(tintAt - 1))).toMatchObject({ colors: null, time: 0 });
-		expect(shardsOf(at(tintAt))).toMatchObject({ tint: 1, intensity: 1, time: 0 });
-		expect(shardsOf(at(T0 + JUDGING_MS))).toMatchObject({ tint: 1, intensity: 1, time: 0 });
+	it("reduced-motionでは小さなカラフルな輪を動かさず見せる", () => {
+		const state = judging("jade");
+		expect(computeScene(base(state, { now: T0, reducedMotion: true })).shards).toEqual(computeScene(base(state, { now: T0 + 5000, reducedMotion: true })).shards);
 	});
 
 	it.each(PALETTE_IDS)("%s: 結果開始の最初のフレームで結果色の形が見えている", (colorId) => {
@@ -410,7 +381,7 @@ describe("判定と結果", () => {
 			veil: null,
 		});
 		expect(settled.shards).toMatchObject({ tint: 1, intensity: 1 });
-		const mid = computeScene(base(result, { now: start + durationMs / 2 }));
+		const mid = computeScene(base(result, { now: start + 400 }));
 		expect(mid.animating).toBe(true);
 		expect(mid.resultLayer).toBe(0);
 	});
@@ -427,7 +398,7 @@ describe("判定と結果", () => {
 		expect(scene.resultLayer).toBe(1);
 	});
 
-	it("reduced-motion の結果は基準色の全面から完了状態へ一回だけ切り替わる", () => {
+	it("reduced-motion の結果は移動演出を省いて深い結果色へ切り替わる", () => {
 		const start = T0 + JUDGING_MS;
 		const at = (offset: number) =>
 			computeScene(
@@ -442,13 +413,13 @@ describe("判定と結果", () => {
 				),
 			);
 		const emerald = colorOf("emerald");
-		expect(at(0).primitives).toEqual([{ type: "fill", color: baseColor(emerald) }]);
-		expect(at(1_500).primitives).toEqual([{ type: "fill", color: baseColor(emerald) }]);
+		expect(at(0).primitives).toEqual([{ type: "fill", color: backgroundColor(emerald) }]);
+		expect(at(1_500).primitives).toEqual([{ type: "fill", color: backgroundColor(emerald) }]);
 		expect(at(1_600).primitives).toEqual([{ type: "fill", color: backgroundColor(emerald) }]);
 		expect(at(30_000).primitives).toEqual([{ type: "fill", color: backgroundColor(emerald) }]);
 	});
 
-	it("掃く広がり方は偶数の画面で左から、奇数の画面で右から掃く", () => {
+	it("結果の背景は偶数・奇数の画面とも中心から円状に広がる", () => {
 		expect(RESULT_FORMS.emerald.form).toBe("sweepingTide");
 		expect(RESULT_FORMS.rose.form).toBe("sweepingTide");
 		const start = T0 + JUDGING_MS;
@@ -460,8 +431,8 @@ describe("判定と結果", () => {
 		};
 		const even = computeScene(base(state, { now: start + 200, displayOrder: 0 })).primitives[1];
 		const odd = computeScene(base(state, { now: start + 200, displayOrder: 1 })).primitives[1];
-		expect(even).toMatchObject({ type: "bloom", shape: "line", x: 0, dx: 1 });
-		expect(odd).toMatchObject({ type: "bloom", shape: "line", x: 1920, dx: -1 });
+		expect(even).toMatchObject({ type: "bloom", shape: "circle", x: 960, y: 540 });
+		expect(odd).toMatchObject({ type: "bloom", shape: "circle", x: 960, y: 540 });
 	});
 
 	/** 描画側と同じ式で、点 `(px, py)` の起点からの距離を求める。 */

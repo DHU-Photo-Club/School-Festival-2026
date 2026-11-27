@@ -1,3 +1,4 @@
+import { finaleColors, gatheringOrbit, FINALE_SHRINK_MS, FINALE_BURST_MS, FINALE_SETTLE_MS } from "./finale.ts";
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
 import { INTRO_EXPLANATION_AT_MS, INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
 import { SETTLE_MARGIN_MS } from "./machine.ts";
@@ -130,7 +131,7 @@ export type Primitive =
 	 */
 	| {
 			type: "bloom";
-			shape: "line" | "band" | "frame";
+			shape: "line" | "band" | "frame" | "circle";
 			x: number;
 			y: number;
 			dx: number;
@@ -164,6 +165,8 @@ export interface ShardLayer {
 	spread: number;
 	/** 待機用の接線方向への整形。1が待機、0または省略なら既存の破片。 */
 	idleFit?: number;
+	orbitExtra?: number;
+	burst?: { startAt: number; elapsed: number };
 }
 
 /** 質問の回答のあと、輪が戻り始める瞬間から広がる波紋（`rippleRings` に渡す経過時間）。 */
@@ -178,6 +181,8 @@ export interface DustLayer {
 	elapsed: number;
 	/** 全体の不透明度の倍率（0〜1）。結果の色づきに合わせて消えていく。 */
 	fade: number;
+	colors?: readonly string[];
+	burstElapsed?: number;
 }
 
 export interface Scene {
@@ -215,6 +220,7 @@ export interface SceneInput {
 	lead?: WelcomeLead | null;
 	/** 今の質問へ `intro` から入ったか。`intro` の大きな輪から質問中の輪へ戻す。 */
 	questionFromIntro?: boolean;
+	judgingStartedAt?: number;
 }
 
 /**
@@ -227,10 +233,6 @@ export function screenColorId(
 ): PaletteId | null {
 	return result ? result.colors[displayOrder % 2] : null;
 }
-
-/** 状態の開始時刻からの経過秒。reduced-motionではノイズを流さない。 */
-const driftOf = (now: number, since: number, reducedMotion: boolean) =>
-	reducedMotion ? 0 : Math.max(0, now - since) / 1000;
 
 /** 結果の二色の基準色。どちらかがパレットになければ `null`。 */
 function resultShardColors(input: SceneInput): readonly [string, string] | null {
@@ -286,7 +288,7 @@ function shardLayer(
 		colors,
 		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
-		scale: (options.scale ?? 1) * answerPulseScale(input.state, input.now, input.reducedMotion),
+		scale: (options.scale ?? 1) * (input.state.phase === "judging" ? 1 : answerPulseScale(input.state, input.now, input.reducedMotion)),
 		density: options.density ?? 1,
 		size: options.size ?? 1,
 		spread: options.spread ?? 0,
@@ -294,28 +296,17 @@ function shardLayer(
 	};
 }
 
-/**
- * 判定中の破片。灰色のまま沈め、結果の二色が決まると結果開始までに二色へ色づける（docs/visual-language.md 3.3節）。
- * 色づき始める時刻は `phaseEndsAt - SHARD_TINT_MS` とする。結果の配信時刻は全画面で共有できないが、
- * サーバーは通常、配信から `SETTLE_MARGIN_MS` 以上あとを結果開始にするため、この時刻には全画面に結果が届いている。
- * `judging` の期限の直前に結果が決まると間隔が短くなり、色づきは届いた時点の進み具合から始まる。
- */
+/** 最終回答は最初の縮みを保ち、そのままカラフルな待機サイズへ縮小する。 */
 function judgingShards(input: SceneInput): ShardLayer {
-	const { state, now, reducedMotion } = input;
-	const colors = resultShardColors(input);
-	// 暗転を終えてから色づける。`judgingMaxMs` が `JUDGING_MS` より短い設定でも暗転と重ねない。
-	const tintAt =
-		state.phaseEndsAt === null
-			? null
-			: Math.max(state.phaseStartedAt + JUDGING_FADE_MS, state.phaseEndsAt - SHARD_TINT_MS);
-	const tintProgress = colors && tintAt !== null ? (now - tintAt) / SHARD_TINT_MS : 0;
-	if (reducedMotion) {
-		const tinted = tintProgress >= 0 && colors !== null;
-		return shardLayer(input, tinted ? 1 : JUDGING_SHARD_DIM, { colors: tinted ? colors : null });
-	}
-	const tint = easeInOutSine(tintProgress);
-	const dim = lerp(1, JUDGING_SHARD_DIM, easeInSine((now - state.phaseStartedAt) / JUDGING_FADE_MS));
-	return shardLayer(input, lerp(dim, 1, tint), { colors, tint });
+	const elapsed = input.now - input.state.phaseStartedAt;
+	const p = input.reducedMotion ? 1 : easeInOutSine(elapsed / FINALE_SHRINK_MS);
+	return { ...shardLayer(input, 1, {
+		colors: finaleColors(input.reducedMotion ? 0 : elapsed, input.colors.map(baseColor), true), tint: p,
+		scale: input.reducedMotion ? SHARD_IDLE_SCALE : elapsed <= ANSWER_PULSE_IN_MS
+			? 1 - ANSWER_PULSE_DEPTH * easeInOutSine(elapsed / ANSWER_PULSE_IN_MS)
+			: lerp(1 - ANSWER_PULSE_DEPTH, SHARD_IDLE_SCALE, easeInOutSine((elapsed - ANSWER_PULSE_IN_MS) / (FINALE_SHRINK_MS - ANSWER_PULSE_IN_MS))),
+		density: lerp(1, SHARD_IDLE_DENSITY, p), idleFit: p,
+	}), orbitExtra: input.reducedMotion ? 0 : gatheringOrbit(elapsed) };
 }
 
 /**
@@ -339,7 +330,7 @@ export function resultFormPrimitives(
 	// 最も遠い点までの距離に、ぼけ幅と揺れ幅を足した位置まで広げる。
 	const reachTo = (extent: number) => lerp(seed, extent + BLOOM_FEATHER_END * m * (1 + BLOOM_WARP), p);
 	const bloom = (
-		shape: "line" | "band" | "frame",
+		shape: "line" | "band" | "frame" | "circle",
 		x: number,
 		y: number,
 		extent: number,
@@ -404,67 +395,25 @@ function resultScene(input: SceneInput): BaseScene {
 			animating: !reducedMotion,
 		};
 	}
-	// 結果が出た後も破片は残り、結果の二色で動き続ける。
-	const shards = shardLayer(input, 1, { colors: resultShardColors(input) });
-	const complete: BaseScene = {
-		primitives: [{ type: "fill", color: backgroundColor(color) }],
-		shards,
-		resultLayer: 1,
-		veil: null,
-		animating: !reducedMotion,
-	};
-	if (input.resultMode === "complete") return complete;
-
-	// `judging` の `phaseEndsAt` と `result` の `phaseStartedAt` は同じ時刻。
 	const startAt = state.phase === "judging" ? (state.phaseEndsAt ?? now) : state.phaseStartedAt;
-	const elapsed = now - startAt;
-	if (reducedMotion) {
-		if (elapsed < RESULT_REDUCED_HOLD_MS) {
-			return {
-				primitives: [{ type: "fill", color: baseColor(color) }],
-				shards,
-				resultLayer: 0,
-				veil: null,
-				animating: true,
-			};
-		}
-		return complete;
+	const elapsed = input.resultMode === "complete" ? Math.max(FINALE_SETTLE_MS, now - startAt) : Math.max(0, now - startAt);
+	const gatherDuration = startAt - (input.judgingStartedAt ?? (state.phase === "judging" ? state.phaseStartedAt : startAt - 10000));
+	const shards = { ...shardLayer(input, 1, { colors: finaleColors(0, resultShardColors(input) ?? [], false) }),
+		orbitExtra: gatheringOrbit(gatherDuration), burst: { startAt, elapsed: reducedMotion ? FINALE_SETTLE_MS : elapsed } };
+	if (reducedMotion || input.resultMode === "complete" || elapsed >= FINALE_SETTLE_MS) {
+		return { primitives: [{ type: "fill", color: backgroundColor(color) }], shards, resultLayer: 1, veil: null, animating: !reducedMotion };
 	}
-
-	const { durationMs } = RESULT_FORMS[colorId];
-	const settleEnd = durationMs + RESULT_SETTLE_MS;
-	const photoEnd = durationMs + RESULT_PHOTO_DELAY_MS + RESULT_PHOTO_FADE_MS;
-	if (elapsed >= Math.max(settleEnd, photoEnd)) return complete;
-
+	const p = easeOutCubic(elapsed / FINALE_BURST_MS);
+	const feather = Math.min(width, height) * 0.12;
 	const primitives: Primitive[] = [{ type: "fill", color: COLORS.dark }];
-	if (elapsed < durationMs) {
-		const drift = driftOf(now, startAt, false);
-		primitives.push(
-			...resultFormPrimitives(
-				colorId,
-				baseColor(color),
-				elapsed / durationMs,
-				width,
-				height,
-				displayOrder,
-				drift,
-			),
-		);
-	} else {
+	if (p < 1) primitives.push({ type: "bloom", shape: "circle", x: width / 2, y: height / 2, dx: 0, dy: 0,
+		reach: lerp(-feather * 1.6, Math.hypot(width, height) / 2 + feather * 1.6, p), feather, color: baseColor(color), drift: 0 });
+	else {
 		primitives.push({ type: "fill", color: baseColor(color) });
-		primitives.push({
-			type: "fill",
-			color: backgroundColor(color),
-			alpha: easeInOutSine((elapsed - durationMs) / RESULT_SETTLE_MS),
-		});
+		primitives.push({ type: "fill", color: backgroundColor(color), alpha: easeInOutSine((elapsed - FINALE_BURST_MS) / 1000) });
 	}
-	return {
-		primitives,
-		shards,
-		resultLayer: easeInOutSine((elapsed - durationMs - RESULT_PHOTO_DELAY_MS) / RESULT_PHOTO_FADE_MS),
-		veil: null,
-		animating: true,
-	};
+	return { primitives, shards, resultLayer: easeInOutSine((elapsed - 1200) / 300), veil: null, animating: true };
+
 }
 
 /** `intro` の直前に再生するシーケンス。歓迎の文字はこのシーケンスの開始から現れ始める。 */
@@ -614,20 +563,19 @@ function rippleLayer(input: SceneInput): RippleLayer | null {
 	return elapsed >= 0 && elapsed < RIPPLE_MS ? { elapsed } : null;
 }
 
-/**
- * 判定中の塵。結果の二色が決まる前から、画面の外から中心へ集まり、少しずつ数と濃さを増す。結果の色づきが始まる
- * 時刻（`phaseEndsAt - SHARD_TINT_MS`）からは、色づきに合わせて消える。reduced-motionでは出さない。
- * 結果の開始時刻を過ぎたフレームでは出さない。
- */
+/** 集約した粒子を結果開始時の位置から爆発へ引き継ぐ。 */
 function dustLayer(input: SceneInput): DustLayer | null {
 	const { state, now, reducedMotion } = input;
-	if (reducedMotion || state.phase !== "judging") return null;
-	if (state.phaseEndsAt !== null && now >= state.phaseEndsAt) return null;
-	const elapsed = now - state.phaseStartedAt;
-	if (elapsed <= 0) return null;
-	const fade =
-		state.phaseEndsAt === null ? 1 : 1 - easeInOutSine((now - (state.phaseEndsAt - SHARD_TINT_MS)) / SHARD_TINT_MS);
-	return { elapsed, fade };
+	if (reducedMotion) return null;
+	const startAt = state.phase === "judging" ? state.phaseEndsAt : state.phase === "result" ? state.phaseStartedAt : null;
+	const burstElapsed = startAt === null ? -1 : now - startAt;
+	if (startAt !== null && burstElapsed >= 0 && state.result) {
+		if (input.resultMode === "complete" || burstElapsed >= FINALE_SETTLE_MS) return null;
+		return { elapsed: startAt - (input.judgingStartedAt ?? (state.phase === "judging" ? state.phaseStartedAt : startAt - 10000)), fade: 1,
+			colors: resultShardColors(input) ?? [], burstElapsed };
+	}
+	if (state.phase !== "judging" || now <= state.phaseStartedAt) return null;
+	return { elapsed: Math.max(0, now - state.phaseStartedAt), fade: 1, colors: input.colors.map(baseColor) };
 }
 
 /** 一フレームの描画内容を求める。同じ入力には同じ結果を返す。 */
@@ -698,7 +646,7 @@ function computeBaseScene(input: SceneInput): BaseScene {
 	}
 
 	// `judging`。結果開始時刻を過ぎたフレームからは結果を描く（仕様書7.2.4節）。
-	if (state.phase === "judging" && (state.phaseEndsAt === null || now < state.phaseEndsAt)) {
+	if (state.phase === "judging" && (state.phaseEndsAt === null || now < state.phaseEndsAt || !state.result)) {
 		if (reducedMotion) {
 			return {
 				primitives: [{ type: "fill", color: COLORS.dark }],

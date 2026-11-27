@@ -4,6 +4,7 @@ import { QUESTIONS } from "../../src/data/questions.ts";
 import {
 	answerQuestion,
 	backgroundHex,
+	backgroundCanvasPixel,
 	bloomHasGraphics,
 	canvasDigest,
 	canvasHasGraphics,
@@ -131,16 +132,16 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	}
 
 	// 判定: 即時に黒（判定は最短10秒なので、その間に黒になることを確かめる）。
-	// 画面中央は輪の内側で、破片のブルームも届かない（中央から最も近い破片まで、広い段のぼかし幅の約5倍ある）。
+	// 小リングの光が中央にも届くため、背景レイヤー自体の暗転を確かめる。
 	await expect
-		.poll(() => canvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
+		.poll(() => backgroundCanvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
 		.toBe("#000000");
 	await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name, { timeout: 15_000 });
 
-	// 結果: 基準色の全面から完了状態へ一回だけ切り替わる。画面ごとに二色を交互に見せる。
+	// 結果: 動きを減らす設定では深い背景色と静止した散らばりへ切り替わる。
 	for (const [displayOrder, display] of displays.entries()) {
 		await expect
-			.poll(() => canvasPixel(display.page, 0.01, 0.01), { timeout: 5_000 })
+			.poll(() => backgroundCanvasPixel(display.page, 0.01, 0.01), { timeout: 5_000 })
 			.toBe(backgroundHex(stubScreenColor(displayOrder)));
 		// 結果でも破片とブルームは残る。
 		await expect.poll(() => bloomHasGraphics(display.page)).toBe(true);

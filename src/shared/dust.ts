@@ -55,6 +55,7 @@ const MOTES: readonly Mote[] = (() => {
 
 /** 一粒の塵を描く位置。座標はCSS画素単位で、画面の左上が原点。 */
 export interface DustPose {
+	color?: string;
 	x: number;
 	y: number;
 	/** 直径（CSS画素）。 */

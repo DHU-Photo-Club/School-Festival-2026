@@ -7,7 +7,7 @@ import { QUESTIONS } from "../../data/questions.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
-import { dustPoses } from "../../shared/dust.ts";
+import { FINALE_BURST_MS, burstShards, finaleDust } from "../../shared/finale.ts";
 import { LAB_LOOP_NOTES, type LabCycle, labCycle, parseLab } from "../../shared/lab.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import {
@@ -124,7 +124,10 @@ const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
 let completedOrbitAdvance = 0;
 let orbitAnswers: number[] = [];
+let judgingStartedAt: number | undefined;
 function onState(next: DisplayState) {
+	if (next.phase === "judging") judgingStartedAt = next.phaseStartedAt;
+	if (next.phase === "idle" || next.phase === "question") judgingStartedAt = undefined;
 	const previous = displayState;
 	// ニックネーム送信も、展示の描画上では他の回答と同じ反応にする。
 	if (next.phase === "question" && next.questionIndex === 0 && next.answeredAt === null) {
@@ -207,17 +210,19 @@ function resize() {
 function drawShardLayer(layer: ShardLayer) {
 	const context = shardCanvas?.getContext("2d");
 	if (!context) return;
+	if (shardCanvas) shardCanvas.dataset.mode = layer.burst ? (layer.burst.elapsed < FINALE_BURST_MS ? "burst" : "dispersed") : layer.orbitExtra !== undefined ? "gather" : "normal";
 	const key = JSON.stringify(layer);
 	if (key === lastShards) return;
 	lastShards = key;
 	const bloom = bloomCanvas?.getContext("2d");
-	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, {
+	const orbitAdvance = (reducedMotion ? 0 : completedOrbitAdvance + orbitAnswers.reduce((sum, at) => sum + answerOrbitAdvance(layer.time - at), 0)) + (layer.orbitExtra ?? 0);
+	const poses = layer.burst ? burstShards(window.innerWidth, window.innerHeight, layer.burst.startAt, layer.burst.elapsed, orbitAdvance) : shardPoses(window.innerWidth, window.innerHeight, layer.time, {
 		scale: layer.scale,
 		density: layer.density,
 		size: layer.size,
 		spread: layer.spread,
 		idleFit: layer.idleFit,
-		orbitAdvance: reducedMotion ? 0 : completedOrbitAdvance + orbitAnswers.reduce((sum, at) => sum + answerOrbitAdvance(layer.time - at), 0),
+		orbitAdvance,
 	});
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
@@ -255,7 +260,7 @@ function drawDustLayer(layer: Scene["dust"]) {
 		return;
 	}
 	dustDrawn = true;
-	drawDust(context, dustPoses(layer.elapsed, window.innerWidth, window.innerHeight, layer.fade), shardRatio());
+	drawDust(context, finaleDust(window.innerWidth, window.innerHeight, layer.elapsed, layer.colors ?? [], layer.burstElapsed ?? null), shardRatio());
 }
 
 /** 結果表示でこの画面が見せる色を決める。 */
@@ -365,6 +370,7 @@ function tick(timestamp: number) {
 		previousBackground,
 		lead: welcomeLead,
 		questionFromIntro,
+		judgingStartedAt,
 	});
 	applyLayers(scene);
 	applyWelcome(state, now);

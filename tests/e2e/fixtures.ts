@@ -438,3 +438,16 @@ export async function controllableNetwork(context: BrowserContext) {
 		},
 	};
 }
+
+/** 破片やブルームを含めず、背景描画の色だけを読む。 */
+export async function backgroundCanvasPixel(page: Page, x: number, y: number): Promise<string> {
+	return page.locator("main.display > canvas").first().evaluate((source, [rx, ry]) => {
+		const canvas = source as HTMLCanvasElement;
+		const copy = document.createElement("canvas");
+		copy.width = canvas.width; copy.height = canvas.height;
+		const context = copy.getContext("2d")!;
+		context.drawImage(canvas, 0, 0);
+		const rgba = context.getImageData(Math.min(canvas.width - 1, Math.floor(canvas.width * rx)), Math.min(canvas.height - 1, Math.floor(canvas.height * ry)), 1, 1).data;
+		return `#${Array.from(rgba.slice(0, 3)).map((v) => v.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+	}, [x, y]);
+}
