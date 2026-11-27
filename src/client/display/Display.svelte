@@ -54,6 +54,7 @@ let rippleCanvas = $state<HTMLCanvasElement>();
 let dustCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
 let door = $state<HTMLDivElement>();
+let doorFrame = $state<HTMLDivElement>();
 let doorCanvas = $state<HTMLCanvasElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
@@ -144,9 +145,6 @@ function onState(next: DisplayState) {
  * 全面の塗りだけなので見た目は変わらず、フラグメントシェーダーの負荷が `devicePixelRatio` に依存しない。
  */
 const CANVAS_SCALE = 0.5;
-
-/** 扉を下から見せていくときの、境目をぼかす幅。扉の高さに対する百分率。 */
-const DOOR_FEATHER = 30;
 
 /** 破片は輪郭を見せるため、CSS画素の2倍までの解像度で描く。 */
 const shardRatio = () => Math.min(window.devicePixelRatio || 1, 2);
@@ -264,30 +262,25 @@ function chooseResult(sessionId: string | null, colorId: PaletteId) {
 /** 値が変わったときだけ書き換え、変化のないフレームでスタイルの再計算を起こさない。 */
 function setStyle(
 	element: HTMLElement | undefined,
-	property: "opacity" | "backgroundColor" | "filter" | "maskImage",
+	property: "opacity" | "backgroundColor" | "filter" | "left" | "right",
 	value: string,
 ) {
 	if (element && element.style[property] !== value) element.style[property] = value;
 }
 
-/**
- * 扉を下から見せていくマスク。`rise` が0で全体を隠し、1で全体を見せる。見せる範囲の上端は
- * `DOOR_FEATHER` の幅でぼかし、くっきり切らずにフェードさせる。
- */
-function doorMask(rise: number): string {
-	if (rise >= 1) return "none";
-	const edge = rise * (100 + DOOR_FEATHER) - DOOR_FEATHER;
-	return `linear-gradient(to top, #000 ${edge.toFixed(2)}%, transparent ${(edge + DOOR_FEATHER).toFixed(2)}%)`;
-}
+/** 扉の枠の左右の辺の位置。`open` が0で両辺が中央に重なり、1で扉の両端に来る。扉の幅に対する百分率。 */
+const doorInset = (open: number) => `${(((1 - open) * 100) / 2).toFixed(3)}%`;
 
 const opacity = (value: number) => String(Math.round(value * 1000) / 1000);
 
 function applyLayers(scene: Scene) {
 	setStyle(resultLayer, "opacity", opacity(scene.resultLayer));
-	// 扉は大きさと位置を変えず、下から上へ見せる範囲を広げる。範囲の上端はぼかしてフェードさせる。
+	// 扉の枠を中央から左右へ開く。中の光は大きさと位置を変えず、開いた幅の分だけ見せる。
 	// 扉の中の光の色が決まらない画面（結果の色がパレットにないときなど）では、光のない扉を出さない。
 	setStyle(door, "opacity", scene.door && doorStops ? "1" : "0");
-	setStyle(door, "maskImage", doorMask(scene.door?.rise ?? 0));
+	const inset = doorInset(scene.door?.open ?? 0);
+	setStyle(doorFrame, "left", inset);
+	setStyle(doorFrame, "right", inset);
 	// 結果で散らばり終えた破片をぼかす。canvas 2Dの描画は増やさず、要素のフィルターで合成時にぼかす。
 	// ぼかしの分だけ合成の負荷は増えるので、会場のPCで結果のフレーム時間を確かめる。
 	const blur = scene.shards.blur * SHARD_RESULT_BLUR * Math.min(window.innerWidth, window.innerHeight);
@@ -447,7 +440,10 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 	<!-- 「扉を開く」の後に中央に出す扉。色名と同じ時間で入れ替わる。 -->
 	<div class="door" bind:this={door} style="opacity: 0">
-		<canvas bind:this={doorCanvas}></canvas>
+		<!-- 枠と黒の内側。中央の幅0から左右へ開く。 -->
+		<div class="door-frame" bind:this={doorFrame} style="left: 50%; right: 50%">
+			<canvas bind:this={doorCanvas}></canvas>
+		</div>
 	</div>
 
 	<div class="veil" bind:this={veil} style="opacity: 0"></div>
@@ -523,18 +519,34 @@ canvas,
 .door {
 	pointer-events: none;
 }
-/* 縦長の扉。左右の中央に置き、下端を画面の下端に揃える。細い明るい灰色の枠と、黒の内側（docs/visual-language.md 3.4.1節）。 */
+/* 縦長の扉。左右の中央に置き、下端を画面の下端に揃える（docs/visual-language.md 3.4.1節）。 */
 .door {
+	/* 扉の高さと、枠の太さ。 */
+	--door-height: 78vh;
+	--door-border: max(1px, 0.16vmin);
 	position: absolute;
 	left: 50%;
 	bottom: 0;
-	height: 78vh;
+	height: var(--door-height);
 	aspect-ratio: 5 / 12;
 	transform: translateX(-50%);
+}
+/* 細い明るい灰色の枠と、黒の内側。左右の辺の位置（left、right）は描画のたびに `doorInset` で決める。 */
+.door-frame {
+	position: absolute;
+	top: 0;
+	bottom: 0;
 	box-sizing: border-box;
-	border: max(1px, 0.16vmin) solid #c8c8c8;
+	border: var(--door-border) solid #c8c8c8;
 	background: #000000;
 	overflow: hidden;
+}
+/* 中の光は開き終えた内側の幅で中央に固定し、開く途中は枠の外にはみ出た分を隠す。 */
+.door-frame canvas {
+	left: 50%;
+	right: auto;
+	width: calc(var(--door-height) * 5 / 12 - var(--door-border) * 2);
+	transform: translateX(-50%);
 }
 .welcome,
 .description {

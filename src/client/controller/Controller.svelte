@@ -12,7 +12,15 @@ import { LAB_LOOP_NOTES, LabPlayer, parseLab } from "../../shared/lab.ts";
 import type { Command } from "../../shared/machine.ts";
 import { easeOutCubic, introDescriptionRemainingMs, NICKNAME_FADE_IN_MS } from "../../shared/motion.ts";
 import { NICKNAME_MAX_LENGTH, normalizeNickname } from "../../shared/nickname.ts";
-import { backgroundColor, baseColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
+import {
+	backgroundColor,
+	baseColor,
+	foregroundColor,
+	gradientCss,
+	nameGradientStops,
+	paletteColor,
+	rgbToHex,
+} from "../../shared/palette.ts";
 import { resultUrl } from "../../shared/result-url.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import type { Answer, ExhibitState, PaletteColor, Question } from "../../shared/types.ts";
@@ -537,7 +545,11 @@ $effect(() => {
 		{:else if exhibit.phase === "result" && exhibit.doorOpenedAt != null && resultColors && !doorOpened}
 			<!-- 扉を開いた後は、扉へ進むよう案内する。 -->
 			<div class="guide-fade" in:fade={{ duration: reducedMotion ? 0 : DOOR_GUIDE_FADE_MS, easing: sineInOut }}>
-				<DoorGuide colors={[baseColor(resultColors[0]), baseColor(resultColors[1])]} {reducedMotion} />
+				<DoorGuide
+					colors={[baseColor(resultColors[0]), baseColor(resultColors[1])]}
+					stops={nameGradientStops(resultColors[0], resultColors[1], 7).map(rgbToHex)}
+					{reducedMotion}
+				/>
 			</div>
 		{:else if resultStarted && exhibit.result && resultColors && !doorOpened}
 			<section class="reveal">

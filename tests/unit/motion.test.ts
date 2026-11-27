@@ -9,7 +9,7 @@ import {
 	BLOOM_WARP,
 	COLORS,
 	computeScene,
-	DOOR_RISE_MS,
+	DOOR_OPEN_MS,
 	DOOR_SHARD_INTENSITY,
 	INTRO_DESCRIPTION_AT_MS,
 	INTRO_DESCRIPTION_FADE_MS,
@@ -626,15 +626,15 @@ describe("扉", () => {
 		expect(computeScene(base({ phase: "idle", doorOpenedAt: openedAt }, { now: openedAt })).door).toBeNull();
 	});
 
-	it("開いた時刻から扉が下から伸び、同じ時間で色名が消え、周りの破片が暗くなる", () => {
+	it("開いた時刻から扉の枠が左右へ開き、同じ時間で色名が消え、周りの破片が暗くなる", () => {
 		const closed = computeScene(base(shown, { now: openedAt, resultMode: "complete" }));
-		expect(at(openedAt).door?.rise).toBe(0);
+		expect(at(openedAt).door?.open).toBe(0);
 		expect(at(openedAt).resultLayer).toBe(1);
-		const half = at(openedAt + DOOR_RISE_MS / 2);
-		expect(half.door?.rise).toBeCloseTo(0.5);
+		const half = at(openedAt + DOOR_OPEN_MS / 2);
+		expect(half.door?.open).toBeCloseTo(0.5);
 		expect(half.resultLayer).toBeCloseTo(0.5);
-		const done = at(openedAt + DOOR_RISE_MS);
-		expect(done.door?.rise).toBe(1);
+		const done = at(openedAt + DOOR_OPEN_MS);
+		expect(done.door?.open).toBe(1);
 		expect(done.resultLayer).toBe(0);
 		expect(done.shards.intensity).toBeCloseTo(closed.shards.intensity * DOOR_SHARD_INTENSITY);
 		// 扉の中の光を揺らし続ける。
@@ -644,7 +644,7 @@ describe("扉", () => {
 
 	it("reduced-motion では扉を即時に出し、中の光を止める", () => {
 		const scene = at(openedAt, { reducedMotion: true });
-		expect(scene.door).toEqual({ rise: 1, time: 0 });
+		expect(scene.door).toEqual({ open: 1, time: 0 });
 		expect(scene.resultLayer).toBe(0);
 	});
 });

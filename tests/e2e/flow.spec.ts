@@ -298,7 +298,7 @@ for (const displayCount of [1, 3]) {
 			await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 		}
 
-		// 「扉を開く」を押すと、展示ディスプレイの中央に扉が下から現れ、色名が消える。iPadは扉への案内に
+		// 「扉を開く」を押すと、展示ディスプレイの中央に扉が左右へ開いて現れ、色名が消える。iPadは扉への案内に
 		// 切り替わる。QRコードと「最初に戻る」はまだ見せない。
 		for (const display of displays) await expect(display.page.locator(".door")).toHaveCSS("opacity", "0");
 		await page.getByRole("button", { name: "扉を開く" }).click();
@@ -310,8 +310,9 @@ for (const displayCount of [1, 3]) {
 		await expect(page.getByRole("button", { name: "最初に戻る" })).toHaveCount(0);
 		for (const display of displays) {
 			await expect(display.page.locator(".door")).toHaveCSS("opacity", "1", { timeout: 5_000 });
-			// 現れ終えると、扉の全体を見せる（マスクを外す）。
-			await expect(display.page.locator(".door")).toHaveCSS("mask-image", "none");
+			// 開き終えると、枠の左右の辺が扉の両端に来る。
+			await expect(display.page.locator(".door-frame")).toHaveCSS("left", "0px");
+			await expect(display.page.locator(".door-frame")).toHaveCSS("right", "0px");
 			await expect(display.page.locator("main.display > .layer")).toHaveCSS("opacity", "0");
 		}
 

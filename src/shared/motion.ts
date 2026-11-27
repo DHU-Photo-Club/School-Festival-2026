@@ -216,8 +216,8 @@ export interface Scene {
 
 /** 中央の扉（docs/visual-language.md 3.4.1節）。 */
 export interface DoorLayer {
-	/** 扉が下から伸びた割合（0〜1）。0で見えず、1で扉の全体が見える。 */
-	rise: number;
+	/** 扉の枠が中央から左右へ開いた割合（0〜1）。0で中央の縦の線、1で開き終えた扉になる。 */
+	open: number;
 	/** 扉の中の光を揺らす時刻（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。reduced-motionでは0。 */
 	time: number;
 }
@@ -581,21 +581,21 @@ function questionShards(input: SceneInput): ShardLayer {
 /** 波紋以外の描画内容。 */
 type BaseScene = Omit<Scene, "ripple" | "dust" | "door">;
 
-/** 扉が下から伸びて現れる時間（`easeInOutSine`）。色名は同じ時間で消える。 */
-export const DOOR_RISE_MS = 1_600;
+/** 扉の枠が中央から左右へ開く時間（`easeInOutSine`）。色名は同じ時間で消える。 */
+export const DOOR_OPEN_MS = 1_600;
 /** 扉が現れ終えたときの、周りの破片の明るさの割合。扉を目立たせるため、破片はぼけたまま薄く残す。 */
 export const DOOR_SHARD_INTENSITY = 0.45;
 
 /**
- * 「扉を開く」の後の扉。`result` で `doorOpenedAt` が設定されていれば、その時刻から `DOOR_RISE_MS` で下から伸びて
- * 現れる。時刻はサーバーが決めるので、全画面と、後から接続した画面も同じ伸び具合になる。reduced-motionでは即時に現れる。
+ * 「扉を開く」の後の扉。`result` で `doorOpenedAt` が設定されていれば、その時刻から `DOOR_OPEN_MS` で枠が中央から
+ * 左右へ開く。時刻はサーバーが決めるので、全画面と、後から接続した画面も同じ開き具合になる。reduced-motionでは即時に現れる。
  */
 function doorLayer(input: SceneInput): DoorLayer | null {
 	const { state, now, reducedMotion } = input;
 	const openedAt = state.doorOpenedAt ?? null;
 	if (state.phase !== "result" || openedAt === null) return null;
 	return {
-		rise: reducedMotion ? 1 : easeInOutSine((now - openedAt) / DOOR_RISE_MS),
+		open: reducedMotion ? 1 : easeInOutSine((now - openedAt) / DOOR_OPEN_MS),
 		time: reducedMotion ? 0 : now,
 	};
 }
@@ -639,9 +639,9 @@ export function computeScene(input: SceneInput): Scene {
 	return {
 		...scene,
 		// 扉が現れるのと同じ時間で、色名を消し、周りの破片を暗くする。
-		resultLayer: scene.resultLayer * (1 - (door?.rise ?? 0)),
+		resultLayer: scene.resultLayer * (1 - (door?.open ?? 0)),
 		shards: door
-			? { ...scene.shards, intensity: scene.shards.intensity * (1 - (1 - DOOR_SHARD_INTENSITY) * door.rise) }
+			? { ...scene.shards, intensity: scene.shards.intensity * (1 - (1 - DOOR_SHARD_INTENSITY) * door.open) }
 			: scene.shards,
 		ripple,
 		dust,
