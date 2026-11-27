@@ -134,17 +134,52 @@ describe("台本の再生", () => {
 			{ lead, questionCount },
 			{ onCycle: () => cycles++, onState: (state) => states.push(state) },
 		);
-		const cycle = labCycle({ loop: "answer", color: "all" }, { index: 0, startedAt: 10_000, lead, questionCount });
-		player.advance(10_000);
-		player.advance(10_000);
+		const { lengthMs } = labCycle({ loop: "answer", color: "all" }, { index: 0, startedAt: 0, lead, questionCount });
+		// 周の区切りは時計の0時から一周の長さごと。
+		const origin = 7 * lengthMs;
+		const cycle = labCycle({ loop: "answer", color: "all" }, { index: 7, startedAt: origin, lead, questionCount });
+		player.advance(origin);
+		player.advance(origin);
 		expect(states).toHaveLength(1);
-		expect(player.advance(10_000 + cycle.steps[1].atMs)).toContain("answer");
+		expect(states[0].sessionId).toBe("lab-7");
+		expect(player.advance(origin + cycle.steps[1].atMs)).toContain("answer");
 		expect(states.map((state) => state.questionIndex)).toEqual([0, 1]);
 		expect(cycles).toBe(1);
-		player.advance(10_000 + cycle.lengthMs);
+		player.advance(origin + lengthMs);
 		expect(cycles).toBe(2);
-		expect(states.at(-1)?.sessionId).toBe("lab-1");
-		// 二周目は、一周目の終わりの時刻を開始時刻にする。
-		expect(states.at(-1)?.phaseStartedAt).toBe(10_000 + cycle.lengthMs);
+		expect(states.at(-1)?.sessionId).toBe("lab-8");
+		// 次の周は、前の周の終わりの時刻を開始時刻にする。
+		expect(states.at(-1)?.phaseStartedAt).toBe(origin + lengthMs);
+	});
+
+	it("一周の長さは周によらず一定", () => {
+		for (const loop of LAB_LOOPS) {
+			const lengths = new Set(
+				[0, 1, 2, 3, 17].map(
+					(index) => labCycle({ loop, color: "all" }, { index, startedAt: 0, lead, questionCount }).lengthMs,
+				),
+			);
+			expect(lengths.size).toBe(1);
+		}
+	});
+
+	it("別々の時刻に再生を始めた画面も、同じ時刻には同じ周の同じ場面を流し込む", () => {
+		for (const loop of LAB_LOOPS) {
+			const options = { loop, color: "all" } as const;
+			const { lengthMs } = labCycle(options, { index: 0, startedAt: 0, lead, questionCount });
+			const latest = (startAt: number, until: number) => {
+				let state: ExhibitState | null = null;
+				const player = new LabPlayer(options, { lead, questionCount }, { onState: (next) => (state = next) });
+				for (let now = startAt; now <= until; now += 250) player.advance(now);
+				player.advance(until);
+				return state;
+			};
+			const base = 1_000 * lengthMs;
+			for (const offset of [0.2, 0.55, 0.9, 1.3]) {
+				const until = base + offset * lengthMs + lengthMs;
+				// 一方は周の初めから、もう一方は周の途中から始める。
+				expect(latest(base + 3_217, until)).toEqual(latest(base + 0.6 * lengthMs, until));
+			}
+		}
 	});
 });

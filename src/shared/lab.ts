@@ -249,38 +249,45 @@ export interface LabPlayerHandlers {
 }
 
 /**
- * 台本を時刻どおりに繰り返し再生する。一周の長さは台本ごとに違うので、周が変わるたびに台本を作り直して、
- * その開始時刻から数える。
+ * 台本を時刻どおりに繰り返し再生する。周の区切りは端末の時計の0時（`now` が0）から一周の長さごとに置き、
+ * 再生を始めた時刻には依らない。画面分割の二つのタブや、展示ディスプレイと診断用iPadのように、別々に開いた
+ * 画面でも同じ時刻に同じ周の同じ場面を流し込むので、ループの動きが揃う。周の途中から始めたときは、
+ * その時刻までの場面をまとめて流し込み、本番で途中から接続した画面と同じように描かせる。
+ * 一周の長さは周によらず一定（`labCycle` は周の番号で長さを変えない）。
  */
 export class LabPlayer {
-	private origin: number | null = null;
-	private index = -1;
+	private readonly lengthMs: number;
+	private index: number | null = null;
 	private plan: LabCycle | null = null;
 	private step = -1;
+	/** この画面で再生した周の数（HUD用）。 */
+	private played = 0;
 
 	constructor(
 		private readonly options: LabOptions,
 		private readonly context: Omit<LabContext, "index" | "startedAt">,
 		private readonly handlers: LabPlayerHandlers,
-	) {}
+	) {
+		this.lengthMs = labCycle(options, { ...context, index: 0, startedAt: 0 }).lengthMs;
+	}
 
 	/** `now`（補正済みサーバー時刻に相当する時刻）までの場面を流し込み、HUDの文を返す。 */
 	advance(now: number): string {
-		if (this.origin === null) this.origin = now;
-		if (!this.plan || now - this.origin >= this.plan.lengthMs) {
-			if (this.plan) this.origin += this.plan.lengthMs;
-			this.index++;
-			this.plan = labCycle(this.options, { ...this.context, index: this.index, startedAt: this.origin });
+		const index = Math.floor(now / this.lengthMs);
+		if (!this.plan || index !== this.index) {
+			this.index = index;
+			this.plan = labCycle(this.options, { ...this.context, index, startedAt: index * this.lengthMs });
 			this.step = -1;
+			this.played++;
 			this.handlers.onCycle?.();
 		}
 		const plan = this.plan;
-		const elapsed = now - this.origin;
+		const elapsed = now - index * this.lengthMs;
 		while (this.step + 1 < plan.steps.length && plan.steps[this.step + 1].atMs <= elapsed) {
 			this.step++;
 			this.handlers.onState(plan.steps[this.step].state);
 		}
 		const color = plan.colorId ? ` / ${plan.colorId}` : "";
-		return `${this.options.loop}${color}  ${(elapsed / 1000).toFixed(1)} / ${(plan.lengthMs / 1000).toFixed(1)}s  #${this.index + 1}`;
+		return `${this.options.loop}${color}  ${(elapsed / 1000).toFixed(1)} / ${(plan.lengthMs / 1000).toFixed(1)}s  #${this.played}`;
 	}
 }
