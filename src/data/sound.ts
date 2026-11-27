@@ -101,9 +101,13 @@ export const INTRO_AUDIO = {
 } as const;
 /** 01の末尾の小さな余韻へ02を重ねる。発話部分や音源ファイルは変更しない。 */
 export const INTRO_WELCOME_OVERLAP_MS = 1_500;
-/** 01→02は余韻を重ね、02→03は追加の間隔なし。03→04など、それ以外の間は維持する。 */
+/** 02の末尾の小さな余韻へ03を重ねる。 */
+export const INTRO_EXPLANATION_OVERLAP_MS = 1_500;
+/** 01〜03は末尾の余韻を重ねる。03→04など、それ以外の間は維持する。 */
 export function welcomeNarrationGapAfterMs(number: number): number {
-	return number === 1 ? -INTRO_WELCOME_OVERLAP_MS : number === 2 ? 0 : SOUND_MIX.narrationGapMs;
+	if (number === 1) return -INTRO_WELCOME_OVERLAP_MS;
+	if (number === 2) return -INTRO_EXPLANATION_OVERLAP_MS;
+	return SOUND_MIX.narrationGapMs;
 }
 export const INTRO_EXPLANATION_AT_MS = INTRO_AUDIO.narration01Ms + welcomeNarrationGapAfterMs(1);
 export const INTRO_INVITATION_AT_MS = INTRO_EXPLANATION_AT_MS + INTRO_AUDIO.narration02Ms + welcomeNarrationGapAfterMs(2);
