@@ -19,8 +19,8 @@ export function ambientPoses(width: number, height: number, now: number, state: 
 	const resultReturn = !reduced && layer.burst ? smooth((layer.burst.elapsed - 1800) / 2200) : 1;
 	const waves = !reduced && scene.ripple ? rippleRings(scene.ripple.elapsed, width, height) : [];
 	return particles.map((seed, i) => {
-		let x = width * (.025 + seed[0] * .95 + Math.sin(time * .055 + seed[1] * 6.28) * .035);
-		let y = height * (.70 + seed[2] * .28 + Math.sin(time * .16 + seed[3] * 6.28) * .009);
+		let x = width * (.025 + seed[0] * .95 + Math.sin(time * .075 + seed[1] * 6.28) * .055);
+		let y = height * (.70 + seed[2] * .28 + Math.sin(time * .20 + seed[3] * 6.28) * .020);
 		if (!reduced) {
 			// 元の高さを保ち、声への反応の速さ・位相・振幅を粒ごとに変える。
 			const phase = seed[1] * Math.PI * 2;
