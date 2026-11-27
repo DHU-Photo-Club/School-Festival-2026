@@ -62,6 +62,82 @@ describe("破片の配置", () => {
 		expect(inside.length).toBeGreaterThan(60);
 	});
 
+	it("画面全体への散らばりは、輪の内側も含めて画面の中心から縁まで破片を偏りなく並べる", () => {
+		for (const [width, height] of [
+			[1920, 1080],
+			[1080, 1920],
+			[1000, 1000],
+		]) {
+			// 一フレームでは枚数の揺らぎが大きいので、公転の一周より長い時間にわたって50フレームを合算する。
+			const cells = Array.from({ length: 9 }, () => 0);
+			let inside = 0;
+			let total = 0;
+			for (let frame = 0; frame < 50; frame++) {
+				for (const pose of shardPoses(width, height, frame * 7_919, { fill: 1 })) {
+					total++;
+					if (pose.x <= 0 || pose.x >= width || pose.y <= 0 || pose.y >= height) continue;
+					inside++;
+					cells[Math.floor((pose.y / height) * 3) * 3 + Math.floor((pose.x / width) * 3)]++;
+				}
+			}
+			// 四隅を通る楕円の中に一様に並ぶので、画面の中にあるのは楕円と画面の面積の比（2/π、約64%）になる。
+			expect(inside / total).toBeCloseTo(2 / Math.PI, 1);
+			// 画面を3×3に分けた区画のどれも（中央も、横長の画面の左右も）、平均の±10%以内の枚数になる。
+			for (const count of cells) {
+				expect(count / (inside / 9)).toBeGreaterThan(0.9);
+				expect(count / (inside / 9)).toBeLessThan(1.1);
+			}
+		}
+	});
+
+	it("画面全体へ散らばった破片は、直線ではなく、画面と同じ縦横比の楕円の上を公転する", () => {
+		const [width, height] = [1920, 1080];
+		const sample = (time: number) =>
+			shardPoses(width, height, time, { fill: 1 }).map(({ x, y }) => [
+				(x - width / 2) / (width / 2),
+				(y - height / 2) / (height / 2),
+			]);
+		const start = sample(0);
+		// 揺れ（輪の半径の±4%）を除けば、正規化した座標での中心からの距離は公転の間に変わらない（直線の辺を滑らない）。
+		for (let time = 5_000; time <= 150_000; time += 5_000) {
+			for (const [index, [x, y]] of sample(time).entries()) {
+				expect(Math.abs(Math.hypot(x, y) - Math.hypot(start[index][0], start[index][1]))).toBeLessThan(0.15);
+			}
+		}
+	});
+
+	it("画面の幅か高さが0でも、画面全体への散らばりの座標が NaN にならない", () => {
+		for (const [width, height] of [
+			[0, 1080],
+			[1920, 0],
+			[0, 0],
+		]) {
+			for (const pose of shardPoses(width, height, 5_000, { fill: 1 })) {
+				const values = [pose.x, pose.y, ...pose.vertices.flat()];
+				expect(values.every(Number.isFinite)).toBe(true);
+			}
+		}
+	});
+
+	it("画面全体への散らばりは、0なら輪の配置と同じで、途中の値でも時刻でも位置が跳ばない", () => {
+		expect(shardPoses(1920, 1080, 5_000, { fill: 0 })).toEqual(shardPoses(1920, 1080, 5_000));
+		const step = (a: ReturnType<typeof shardPoses>, b: ReturnType<typeof shardPoses>) =>
+			Math.max(...a.map((pose, index) => Math.hypot(pose.x - b[index].x, pose.y - b[index].y)));
+		// 散らばりを少し進めても、どの破片も少ししか動かない。
+		for (let fill = 0; fill < 1; fill += 0.05) {
+			expect(
+				step(shardPoses(1920, 1080, 5_000, { fill }), shardPoses(1920, 1080, 5_000, { fill: fill + 0.01 })),
+			).toBeLessThan(25);
+		}
+		// 散らばり終えた破片は、公転の間、1フレームで少ししか動かない。最も遅い破片の一周（187.5秒）より長く
+		// 1フレームずつ進め、どの破片も公転の角度の2πの折り返しをまたぐ。
+		for (let time = 0; time < 190_000; time += 16) {
+			expect(
+				step(shardPoses(1920, 1080, time, { fill: 1 }), shardPoses(1920, 1080, time + 16, { fill: 1 })),
+			).toBeLessThan(5);
+		}
+	});
+
 	it("時刻が進むと動く", () => {
 		expect(shardPoses(1920, 1080, 0)).not.toEqual(shardPoses(1920, 1080, 5_000));
 	});
@@ -94,6 +170,32 @@ const rounded = (pose: ShardPose) => ({
 	vertices: pose.vertices.map(([x, y]) => [Number(x.toFixed(4)), Number(y.toFixed(4))]),
 	shade: Number(pose.shade.toFixed(4)),
 	alpha: Number(pose.alpha.toFixed(4)),
+});
+
+describe("散らばった破片の公転", () => {
+	it("公転の時刻を止めると、画面全体へ散らばった破片は公転せず、その場で揺れるだけになる", () => {
+		const [width, height] = [1920, 1080];
+		const radius = Math.min(width, height) * SHARD_RING_RADIUS;
+		const at = (elapsed: number, orbit?: number) => shardPoses(width, height, elapsed, { fill: 1, orbit });
+		const still = at(0, 5_000);
+		const later = at(60_000, 5_000);
+		// 半径方向の揺れ（輪の半径の±4%）の分しか動かない。
+		for (const [index, pose] of still.entries())
+			expect(Math.hypot(later[index].x - pose.x, later[index].y - pose.y)).toBeLessThanOrEqual(
+				0.08 * radius + 1e-6,
+			);
+		// 公転を止めなければ、60秒で輪の周りを回って大きく動く破片がある。
+		const moving = at(60_000);
+		expect(
+			Math.max(...still.map((pose, index) => Math.hypot(moving[index].x - pose.x, moving[index].y - pose.y))),
+		).toBeGreaterThan(0.5 * radius);
+	});
+
+	it("`orbit` を省略すると `elapsed` で公転する", () => {
+		expect(shardPoses(1920, 1080, 12_345, { fill: 0.5 })).toEqual(
+			shardPoses(1920, 1080, 12_345, { fill: 0.5, orbit: 12_345 }),
+		);
+	});
 });
 
 describe("輪の破片", () => {

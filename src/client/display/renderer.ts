@@ -6,7 +6,10 @@ export interface SceneRenderer {
 	draw(primitives: readonly Primitive[]): void;
 }
 
-/** 一フレームで重ねる描画内容の上限。`computeScene` は最大3つ（暗転、結果色のにじみ2つ）を返す。 */
+/**
+ * 一フレームで重ねる描画内容の上限。`computeScene` は今は最大2つ（判定中の暗転）を返す。結果色のにじみ（`bloom`）は
+ * 展示ディスプレイの結果の背景を黒のままにしたため、今は使っていない（消すかは未定。docs/progress.md）。
+ */
 const MAX_LAYERS = 4;
 const KIND = { fill: 0, bloom: 1 } as const;
 const SHAPE = { line: 0, band: 1, frame: 2 } as const;

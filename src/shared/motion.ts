@@ -1,6 +1,6 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
 import { SETTLE_MARGIN_MS } from "./machine.ts";
-import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
+import { baseColor, paletteColor } from "./palette.ts";
 import { RIPPLE_MS } from "./ripple.ts";
 import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
 
@@ -51,9 +51,19 @@ export const JUDGING_SHARD_DIM = 0.4;
  * （`SETTLE_MARGIN_MS`）に合わせ、結果開始の時刻に色づき終える。
  */
 export const SHARD_TINT_MS = SETTLE_MARGIN_MS;
-export const RESULT_SETTLE_MS = 1_000;
-export const RESULT_PHOTO_DELAY_MS = 400;
-export const RESULT_PHOTO_FADE_MS = 1_200;
+/**
+ * 結果開始の時刻から、破片が画面全体へ散らばり終えるまでの時間（`shardPoses` の `fill` を0から1へ）。`easeInOutSine` で、
+ * 輪の動きから途切れずに滑らかに動き出し、減速しながら散らばり終える。色名はこの時間の後に現れ始める。
+ * 結果の完了状態へ切り替わる時刻より前に散らばり終える必要がある。結果開始後に接続した画面と reduced-motion は
+ * 散らばり終えた配置を描くため、完了状態へ切り替わるフレームで配置が前のフレームと一致するようにする（完了状態でも破片は動き続ける）。
+ */
+export const RESULT_SCATTER_MS = 2_400;
+/** 破片が散らばり終えてから、ぼかし終えるまでの時間（`easeInOutSine`）。 */
+export const RESULT_BLUR_MS = 2_000;
+/** ぼかし終えた破片のぼかしの大きさ（CSSの `blur()` に渡すガウスぼかしの標準偏差。画面短辺に対する比）。 */
+export const SHARD_RESULT_BLUR = 0.02;
+/** 色名が現れる時間。破片が散らばり終えた時刻から現れ始める。 */
+export const RESULT_NAME_FADE_MS = 1_200;
 export const RESULT_REDUCED_HOLD_MS = 1_600;
 export const IDLE_RETURN_MS = 1_000;
 export const COLORS = {
@@ -64,8 +74,8 @@ export const COLORS = {
 } as const;
 
 /**
- * パレットの色ごとの広がり方と所要時間（docs/visual-language.md 3.4節）。8種類の広がり方を、
- * 色相の近い色どうしが同じにならないよう割り当てる（仮の割り当て。docs/progress.md）。
+ * パレットの色ごとの広がり方と所要時間。8種類の広がり方を、色相の近い色どうしが同じにならないよう割り当てる
+ * （仮の割り当て）。展示ディスプレイの結果の背景を黒のままにしたため、今は使っていない（消すかは未定。docs/progress.md）。
  */
 export const RESULT_FORMS: Readonly<Record<PaletteId, { form: ResultForm; durationMs: number }>> = {
 	vermilion: { form: "openingBand", durationMs: 1_600 },
@@ -93,7 +103,7 @@ export type ResultForm =
 	| "diagonalTide"
 	| "meetingTides";
 
-/** 結果色の縁のぼけ幅（画面短辺に対する割合）。広がり始めから終わりへ広げる（docs/visual-language.md 3.4節）。 */
+/** 結果色の縁のぼけ幅（画面短辺に対する割合）。広がり始めから終わりへ広げる。`RESULT_FORMS` と同じく今は使っていない。 */
 export const BLOOM_FEATHER_START = 0.2;
 export const BLOOM_FEATHER_END = 0.75;
 /** ノイズによる縁の揺れ幅（ぼけ幅に対する割合）。描画側の `BLOOM_WARP` と同じ値にする。 */
@@ -141,7 +151,7 @@ export type Primitive =
 	  };
 
 /**
- * 質問中から結果色が広がり始めるまでの三角形の破片（docs/visual-language.md 3.2〜3.4節）。配置と動きは `shardPoses` で求める。
+ * 質問中から結果の完了状態までの三角形の破片（docs/visual-language.md 3.2〜3.4節）。配置と動きは `shardPoses` で求める。
  * 破片は灰色で描き、結果の二色が決まると、破片を交互に二色へ振り分けて色づける。
  */
 export interface ShardLayer {
@@ -159,8 +169,17 @@ export interface ShardLayer {
 	density: number;
 	/** 破片の大きさの倍率。1が質問中の大きさ。 */
 	size: number;
-	/** 輪の太さの広がり。0が輪、1が画面いっぱいの散らばり。 */
+	/** 輪の太さの広がり。0が輪、1が画面いっぱいの散らばり（輪の内側は空ける）。 */
 	spread: number;
+	/** 画面全体への散らばり。0が `spread` の配置、1が輪の内側も含めて画面の中心から縁まで散らばった配置。 */
+	fill: number;
+	/** 破片のぼかしの進み具合（0〜1）。1で `SHARD_RESULT_BLUR` の半径までぼかす。 */
+	blur: number;
+	/**
+	 * 輪の公転の角度を決める時刻（ミリ秒、`shardPoses` の `orbit`）。公転するのは輪だけで、結果で画面全体へ
+	 * 散らばるときは散らばりに合わせて公転を減速させ、散らばり終えると止める。
+	 */
+	orbit: number;
 }
 
 /** 質問の回答のあと、輪が戻り始める瞬間から広がる波紋（`rippleRings` に渡す経過時間）。 */
@@ -189,8 +208,18 @@ export interface Scene {
 	resultLayer: number;
 	/** 前の結果色を1秒で消すための覆い。 */
 	veil: { color: string; opacity: number } | null;
+	/** 「扉を開く」の後に中央に出す扉。出していなければ `null`。 */
+	door: DoorLayer | null;
 	/** 次のフレームで描画内容が変わりうるか。 */
 	animating: boolean;
+}
+
+/** 中央の扉（docs/visual-language.md 3.4.1節）。 */
+export interface DoorLayer {
+	/** 扉が下から伸びた割合（0〜1）。0で見えず、1で扉の全体が見える。 */
+	rise: number;
+	/** 扉の中の光を揺らす時刻（ミリ秒）。補正済みサーバー時刻なので全画面で同じ値になる。reduced-motionでは0。 */
+	time: number;
 }
 
 export interface SceneInput {
@@ -206,7 +235,7 @@ export interface SceneInput {
 	 * 結果の見せ方。`animate` は `judging` から接続していた画面、`complete` は結果開始後に接続した画面。
 	 */
 	resultMode: "animate" | "complete";
-	/** 直前に表示していた結果の背景色。`idle` へ戻るときの覆いに使う。 */
+	/** `idle` へ戻るときの覆いの色。展示ディスプレイは、直前に結果を表示していたとき `COLORS.dark` を渡す。 */
 	previousBackground: string | null;
 	/** `intro` の直前に再生するシーケンス。なければ `null`。 */
 	lead?: WelcomeLead | null;
@@ -224,10 +253,6 @@ export function screenColorId(
 ): PaletteId | null {
 	return result ? result.colors[displayOrder % 2] : null;
 }
-
-/** 状態の開始時刻からの経過秒。reduced-motionではノイズを流さない。 */
-const driftOf = (now: number, since: number, reducedMotion: boolean) =>
-	reducedMotion ? 0 : Math.max(0, now - since) / 1000;
 
 /** 結果の二色の基準色。どちらかがパレットになければ `null`。 */
 function resultShardColors(input: SceneInput): readonly [string, string] | null {
@@ -274,11 +299,15 @@ function shardLayer(
 		density?: number;
 		size?: number;
 		spread?: number;
+		fill?: number;
+		blur?: number;
+		orbit?: number;
 	} = {},
 ): ShardLayer {
 	const colors = options.colors ?? null;
+	const time = input.reducedMotion ? 0 : input.now;
 	return {
-		time: input.reducedMotion ? 0 : input.now,
+		time,
 		colors,
 		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
@@ -286,7 +315,19 @@ function shardLayer(
 		density: options.density ?? 1,
 		size: options.size ?? 1,
 		spread: options.spread ?? 0,
+		fill: options.fill ?? 0,
+		blur: options.blur ?? 0,
+		orbit: input.reducedMotion ? 0 : (options.orbit ?? time),
 	};
+}
+
+/**
+ * 結果で散らばる破片の公転の時刻。公転の速さに `1 - fill`（`fill` は `easeInOutSine`）をかけて積分した時刻で、
+ * 結果開始の時刻から途切れずに減速し、散らばり終えると結果開始から `RESULT_SCATTER_MS / 2` 進んだ時刻で止まる。
+ */
+function scatterOrbit(startAt: number, elapsed: number): number {
+	const u = clamp01(elapsed / RESULT_SCATTER_MS);
+	return startAt + RESULT_SCATTER_MS * (u / 2 + Math.sin(Math.PI * u) / (2 * Math.PI));
 }
 
 /**
@@ -314,7 +355,7 @@ function judgingShards(input: SceneInput): ShardLayer {
 }
 
 /**
- * 結果色の広がりの一フレーム（docs/visual-language.md 3.4節）。`progress` は0〜1。
+ * 結果色の広がりの一フレーム。`progress` は0〜1。展示ディスプレイの結果の背景を黒のままにしたため、今は使っていない（消すかは未定。docs/progress.md）。
  * `progress` が1のとき、縁がノイズで揺れても画面全体を塗りつぶす。
  */
 export function resultFormPrimitives(
@@ -387,7 +428,7 @@ export function resultFormPrimitives(
 }
 
 function resultScene(input: SceneInput): BaseScene {
-	const { state, now, colors, reducedMotion, width, height, displayOrder } = input;
+	const { state, now, colors, reducedMotion, displayOrder } = input;
 	const colorId = screenColorId(state.result, displayOrder);
 	const color = paletteColor(colors, colorId);
 	if (!color || !colorId) {
@@ -399,64 +440,34 @@ function resultScene(input: SceneInput): BaseScene {
 			animating: !reducedMotion,
 		};
 	}
-	// 結果が出た後も破片は残り、結果の二色で動き続ける。
-	const shards = shardLayer(input, 1, { colors: resultShardColors(input) });
-	const complete: BaseScene = {
-		primitives: [{ type: "fill", color: backgroundColor(color) }],
-		shards,
-		resultLayer: 1,
-		veil: null,
-		animating: !reducedMotion,
-	};
-	if (input.resultMode === "complete") return complete;
-
 	// `judging` の `phaseEndsAt` と `result` の `phaseStartedAt` は同じ時刻。
 	const startAt = state.phase === "judging" ? (state.phaseEndsAt ?? now) : state.phaseStartedAt;
 	const elapsed = now - startAt;
+	// 結果が出た後も破片は残り、結果の二色で動き続ける。結果開始の瞬間から、輪の内側も含めて画面全体へ散らばり、
+	// 散らばり終えると徐々にぼける。背景は判定中の黒のまま変えず、色は破片と色名だけで見せる。
+	const settled = input.resultMode === "complete" || reducedMotion;
+	const shards = shardLayer(input, 1, {
+		colors: resultShardColors(input),
+		fill: settled ? 1 : easeInOutSine(elapsed / RESULT_SCATTER_MS),
+		blur: settled ? 1 : easeInOutSine((elapsed - RESULT_SCATTER_MS) / RESULT_BLUR_MS),
+		orbit: scatterOrbit(startAt, settled ? RESULT_SCATTER_MS : elapsed),
+	});
+	const primitives: Primitive[] = [{ type: "fill", color: COLORS.dark }];
+	const complete: BaseScene = { primitives, shards, resultLayer: 1, veil: null, animating: !reducedMotion };
+	if (input.resultMode === "complete") return complete;
+
 	if (reducedMotion) {
-		if (elapsed < RESULT_REDUCED_HOLD_MS) {
-			return {
-				primitives: [{ type: "fill", color: baseColor(color) }],
-				shards,
-				resultLayer: 0,
-				veil: null,
-				animating: true,
-			};
-		}
+		if (elapsed < RESULT_REDUCED_HOLD_MS) return { ...complete, resultLayer: 0, animating: true };
 		return complete;
 	}
 
-	const { durationMs } = RESULT_FORMS[colorId];
-	const settleEnd = durationMs + RESULT_SETTLE_MS;
-	const photoEnd = durationMs + RESULT_PHOTO_DELAY_MS + RESULT_PHOTO_FADE_MS;
-	if (elapsed >= Math.max(settleEnd, photoEnd)) return complete;
-
-	const primitives: Primitive[] = [{ type: "fill", color: COLORS.dark }];
-	if (elapsed < durationMs) {
-		const drift = driftOf(now, startAt, false);
-		primitives.push(
-			...resultFormPrimitives(
-				colorId,
-				baseColor(color),
-				elapsed / durationMs,
-				width,
-				height,
-				displayOrder,
-				drift,
-			),
-		);
-	} else {
-		primitives.push({ type: "fill", color: baseColor(color) });
-		primitives.push({
-			type: "fill",
-			color: backgroundColor(color),
-			alpha: easeInOutSine((elapsed - durationMs) / RESULT_SETTLE_MS),
-		});
-	}
+	// 色名は破片が散らばり終えてから現れ始める。色名とぼかしが終わってから完了状態へ切り替える
+	// （切り替えのフレームで描画が跳ばないようにする）。今の値では、ぼかしが終わる結果開始から4.4秒のほうが遅い。
+	if (elapsed >= RESULT_SCATTER_MS + Math.max(RESULT_NAME_FADE_MS, RESULT_BLUR_MS)) return complete;
 	return {
 		primitives,
 		shards,
-		resultLayer: easeInOutSine((elapsed - durationMs - RESULT_PHOTO_DELAY_MS) / RESULT_PHOTO_FADE_MS),
+		resultLayer: easeInOutSine((elapsed - RESULT_SCATTER_MS) / RESULT_NAME_FADE_MS),
 		veil: null,
 		animating: true,
 	};
@@ -568,7 +579,26 @@ function questionShards(input: SceneInput): ShardLayer {
 }
 
 /** 波紋以外の描画内容。 */
-type BaseScene = Omit<Scene, "ripple" | "dust">;
+type BaseScene = Omit<Scene, "ripple" | "dust" | "door">;
+
+/** 扉が下から伸びて現れる時間（`easeInOutSine`）。色名は同じ時間で消える。 */
+export const DOOR_RISE_MS = 1_600;
+/** 扉が現れ終えたときの、周りの破片の明るさの割合。扉を目立たせるため、破片はぼけたまま薄く残す。 */
+export const DOOR_SHARD_INTENSITY = 0.45;
+
+/**
+ * 「扉を開く」の後の扉。`result` で `doorOpenedAt` が設定されていれば、その時刻から `DOOR_RISE_MS` で下から伸びて
+ * 現れる。時刻はサーバーが決めるので、全画面と、後から接続した画面も同じ伸び具合になる。reduced-motionでは即時に現れる。
+ */
+function doorLayer(input: SceneInput): DoorLayer | null {
+	const { state, now, reducedMotion } = input;
+	const openedAt = state.doorOpenedAt ?? null;
+	if (state.phase !== "result" || openedAt === null) return null;
+	return {
+		rise: reducedMotion ? 1 : easeInOutSine((now - openedAt) / DOOR_RISE_MS),
+		time: reducedMotion ? 0 : now,
+	};
+}
 
 /**
  * 質問の回答の波紋。輪が縮み切って戻り始める瞬間（回答を受け付けた時刻 `answeredAt` から `ANSWER_PULSE_IN_MS` 後）に
@@ -604,8 +634,20 @@ function dustLayer(input: SceneInput): DustLayer | null {
 export function computeScene(input: SceneInput): Scene {
 	const ripple = rippleLayer(input);
 	const dust = dustLayer(input);
+	const door = doorLayer(input);
 	const scene = computeBaseScene(input);
-	return { ...scene, ripple, dust, animating: scene.animating || ripple !== null || dust !== null };
+	return {
+		...scene,
+		// 扉が現れるのと同じ時間で、色名を消し、周りの破片を暗くする。
+		resultLayer: scene.resultLayer * (1 - (door?.rise ?? 0)),
+		shards: door
+			? { ...scene.shards, intensity: scene.shards.intensity * (1 - (1 - DOOR_SHARD_INTENSITY) * door.rise) }
+			: scene.shards,
+		ripple,
+		dust,
+		door,
+		animating: scene.animating || ripple !== null || dust !== null || door !== null,
+	};
 }
 
 function computeBaseScene(input: SceneInput): BaseScene {
@@ -616,8 +658,13 @@ function computeBaseScene(input: SceneInput): BaseScene {
 		const preview = state.phase === "idle" ? paletteColor(colors, state.previewColorId) : null;
 		if (preview) {
 			return {
-				primitives: [{ type: "fill", color: backgroundColor(preview) }],
-				shards: shardLayer(input, 1, { colors: [baseColor(preview), baseColor(preview)] }),
+				primitives: [{ type: "fill", color: COLORS.dark }],
+				shards: shardLayer(input, 1, {
+					colors: [baseColor(preview), baseColor(preview)],
+					fill: 1,
+					blur: 1,
+					orbit: 0,
+				}),
 				resultLayer: 1,
 				veil: null,
 				animating: !reducedMotion,

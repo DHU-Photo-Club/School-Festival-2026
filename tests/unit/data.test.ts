@@ -14,12 +14,28 @@ import {
 	validatePublishedUntil,
 	validateSequences,
 } from "../../src/shared/data-validation.ts";
-import { backgroundColor, foregroundColor } from "../../src/shared/palette.ts";
+import { COLORS } from "../../src/shared/motion.ts";
+import {
+	backgroundColor,
+	foregroundColor,
+	gradientStops,
+	hslToRgb,
+	NAME_MIN_CONTRAST,
+	nameColor,
+	nameGradientStops,
+	rgbToHex,
+} from "../../src/shared/palette.ts";
 import { resultAvailability } from "../../src/shared/result-page.ts";
 import { resultUrl } from "../../src/shared/result-url.ts";
 import type { Question, Sequence } from "../../src/shared/types.ts";
 
 const data = { palette: PALETTE, questions: QUESTIONS, photos: PHOTOS };
+
+const paletteOf = (id: string) => {
+	const color = PALETTE.colors.find((candidate) => candidate.id === id);
+	if (!color) throw new Error(`パレットに ${id} がありません`);
+	return color;
+};
 
 /** 質問定義から入力方式 `kind` の最初の質問を取り出す。 */
 function sample<K extends Question["kind"]>(kind: K): Extract<Question, { kind: K }> {
@@ -38,6 +54,62 @@ describe("展示データ", () => {
 		expect(PALETTE.colors).toHaveLength(13);
 		for (const color of PALETTE.colors)
 			expect(contrastRatio(foregroundColor(color), backgroundColor(color))).toBeGreaterThanOrEqual(4.5);
+	});
+
+	it("展示の結果の色名の端点は、黒に対して6:1以上になるまで明度だけを上げたパレットの色", () => {
+		for (const color of PALETTE.colors) {
+			const named = nameColor(color);
+			expect({ h: named.h, s: named.s }).toEqual({ h: color.h, s: color.s });
+			expect(named.l).toBeGreaterThanOrEqual(color.l);
+			expect(contrastRatio(rgbToHex(hslToRgb(named.h, named.s, named.l)), COLORS.dark)).toBeGreaterThanOrEqual(
+				NAME_MIN_CONTRAST,
+			);
+			// 明度を上げるのは、6:1に届くために必要な分だけ。
+			if (named.l > color.l)
+				expect(contrastRatio(rgbToHex(hslToRgb(named.h, named.s, named.l - 1)), COLORS.dark)).toBeLessThan(
+					NAME_MIN_CONTRAST,
+				);
+		}
+		// 藍色や瑠璃色は明るくし、山吹色などはパレットの色のまま使う。
+		expect(nameColor(paletteOf("indigo")).l).toBeGreaterThan(paletteOf("indigo").l);
+		expect(nameColor(paletteOf("gold"))).toEqual(paletteOf("gold"));
+	});
+
+	it("展示の結果の色名のグラデーションは、どの二色でも黒の背景に対して4.5:1以上", () => {
+		expect(validateExhibitData(data).filter((error) => error.includes("グラデーション"))).toEqual([]);
+		// パレットの色そのものを端点にすると4.5:1を下回る組み合わせがあるので、明るくした色を使う。
+		const base = PALETTE.colors.flatMap((first) =>
+			PALETTE.colors.flatMap((second) =>
+				nameGradientStops(first, second).map((stop) => contrastRatio(rgbToHex(stop), COLORS.dark)),
+			),
+		);
+		expect(Math.min(...base)).toBeLessThan(4.5);
+		const named = PALETTE.colors.flatMap((first) =>
+			PALETTE.colors.flatMap((second) =>
+				nameGradientStops(nameColor(first), nameColor(second)).map((stop) =>
+					contrastRatio(rgbToHex(stop), COLORS.dark),
+				),
+			),
+		);
+		expect(Math.min(...named)).toBeGreaterThanOrEqual(4.5);
+	});
+
+	it("展示の結果の色名のグラデーションは、両端がパレットの二色で、補色に近い二色の中間も灰色に濁らない", () => {
+		/** 8bitの各成分の最大と最小の差。灰色では0になる。 */
+		const spread = (rgb: readonly number[]) => Math.max(...rgb) - Math.min(...rgb);
+		for (const first of PALETTE.colors) {
+			for (const second of PALETTE.colors) {
+				const stops = nameGradientStops(first, second);
+				expect(stops).toHaveLength(13);
+				expect(stops[0]).toEqual(gradientStops(first, second)[0]);
+				expect(stops[12]).toEqual(gradientStops(first, second)[12]);
+			}
+		}
+		const [indigo, gold] = [paletteOf("indigo"), paletteOf("gold")];
+		const middle = nameGradientStops(indigo, gold)[6];
+		expect(spread(middle)).toBeGreaterThan(80);
+		// sRGB の直線補間では、同じ二色の中間が灰色に近くなる。
+		expect(spread(gradientStops(indigo, gold)[6])).toBeLessThan(40);
 	});
 
 	it("パレットの色IDの欠落、範囲外のHSLを検出する", () => {

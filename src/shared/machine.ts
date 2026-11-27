@@ -34,6 +34,7 @@ export type Command =
 	| { name: "answer"; questionId: string; answer: Answer }
 	| { name: "back" }
 	| { name: "returnToIdle" }
+	| { name: "openDoor" }
 	| { name: "setAccepting"; accepting: boolean }
 	| { name: "forceReset" }
 	| { name: "previewColor"; colorId: PaletteId }
@@ -43,7 +44,7 @@ export type CommandName = Command["name"];
 
 /** 役割ごとに許可するコマンド（仕様書8.3節）。 */
 export const ROLE_COMMANDS: Readonly<Record<Role, readonly CommandName[]>> = {
-	controller: ["start", "continue", "answer", "back", "returnToIdle"],
+	controller: ["start", "continue", "answer", "back", "returnToIdle", "openDoor"],
 	admin: ["setAccepting", "forceReset", "previewColor", "clearPreview"],
 	display: [],
 	photo: [],
@@ -86,6 +87,7 @@ export function initialState(now: number): ExhibitState {
 		phaseStartedAt: now,
 		phaseEndsAt: null,
 		answeredAt: null,
+		doorOpenedAt: null,
 		revision: 0,
 		accepting: true,
 	};
@@ -128,6 +130,7 @@ function toIdle(state: ExhibitState, at: number): ExhibitState {
 		phaseStartedAt: at,
 		phaseEndsAt: null,
 		answeredAt: null,
+		doorOpenedAt: null,
 		revision: state.revision + 1,
 	};
 }
@@ -252,6 +255,10 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 		case "returnToIdle":
 			if (state.phase !== "result") return reject("INVALID_PHASE");
 			return { ok: true, state: toIdle(state, now) };
+		case "openDoor":
+			// 扉は一回の結果で一度だけ開く。
+			if (state.phase !== "result" || (state.doorOpenedAt ?? null) !== null) return reject("INVALID_PHASE");
+			return accept({ doorOpenedAt: now });
 		case "setAccepting":
 			return accept({ accepting: command.accepting });
 		case "forceReset":

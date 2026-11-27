@@ -1,17 +1,17 @@
 import type { Browser } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { PHOTOS } from "../../src/data/photos.ts";
-import { answerAllQuestions, ExhibitHarness, STUB_RESULT, stubScreenColor } from "./fixtures.ts";
+import { answerAllQuestions, ExhibitHarness, receivedResultId, STUB_RESULT, stubScreenColor } from "./fixtures.ts";
 
-/** 体験を一回行い、iPadに表示された結果ページのパス（`/result/{id}`）を返す。 */
+/** 体験を一回行い、その結果ページのパス（`/result/{id}`）を返す。 */
 async function createResult(browser: Browser): Promise<string> {
 	const harness = await ExhibitHarness.open(browser);
 	const ipad = await harness.openDevice("controller");
 	try {
 		await answerAllQuestions(ipad.page);
-		const url = (await ipad.page.locator(".url").textContent()) ?? "";
-		await ipad.page.getByRole("button", { name: "最初に戻る" }).click();
-		return new URL(url).pathname;
+		const id = await receivedResultId(ipad.page);
+		await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
+		return `/result/${id}`;
 	} finally {
 		await ipad.context.close();
 		await harness.close();

@@ -6,7 +6,7 @@ import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { STUB_COLORS, STUB_NAME } from "../../src/server/ai/judge.ts";
-import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
+import { foregroundColor, paletteColor } from "../../src/shared/palette.ts";
 import { selectPhotos } from "../../src/shared/photo-selection.ts";
 import type { PaletteColor, PaletteId, Question, ScreenRole } from "../../src/shared/types.ts";
 import { MAP_SIZE } from "../../src/shared/types.ts";
@@ -36,9 +36,6 @@ export function palette(id: PaletteId): PaletteColor {
 
 /** 画面 `displayOrder` が仮の結果で見せる色（二色を画面の順に交互に割り当てる）。 */
 export const stubScreenColor = (displayOrder: number) => palette(STUB_COLORS[displayOrder % 2]);
-
-/** canvasの画素と比べられる形（大文字の `#RRGGBB`）の背景色。 */
-export const backgroundHex = (color: PaletteColor) => backgroundColor(color).toUpperCase();
 
 /** CSSの計算値と比べられる形（`rgb(r, g, b)`）の文字色。 */
 export function foregroundRgb(color: PaletteColor): string {
@@ -125,13 +122,22 @@ export class ExhibitHarness {
 
 /**
  * 展示ディスプレイのcanvasを読む。色面のcanvasはWebGLで描き、描画結果を保持する設定にしているため、
- * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。その上にブルームと破片のcanvasを重ねて写す。
+ * 2Dのcanvasへ写せば描画フレームの外からでも画素を読める。`withOverlays` なら、その上にブルームと破片のcanvasを重ねて写す。
  * `stride` 画素ごとに一つ読む。
  */
-async function readCanvas(page: Page, x: number, y: number, w: number, h: number, stride: number): Promise<number[]> {
+async function readCanvas(
+	page: Page,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	stride: number,
+	withOverlays = true,
+): Promise<number[]> {
 	return page.evaluate(
-		([px, py, pw, ph, step]) => {
-			const [source, ...overlays] = document.querySelectorAll<HTMLCanvasElement>("main.display canvas");
+		([px, py, pw, ph, step, overlaid]) => {
+			const [source, ...layers] = document.querySelectorAll<HTMLCanvasElement>("main.display canvas");
+			const overlays = overlaid ? layers : [];
 			const copy = document.createElement("canvas");
 			copy.width = source.width;
 			copy.height = source.height;
@@ -166,14 +172,24 @@ async function readCanvas(page: Page, x: number, y: number, w: number, h: number
 			for (let i = 0; i < data.length; i += step * 4) samples.push(data[i], data[i + 1], data[i + 2]);
 			return samples;
 		},
-		[x, y, w, h, stride] as const,
+		[x, y, w, h, stride, withOverlays] as const,
 	);
 }
 
+const toHex = ([r, g, b]: number[]) =>
+	`#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+
 /** 展示ディスプレイのcanvasの画素を読む。座標は0〜1の比率。 */
 export async function canvasPixel(page: Page, x: number, y: number): Promise<string> {
-	const [r, g, b] = await readCanvas(page, x, y, 0, 0, 1);
-	return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+	return toHex(await readCanvas(page, x, y, 0, 0, 1));
+}
+
+/**
+ * 展示ディスプレイの色面のcanvasだけの画素を読む。座標は0〜1の比率。結果では破片が画面全体へ散らばり、
+ * どの位置にも破片がかかりうるので、背景色は破片を重ねない色面で確かめる。
+ */
+export async function colorPlanePixel(page: Page, x: number, y: number): Promise<string> {
+	return toHex(await readCanvas(page, x, y, 0, 0, 1, false));
 }
 
 /** canvasに背景 `#0B0B0B` 以外の色が描かれているか。 */
@@ -219,6 +235,28 @@ export async function answerAllQuestions(page: Page): Promise<void> {
 		await page.getByRole("button", { name: "次へ" }).click();
 	}
 	await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 16_000 });
+}
+
+/**
+ * iPadが受け取った状態の、結果ページのID。iPadの結果の最初の画面はQRコードと結果URLを見せないため、
+ * 再読み込みして、接続したときに届く状態のメッセージから読む。
+ */
+export async function receivedResultId(page: Page): Promise<string> {
+	const id = new Promise<string>((resolve) => {
+		page.on("websocket", (socket) =>
+			socket.on("framereceived", ({ payload }) => {
+				try {
+					const message = JSON.parse(String(payload));
+					if (message.type === "state" && typeof message.state?.result?.id === "string")
+						resolve(message.state.result.id);
+				} catch {
+					// 状態以外のメッセージは読み飛ばす。
+				}
+			}),
+		);
+	});
+	await page.reload();
+	return id;
 }
 
 /** `intro` でニックネームを入力して質問へ進む。 */

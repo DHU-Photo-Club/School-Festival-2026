@@ -12,6 +12,7 @@ describe("parseClientMessage", () => {
 	it("コマンドの名前と固有フィールドを検証する", () => {
 		const command = (value: unknown) => parseClientMessage(JSON.stringify({ type: "command", command: value }));
 		expect(command({ name: "start" })).toEqual({ type: "command", command: { name: "start" } });
+		expect(command({ name: "openDoor", extra: 1 })).toEqual({ type: "command", command: { name: "openDoor" } });
 		expect(command({ name: "answer", questionId: "light", answer: "left" })).toEqual({
 			type: "command",
 			command: { name: "answer", questionId: "light", answer: "left" },
@@ -97,8 +98,16 @@ describe("toDisplayState", () => {
 			phaseStartedAt: 1,
 			phaseEndsAt: null,
 			answeredAt: null,
+			doorOpenedAt: null,
 			revision: 0,
 		});
+	});
+
+	it("扉を開いた時刻を渡す。この項目を持たない保存済みの状態は null にする", () => {
+		expect(toDisplayState({ ...initialState(1), doorOpenedAt: 88 }).doorOpenedAt).toBe(88);
+		const legacy = { ...initialState(1) } as Partial<ReturnType<typeof initialState>>;
+		delete legacy.doorOpenedAt;
+		expect(toDisplayState(legacy as ReturnType<typeof initialState>).doorOpenedAt).toBeNull();
 	});
 
 	it("回答を受け付けた時刻を渡す。この項目を持たない保存済みの状態は null にする", () => {

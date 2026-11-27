@@ -8,10 +8,11 @@ import { PALETTE } from "../../data/palette.ts";
 import { QUESTIONS } from "../../data/questions.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
 import { INITIAL_POSITION, isMapPoint, isValidAnswer, sameAnswer } from "../../shared/answer.ts";
+import { LAB_LOOP_NOTES, LabPlayer, parseLab } from "../../shared/lab.ts";
 import type { Command } from "../../shared/machine.ts";
 import { easeOutCubic, introDescriptionRemainingMs, NICKNAME_FADE_IN_MS } from "../../shared/motion.ts";
 import { NICKNAME_MAX_LENGTH, normalizeNickname } from "../../shared/nickname.ts";
-import { backgroundColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
+import { backgroundColor, baseColor, foregroundColor, gradientCss, paletteColor } from "../../shared/palette.ts";
 import { resultUrl } from "../../shared/result-url.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import type { Answer, ExhibitState, PaletteColor, Question } from "../../shared/types.ts";
@@ -21,6 +22,7 @@ import { RealtimeClient } from "../lib/realtime.ts";
 import { watchReducedMotion } from "../lib/reduced-motion.ts";
 import { controllerSequence } from "../sequences/controllers.ts";
 import ChoiceList from "./ChoiceList.svelte";
+import DoorGuide from "./DoorGuide.svelte";
 import type { InputMode } from "./input-mode.ts";
 import MapPad from "./MapPad.svelte";
 import ProgressBar from "./ProgressBar.svelte";
@@ -32,6 +34,7 @@ import {
 	questionLeave,
 	questionMotionStyle,
 } from "./question-transition.ts";
+import ResultEmblem from "./ResultEmblem.svelte";
 import Slider from "./Slider.svelte";
 
 /** 結果の色面が広がる時間（docs/visual-language.md 4.2節）。 */
@@ -73,8 +76,41 @@ let transitionTimer: ReturnType<typeof setTimeout> | undefined;
 let composing = false;
 
 let client: RealtimeClient | null = null;
+/** 補正済みサーバー時刻を返す時計。通常は `client`、調整用ループでは端末の時計。 */
+let clock: { serverNow(): number } | null = null;
 let questionKey = "";
 let stopWatching = () => {};
+
+/**
+ * 演出の調整用ループ（`/?loop=door&color=jade`）。展示ディスプレイと同じ台本（`src/shared/lab.ts`）を、サーバーへ
+ * 接続せずに繰り返す。開発サーバーだけで有効にする。ボタンを押しても送る先がないので、画面は台本どおりに進む。
+ * `h` キーでHUDを隠す。
+ */
+const lab = import.meta.env.DEV ? parseLab(location.search) : null;
+let labFrame = 0;
+let labHud = $state("");
+let labHudVisible = $state(true);
+
+function onKey(event: KeyboardEvent) {
+	// ニックネームの入力中は、文字の入力として扱う。
+	if (event.target instanceof HTMLInputElement) return;
+	if (lab && event.key === "h") labHudVisible = !labHudVisible;
+}
+
+/** 台本の場面の状態を、サーバーから受信したのと同じ経路で流し込む。台本の時刻は端末の時計で数える。 */
+function startLab(options: NonNullable<typeof lab>) {
+	const labClock = { serverNow: () => performance.timeOrigin + performance.now() };
+	clock = labClock;
+	status = "open";
+	const player = new LabPlayer(options, { lead: introLead, questionCount: QUESTIONS.length }, { onState });
+	const tick = () => {
+		labFrame = requestAnimationFrame(tick);
+		const text = player.advance(labClock.serverNow());
+		if (text !== labHud) labHud = text;
+	};
+	tick();
+	window.addEventListener("keydown", onKey);
+}
 
 const online = $derived(status === "open");
 const question = $derived(
@@ -86,7 +122,7 @@ const answered = $derived(question && exhibit ? (exhibit.answers[question.id] ??
 const canSubmit = $derived(question !== null && isValidAnswer(question, draft));
 /** 結果の二色（AIの出力順）。 */
 const resultColors = $derived.by((): [PaletteColor, PaletteColor] | null => {
-	const result = exhibit?.phase === "result" ? exhibit.result : null;
+	const result = exhibit?.phase === "result" || exhibit?.phase === "judging" ? exhibit.result : null;
 	if (!result) return null;
 	const [a, b] = result.colors.map((id) => paletteColor(PALETTE.colors, id));
 	return a && b ? [a, b] : null;
@@ -170,6 +206,36 @@ function next() {
 	send({ name: "answer", questionId: question.id, answer: draft });
 }
 
+/**
+ * 結果開始の時刻（展示ディスプレイの破片が画面全体へ散らばり始める時刻）を過ぎたか。展示ディスプレイと同じく、
+ * `judging` の `phaseEndsAt` を補正済みサーバー時刻で待って切り替える（仕様書7.1節）。
+ */
+let resultStarted = $state(false);
+/**
+ * それまでの結果画面（混色の円、読み取り、QRコード、「最初に戻る」）を見せるか。「扉を開く」の後は扉への案内
+ * （`DoorGuide`）を見せ、それまでの結果画面を見せる時機は未定（docs/progress.md）なので常に `false`。
+ * それまでの結果画面は、この先に見せる画面の候補として残してある。
+ */
+const doorOpened = false;
+/** 扉への案内が現れる時間。 */
+const DOOR_GUIDE_FADE_MS = 1_400;
+
+$effect(() => {
+	if (exhibit?.phase === "result") {
+		resultStarted = true;
+		return;
+	}
+	resultStarted = false;
+	if (exhibit?.phase !== "judging" || !exhibit.result || exhibit.phaseEndsAt === null || !clock) return;
+	const remaining = exhibit.phaseEndsAt - clock.serverNow();
+	if (remaining <= 0) {
+		resultStarted = true;
+		return;
+	}
+	const timer = window.setTimeout(() => (resultStarted = true), remaining);
+	return () => window.clearTimeout(timer);
+});
+
 /** 結果ページのURLとQRコード。生成できなければQRコードの代わりにURLだけを表示する。 */
 const qr = $derived.by(() => {
 	if (exhibit?.phase !== "result" || !exhibit.result) return null;
@@ -184,6 +250,10 @@ const qr = $derived.by(() => {
 
 onMount(() => {
 	stopWatching = watchReducedMotion((reduced) => (reducedMotion = reduced));
+	if (lab) {
+		startLab(lab);
+		return;
+	}
 	client = new RealtimeClient({
 		role: "controller",
 		onState: (state) => onState(state as ExhibitState),
@@ -196,11 +266,14 @@ onMount(() => {
 			}
 		},
 	});
+	clock = client;
 	client.start();
 });
 
 onDestroy(() => {
 	clearTimeout(transitionTimer);
+	cancelAnimationFrame(labFrame);
+	window.removeEventListener("keydown", onKey);
 	client?.stop();
 	stopWatching();
 });
@@ -215,9 +288,9 @@ const inputMode = $derived.by((): InputMode => {
 
 /** `result` の色面が広がる間だけ、補正済みサーバー時刻を毎フレーム更新する。 */
 $effect(() => {
-	if (exhibit?.phase !== "result" || reducedMotion || !client) return;
+	if (exhibit?.phase !== "result" || reducedMotion || !clock) return;
 	const startedAt = exhibit.phaseStartedAt;
-	const sync = client;
+	const sync = clock;
 	let frame = 0;
 	const tick = () => {
 		const t = sync.serverNow();
@@ -230,11 +303,11 @@ $effect(() => {
 
 /** `intro` に入ったら、展示ディスプレイが説明の文を現れ終える時刻に、ニックネームの入力欄を出す。 */
 $effect(() => {
-	if (exhibit?.phase !== "intro" || !client) {
+	if (exhibit?.phase !== "intro" || !clock) {
 		nicknameReady = false;
 		return;
 	}
-	const sync = client;
+	const sync = clock;
 	const state = { phaseStartedAt: exhibit.phaseStartedAt };
 	let timer = 0;
 	const check = () => {
@@ -248,9 +321,9 @@ $effect(() => {
 
 /** `sequence` の間は、シーケンスのコンポーネントへ渡す補正済みサーバー時刻を毎フレーム更新する。 */
 $effect(() => {
-	if (exhibit?.phase !== "sequence" || !client) return;
+	if (exhibit?.phase !== "sequence" || !clock) return;
 	const endsAt = exhibit.phaseEndsAt;
-	const sync = client;
+	const sync = clock;
 	let frame = 0;
 	const tick = () => {
 		const t = sync.serverNow();
@@ -282,8 +355,17 @@ $effect(() => {
 	<main
 		class="screen"
 		data-phase={exhibit.phase}
-		style:background={exhibit.phase === "result" && resultColors ? backgroundColor(resultColors[0]) : undefined}
-		style:color={exhibit.phase === "result" && resultColors ? foregroundColor(resultColors[0]) : undefined}
+		data-result-started={resultStarted}
+		style:background={resultStarted && resultColors
+			? doorOpened
+				? backgroundColor(resultColors[0])
+				: "#000000"
+			: undefined}
+		style:color={resultStarted && resultColors
+			? doorOpened
+				? foregroundColor(resultColors[0])
+				: "#ffffff"
+			: undefined}
 	>
 		{#if exhibit.phase === "idle" && !exhibit.accepting}
 			<section class="center stack top">
@@ -452,11 +534,36 @@ $effect(() => {
 					</button>
 				</footer>
 			</section>
+		{:else if exhibit.phase === "result" && exhibit.doorOpenedAt != null && resultColors && !doorOpened}
+			<!-- 扉を開いた後は、扉へ進むよう案内する。 -->
+			<div class="guide-fade" in:fade={{ duration: reducedMotion ? 0 : DOOR_GUIDE_FADE_MS, easing: sineInOut }}>
+				<DoorGuide colors={[baseColor(resultColors[0]), baseColor(resultColors[1])]} {reducedMotion} />
+			</div>
+		{:else if resultStarted && exhibit.result && resultColors && !doorOpened}
+			<section class="reveal">
+				<ResultEmblem colors={[baseColor(resultColors[0]), baseColor(resultColors[1])]} />
+				<div class="reveal-title">
+					<p class="reveal-lead">あなたの色は</p>
+					<h1 class="reveal-name">
+						<span>「</span><span class="color-name">{exhibit.result.name}</span><span>」</span>
+					</h1>
+				</div>
+				<!-- 押すと展示ディスプレイの中央に扉が出て、iPadは扉への案内（DoorGuide）に切り替わる。扉は一回の結果で一度だけ開く。 -->
+				<button
+					type="button"
+					class="primary-button door"
+					disabled={!online || pending !== null || exhibit.phase !== "result" || exhibit.doorOpenedAt != null}
+					onclick={() => send({ name: "openDoor" })}
+				>
+					<span>扉を開く</span>
+					<ArrowRightIcon aria-hidden="true" size={24} strokeWidth={2} />
+				</button>
+			</section>
 		{:else if exhibit.phase === "judging"}
 			<section class="center stack">
 				<p class="lead">あなたの色を選んでいます</p>
 			</section>
-		{:else if exhibit.phase === "result" && exhibit.result && resultColors}
+		{:else if exhibit.phase === "result" && exhibit.result && resultColors && doorOpened}
 			<section class="result">
 				<div class="identity">
 					<div class="disc-box">
@@ -501,6 +608,10 @@ $effect(() => {
 				<p>再接続しています</p>
 				<p class="muted">しばらくお待ちください</p>
 			</div>
+		{/if}
+
+		{#if lab && labHudVisible}
+			<p class="lab-hud" data-lab={lab.loop}>{labHud}<br>{LAB_LOOP_NOTES[lab.loop]}（h で隠す）</p>
 		{/if}
 	</main>
 {/if}
@@ -785,6 +896,36 @@ p {
 	position: relative;
 	z-index: 1;
 }
+/* 結果の最初の画面。破片の束の後ろに、中心が明るい灰色の光を敷く。 */
+.reveal {
+	display: grid;
+	align-content: center;
+	justify-items: center;
+	gap: clamp(24px, 4vmin, 40px);
+	margin: calc(-1 * max(24px, env(safe-area-inset-top))) -24px calc(-1 * max(24px, env(safe-area-inset-bottom)));
+	padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+	text-align: center;
+	background: radial-gradient(circle at 50% 32%, #262626 0, #0d0d0d 28vmin, #000000 56vmin);
+}
+.reveal-title {
+	display: grid;
+	gap: 4px;
+}
+.reveal-lead,
+.reveal-name {
+	font-size: clamp(24px, 4vmin, 34px);
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	line-height: 1.6;
+}
+.door {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	background: #ffffff;
+	color: #000000;
+}
 .result {
 	display: grid;
 	gap: 24px;
@@ -846,6 +987,19 @@ p {
 		width: 100%;
 		margin: 0 auto;
 	}
+}
+/* 背景が白い画面と黒い画面のどちらでも読めるよう、その画面の文字色を薄めて使う。 */
+.lab-hud {
+	position: fixed;
+	left: 12px;
+	bottom: 10px;
+	z-index: 3;
+	margin: 0;
+	font:
+		12px / 1.5 ui-monospace,
+		monospace;
+	opacity: 0.55;
+	pointer-events: none;
 }
 .overlay {
 	position: fixed;

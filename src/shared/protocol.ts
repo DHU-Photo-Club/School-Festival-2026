@@ -62,6 +62,7 @@ function parseCommand(value: unknown): Command | null {
 		case "start":
 		case "back":
 		case "returnToIdle":
+		case "openDoor":
 		case "forceReset":
 		case "clearPreview":
 			return { name: value.name };
@@ -129,6 +130,8 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 		phaseEndsAt: state.phaseEndsAt,
 		// この項目を持たない保存済みの状態は、波紋を出さない。
 		answeredAt: state.answeredAt ?? null,
+		// この項目を持たない保存済みの状態は、扉を出さない。
+		doorOpenedAt: state.doorOpenedAt ?? null,
 		revision: state.revision,
 	};
 }

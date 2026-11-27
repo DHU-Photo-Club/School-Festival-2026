@@ -1,5 +1,5 @@
 // 三角形の破片の輪の配置と動き（docs/visual-language.md 3.2〜3.4節、4.4節）。
-// 展示ディスプレイで、質問中から結果色が広がり始めるまで描く。配置は固定の種から作り、位置は経過時間だけから決まる。
+// 展示ディスプレイで、質問中から結果の完了状態まで描く。配置は固定の種から作り、位置は経過時間だけから決まる。
 
 /** 輪の半径（画面短辺に対する比）。 */
 export const SHARD_RING_RADIUS = 0.38;
@@ -10,6 +10,11 @@ const RING_SPREAD = 0.2;
  * 動かさず、各破片をその散らばりの順位に応じて外側へ押し出す。輪の半径の2.6倍は、16:9の画面の隅までの距離に近い。
  */
 export const SHARD_SCATTER_DEPTH = 1.6;
+/**
+ * 画面全体へ散らばらせたとき（`fill` が1）に破片が並ぶ楕円の大きさ（画面の半幅と半高さに対する比）。
+ * √2 倍の楕円は画面の四隅を通るので、四隅まで破片が届く。楕円のうち画面の外にある部分の破片は、画面の外へはみ出す。
+ */
+export const SHARD_FILL_REACH = Math.SQRT2;
 const RING_COUNT = 130;
 /** 破片が現れる／消えるときに、同時に不透明度が変わっていく枚数。小さいと一枚ずつ急に現れる。 */
 const DENSITY_FADE_COUNT = 50;
@@ -37,6 +42,11 @@ interface Shard {
 	b: number;
 	/** 公転の速度の倍率。 */
 	speed: number;
+	/**
+	 * 画面全体へ散らばらせたときに並ぶ楕円の大きさ（`SHARD_FILL_REACH` 倍の楕円に対する比）の二乗（0〜1）。
+	 * 平方根を取って大きさにすると、楕円の中に面積あたり同じ数の破片が並ぶ。
+	 */
+	reach: number;
 }
 
 /** 一枚の破片を描く位置。座標はCSS画素単位。 */
@@ -77,7 +87,7 @@ function triangle(next: () => number): Point[] {
 	return raw.map(([x, y]): Point => [x - cx, y - cy]);
 }
 
-function shard(next: () => number, a: number, b: number, size: number): Shard {
+function shard(next: () => number, a: number, b: number, size: number, reach: number): Shard {
 	return {
 		points: triangle(next),
 		size,
@@ -90,15 +100,21 @@ function shard(next: () => number, a: number, b: number, size: number): Shard {
 		a,
 		b,
 		speed: 0.8 + 0.4 * next(),
+		reach,
 	};
 }
 
+/** 黄金比の小数部。並び順に掛けて0〜1を偏りなく埋める。 */
+const GOLDEN_FRACTION = 0.6180339887498949;
+
 const next = random(SEED);
-const RING: readonly Shard[] = Array.from({ length: RING_COUNT }, () => {
+const RING: readonly Shard[] = Array.from({ length: RING_COUNT }, (_, index) => {
 	const angle = next() * Math.PI * 2;
 	// 三角分布で輪の中心線付近を密にする。
 	const offset = (next() + next() - 1) * RING_SPREAD;
-	return shard(next, angle, 1 + offset, 0.14 + 0.2 * next());
+	// 画面全体へ散らばらせたときの楕円の大きさは、乱数列を消費せず並び順から作る（黄金比で0〜1を偏りなく埋める）。
+	// 乱数列を変えないので、輪の配置は変わらない。
+	return shard(next, angle, 1 + offset, 0.14 + 0.2 * next(), (0.5 + index * GOLDEN_FRACTION) % 1);
 });
 
 function pose(item: Shard, x: number, y: number, rotation: number, unit: number): ShardPose {
@@ -143,7 +159,9 @@ export function ringBreath(elapsed: number): number {
 /**
  * 輪の破片の位置。画面中央を中心に時計回りに公転し、輪の接線方向を向いたまま自転し、輪全体が呼吸する。
  * `scale` は輪の半径だけにかける倍率、`size` は破片の大きさにかける倍率。`spread` は輪の太さの広がりで、
- * 0なら輪、1なら輪の内側の縁を残したまま、画面いっぱいに散らばる（`SHARD_SCATTER_DEPTH`）。`density` は見せる破片の割合で、
+ * 0なら輪、1なら輪の内側の縁を残したまま、画面いっぱいに散らばる（`SHARD_SCATTER_DEPTH`）。`fill` は画面全体への散らばりで、
+ * 0なら `spread` の配置、1なら輪の内側も含めて画面の中心から縁まで偏りなく散らばる。散らばった破片は、画面と同じ縦横比の
+ * 楕円の上を公転し、なめらかな曲線を描いて動く。`density` は見せる破片の割合で、
  * 先頭から数えた枚数だけ見せ、境の `DENSITY_FADE_COUNT` 枚は不透明度を段階的に変えて、一枚ずつ急に現れないようにする。見せない破片も配列には残し、並び順を変えない
  * （色づけは並び順で二色へ振り分けるため）。
  */
@@ -155,6 +173,8 @@ function ringPoses(
 	density: number,
 	size: number,
 	spread: number,
+	fill: number,
+	orbit: number,
 ): ShardPose[] {
 	// 破片の大きさは通常の輪の半径で決め、`scale` で縮めるのは輪の半径だけにする。
 	const unit = Math.min(width, height) * SHARD_RING_RADIUS;
@@ -164,13 +184,30 @@ function ringPoses(
 	const cx = width / 2;
 	const cy = height / 2;
 	return RING.map((item, index) => {
-		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
+		const theta = item.a + (((orbit * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
 		// 輪の中の位置（内側の縁0〜外側の縁1）に応じて、散らばるときの距離を決める。
 		const rank = (item.b - 1 + RING_SPREAD) / (2 * RING_SPREAD);
 		const b = item.b + (1 + rank * SHARD_SCATTER_DEPTH - item.b) * spread;
-		const r = radius * breath * (b + 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2))));
-		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
-		const [x, y] = [cx + Math.cos(theta) * r, cy + Math.sin(theta) * r];
+		const sway = 0.04 * Math.sin(item.sway + ((elapsed * item.swaySpeed) % (Math.PI * 2)));
+		const ringR = radius * breath * (b + sway);
+		// 画面全体へ散らばるときは、画面の半幅と半高さに比例した楕円（`SHARD_FILL_REACH` 倍）の、`sqrt(reach)` 倍の
+		// 楕円の上に置き、公転の角度をそのまま楕円の媒介変数にする。角度が一様なら、点は楕円の中に一様に並ぶ。
+		// 輪の位置からは、中心から見た向きと距離を補間して移る。楕円上の点の向きは公転の角度と同じ象限にある。
+		const turn = ((theta % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+		let r = ringR;
+		let angle = theta;
+		if (fill > 0) {
+			const ex = Math.cos(turn) * cx * SHARD_FILL_REACH * Math.sqrt(item.reach);
+			const ey = Math.sin(turn) * cy * SHARD_FILL_REACH * Math.sqrt(item.reach);
+			// 輪のときと同じく、輪の半径（`scale` をかけた値）に対する量だけ半径方向に揺れる。
+			const fillR = Math.hypot(ex, ey) + sway * radius;
+			const raw = Math.atan2(ey, ex) - turn;
+			const fillAngle = turn + Math.atan2(Math.sin(raw), Math.cos(raw));
+			r = ringR + (fillR - ringR) * fill;
+			angle = turn + (fillAngle - turn) * fill;
+		}
+		const rotation = angle + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
+		const [x, y] = [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r];
 		const base = pose(item, x, y, rotation, shardUnit);
 		const visible = clamp01((density * (RING_COUNT + DENSITY_FADE_COUNT) - index) / DENSITY_FADE_COUNT);
 		return { ...base, alpha: base.alpha * visible };
@@ -180,7 +217,9 @@ function ringPoses(
 /**
  * 経過時間 `elapsed`（ミリ秒）での輪の全破片の位置。`scale` は輪の半径の倍率（1が通常の大きさ）、`size` は
  * 破片の大きさの倍率（1が通常の大きさ）、`spread` は輪の太さの広がり（0が輪、1が画面いっぱいの散らばり）、
- * `density` は見せる破片の割合（1が全枚数）。見せない破片は不透明度0で返す。
+ * `fill` は画面全体への散らばり（0が `spread` の配置、1が画面の中心から縁まで偏りなく散らばる）、
+ * `density` は見せる破片の割合（1が全枚数）。見せない破片は不透明度0で返す。`orbit` は輪の公転の角度を決める時刻
+ * （ミリ秒、省略すると `elapsed`）で、`elapsed` と別に止めると、破片は公転せずにその場で揺れと自転だけを続ける。
  */
 export function shardPoses(
 	width: number,
@@ -191,9 +230,11 @@ export function shardPoses(
 		density = 1,
 		size = 1,
 		spread = 0,
-	}: { scale?: number; density?: number; size?: number; spread?: number } = {},
+		fill = 0,
+		orbit = elapsed,
+	}: { scale?: number; density?: number; size?: number; spread?: number; fill?: number; orbit?: number } = {},
 ): ShardPose[] {
-	return ringPoses(width, height, elapsed, scale, density, size, spread);
+	return ringPoses(width, height, elapsed, scale, density, size, spread, fill, orbit);
 }
 
 /** 0〜255の三成分の色。 */

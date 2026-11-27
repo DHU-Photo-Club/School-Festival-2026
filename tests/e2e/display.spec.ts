@@ -2,11 +2,11 @@ import { expect, test } from "@playwright/test";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import {
 	answerQuestion,
-	backgroundHex,
 	bloomHasGraphics,
 	canvasDigest,
 	canvasHasGraphics,
 	canvasPixel,
+	colorPlanePixel,
 	ExhibitHarness,
 	enterNickname,
 	expectQuestion,
@@ -43,7 +43,11 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	await expect(nicknameField).toHaveCount(0);
 	// 「ようこそ」を見せたあと、それが消えて、説明の文が三行で現れる。
 	const description = display.page.locator(".description");
-	await expect(description.locator("span")).toHaveText(["あなた色写真展は", "あなたの気分や感性によって", "変化する写真展です"]);
+	await expect(description.locator("span")).toHaveText([
+		"あなた色写真展は",
+		"あなたの気分や感性によって",
+		"変化する写真展です",
+	]);
 	await expect(welcome).toHaveCSS("opacity", "0", { timeout: 10_000 });
 	// 説明の文が現れている途中でも、入力欄は出ない。現れ終えると出る。
 	await expect(nicknameField).toHaveCount(0);
@@ -64,7 +68,7 @@ test("管理画面の表示確認で全画面がパレットの色の完了状�
 	await harness.admin.page.getByRole("button", { name: wisteria.name, exact: true }).click();
 	for (const display of displays) {
 		await expect(display.page.locator("main.display")).toHaveAttribute("data-result-color", "wisteria");
-		await expect.poll(() => canvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(wisteria));
+		await expect.poll(() => colorPlanePixel(display.page, 0.01, 0.01)).toBe("#000000");
 		await expect(display.page.locator(".color-name")).toHaveText(wisteria.name);
 	}
 	await harness.admin.page.getByRole("button", { name: "表示確認を終了" }).click();
@@ -118,16 +122,14 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 		.toBe("#000000");
 	await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name, { timeout: 15_000 });
 
-	// 結果: 基準色の全面から完了状態へ一回だけ切り替わる。画面ごとに二色を交互に見せる。
+	// 結果: 背景は黒のまま、散らばってぼけた破片の上に色名を一回だけ出す。画面ごとに二色を交互に見せる。
 	for (const [displayOrder, display] of displays.entries()) {
-		await expect
-			.poll(() => canvasPixel(display.page, 0.01, 0.01), { timeout: 5_000 })
-			.toBe(backgroundHex(stubScreenColor(displayOrder)));
+		await expect.poll(() => colorPlanePixel(display.page, 0.01, 0.01), { timeout: 5_000 }).toBe("#000000");
 		// 結果でも破片とブルームは残る。
 		await expect.poll(() => bloomHasGraphics(display.page)).toBe(true);
 		await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 	}
-	await page.getByRole("button", { name: "最初に戻る" }).click();
+	await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
 	for (const display of displays)
 		await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");
 

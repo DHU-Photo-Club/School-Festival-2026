@@ -111,6 +111,8 @@ export interface ExhibitState {
 	phaseEndsAt: number | null;
 	/** 直前に質問の回答を受け付けた時刻。展示ディスプレイは、この時刻から中心の波紋を広げる。`idle` へ戻ると `null`。 */
 	answeredAt: number | null;
+	/** `result` でiPadの「扉を開く」を受け付けた時刻。展示ディスプレイは、この時刻から中央に扉を出す。`idle` へ戻ると `null`。 */
+	doorOpenedAt: number | null;
 	revision: number;
 	accepting: boolean;
 }
@@ -128,6 +130,7 @@ export type DisplayState = Pick<
 	| "phaseStartedAt"
 	| "phaseEndsAt"
 	| "answeredAt"
+	| "doorOpenedAt"
 	| "revision"
 > & { result: DisplayResult | null };
 

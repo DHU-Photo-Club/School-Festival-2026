@@ -2,19 +2,24 @@
 import { onDestroy, onMount } from "svelte";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
+import { QUESTIONS } from "../../data/questions.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
+import { ribbonPoints } from "../../shared/door.ts";
 import { dustPoses } from "../../shared/dust.ts";
-import { LAB_LOOP_NOTES, type LabCycle, labCycle, parseLab } from "../../shared/lab.ts";
+import { LAB_LOOP_NOTES, LabPlayer, parseLab } from "../../shared/lab.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import {
+	COLORS,
 	computeScene,
 	IDLE_RETURN_MS,
 	introDescriptionOpacity,
+	SHARD_RESULT_BLUR,
 	screenColorId,
 	WELCOME_FADE_OUT_MS,
 	welcomeOpacity,
 } from "../../shared/motion.ts";
-import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
+import { nameColor, nameGradientCss, nameGradientStops, paletteColor } from "../../shared/palette.ts";
+import { toDisplayState } from "../../shared/protocol.ts";
 import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
 import { shardPoses } from "../../shared/shards.ts";
@@ -25,6 +30,7 @@ import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../comm
 import { RealtimeClient } from "../lib/realtime.ts";
 import { watchReducedMotion } from "../lib/reduced-motion.ts";
 import { displaySequence } from "../sequences/displays.ts";
+import { DOOR_RIBBON_BLUR, drawDoorRibbon } from "./door.ts";
 import type { SceneRenderer } from "./renderer.ts";
 import { createRenderer } from "./renderer.ts";
 
@@ -47,6 +53,8 @@ let bloomCanvas = $state<HTMLCanvasElement>();
 let rippleCanvas = $state<HTMLCanvasElement>();
 let dustCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
+let door = $state<HTMLDivElement>();
+let doorCanvas = $state<HTMLCanvasElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
 let description = $state<HTMLParagraphElement>();
@@ -57,6 +65,7 @@ let frame = 0;
 let lastDrawn = "";
 let lastShards = "";
 let lastRipple = "";
+let lastDoor = "";
 /** 塵を描いたままのフレームか。描いていないフレームでは、消した状態を一度だけ描く。 */
 let dustDrawn = false;
 let animateSessionId: string | null = null;
@@ -73,10 +82,21 @@ const welcomeLead = sequenceBefore(SEQUENCES, "intro");
  * 一つの演出の台本（`src/shared/lab.ts`）を繰り返す。`h` キーでHUDを隠す。
  */
 const lab = import.meta.env.DEV ? parseLab(location.search) : null;
-let labOrigin = 0;
-let labCycleIndex = -1;
-let labPlan: LabCycle | null = null;
-let labStep = -1;
+const labPlayer = lab
+	? new LabPlayer(
+			lab,
+			{ lead: welcomeLead, questionCount: QUESTIONS.length },
+			{
+				// 前の周の結果の色や覆いを持ち越さない。
+				onCycle: () => {
+					resultChoice = null;
+					previousBackground = null;
+				},
+				// 台本の場面の状態を、サーバーから受信したのと同じ範囲に絞って、同じ経路で流し込む。
+				onState: (state) => onState(toDisplayState(state)),
+			},
+		)
+	: null;
 let labHud = $state("");
 let labHudVisible = $state(true);
 
@@ -84,26 +104,10 @@ let labHudVisible = $state(true);
 const serverTime = (timestamp: number) =>
 	lab ? performance.timeOrigin + timestamp : (client?.toServerTime(timestamp) ?? 0);
 
-/** 台本の時刻になった場面の状態を、サーバーから受信したのと同じ経路で流し込む。 */
+/** 台本の時刻になった場面の状態を流し込む。 */
 function driveLab(now: number) {
-	if (!lab) return;
-	if (labOrigin === 0) labOrigin = now;
-	// 一周の長さは台本ごとに違うので、周が変わるたびに台本を作り直して、その開始時刻から数える。
-	if (!labPlan || now - labOrigin >= labPlan.lengthMs) {
-		if (labPlan) labOrigin += labPlan.lengthMs;
-		labCycleIndex++;
-		labPlan = labCycle(lab, { index: labCycleIndex, startedAt: labOrigin, lead: welcomeLead });
-		labStep = -1;
-		// 前の周の結果の色や覆いを持ち越さない。
-		resultChoice = null;
-		previousBackground = null;
-	}
-	const elapsed = now - labOrigin;
-	while (labStep + 1 < labPlan.steps.length && labPlan.steps[labStep + 1].atMs <= elapsed) {
-		labStep++;
-		onState(labPlan.steps[labStep].state);
-	}
-	const text = `${lab.loop}${labPlan.colorId ? ` / ${labPlan.colorId}` : ""}  ${(elapsed / 1000).toFixed(1)} / ${(labPlan.lengthMs / 1000).toFixed(1)}s  #${labCycleIndex + 1}`;
+	if (!labPlayer) return;
+	const text = labPlayer.advance(now);
 	if (text !== labHud) labHud = text;
 }
 
@@ -117,8 +121,7 @@ function onState(next: DisplayState) {
 	const previous = displayState;
 	if (next.phase === "idle") {
 		if (previous && previous.phase !== "idle" && resultChoice) {
-			const color = colorOf(resultChoice.colorId);
-			previousBackground = color ? backgroundColor(color) : null;
+			previousBackground = colorOf(resultChoice.colorId) ? COLORS.dark : null;
 		}
 		if (previous?.phase !== "idle") resultChoice = null;
 	}
@@ -141,6 +144,9 @@ function onState(next: DisplayState) {
  * 全面の塗りだけなので見た目は変わらず、フラグメントシェーダーの負荷が `devicePixelRatio` に依存しない。
  */
 const CANVAS_SCALE = 0.5;
+
+/** 扉を下から見せていくときの、境目をぼかす幅。扉の高さに対する百分率。 */
+const DOOR_FEATHER = 30;
 
 /** 破片は輪郭を見せるため、CSS画素の2倍までの解像度で描く。 */
 const shardRatio = () => Math.min(window.devicePixelRatio || 1, 2);
@@ -169,6 +175,13 @@ function resize() {
 		bloomCanvas.width = Math.max(1, Math.round(window.innerWidth * SHARD_BLOOM_SCALE));
 		bloomCanvas.height = Math.max(1, Math.round(window.innerHeight * SHARD_BLOOM_SCALE));
 	}
+	if (doorCanvas) {
+		// 扉の中の光はぼかして見せるので、CSS画素と同じ解像度で足りる。
+		doorCanvas.width = Math.max(1, Math.round(doorCanvas.clientWidth));
+		doorCanvas.height = Math.max(1, Math.round(doorCanvas.clientHeight));
+		doorCanvas.style.filter = `blur(${(DOOR_RIBBON_BLUR * doorCanvas.clientWidth).toFixed(1)}px)`;
+		lastDoor = "";
+	}
 }
 
 /**
@@ -187,6 +200,8 @@ function drawShardLayer(layer: ShardLayer) {
 		density: layer.density,
 		size: layer.size,
 		spread: layer.spread,
+		fill: layer.fill,
+		orbit: layer.orbit,
 	});
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
@@ -227,20 +242,56 @@ function drawDustLayer(layer: Scene["dust"]) {
 	drawDust(context, dustPoses(layer.elapsed, window.innerWidth, window.innerHeight, layer.fade), shardRatio());
 }
 
+/**
+ * 「扉を開く」の後に中央の扉の中へ、結果の二色の光の帯を描く（docs/visual-language.md 3.4.1節）。
+ * 扉を出していないフレームは、帯を消した状態を一度だけ描く。
+ */
+function drawDoorLayer(layer: Scene["door"]) {
+	const context = doorCanvas?.getContext("2d");
+	if (!context) return;
+	const stops = layer ? doorStops : null;
+	const key = layer && stops ? `${layer.time}|${stops.join()}` : "";
+	if (key === lastDoor) return;
+	lastDoor = key;
+	drawDoorRibbon(context, layer && stops ? ribbonPoints(layer.time) : [], stops ?? []);
+}
+
 /** 結果表示でこの画面が見せる色を決める。 */
 function chooseResult(sessionId: string | null, colorId: PaletteId) {
 	resultChoice = { sessionId, colorId };
 }
 
 /** 値が変わったときだけ書き換え、変化のないフレームでスタイルの再計算を起こさない。 */
-function setStyle(element: HTMLElement | undefined, property: "opacity" | "backgroundColor", value: string) {
+function setStyle(
+	element: HTMLElement | undefined,
+	property: "opacity" | "backgroundColor" | "filter" | "maskImage",
+	value: string,
+) {
 	if (element && element.style[property] !== value) element.style[property] = value;
+}
+
+/**
+ * 扉を下から見せていくマスク。`rise` が0で全体を隠し、1で全体を見せる。見せる範囲の上端は
+ * `DOOR_FEATHER` の幅でぼかし、くっきり切らずにフェードさせる。
+ */
+function doorMask(rise: number): string {
+	if (rise >= 1) return "none";
+	const edge = rise * (100 + DOOR_FEATHER) - DOOR_FEATHER;
+	return `linear-gradient(to top, #000 ${edge.toFixed(2)}%, transparent ${(edge + DOOR_FEATHER).toFixed(2)}%)`;
 }
 
 const opacity = (value: number) => String(Math.round(value * 1000) / 1000);
 
 function applyLayers(scene: Scene) {
 	setStyle(resultLayer, "opacity", opacity(scene.resultLayer));
+	// 扉は大きさと位置を変えず、下から上へ見せる範囲を広げる。範囲の上端はぼかしてフェードさせる。
+	// 扉の中の光の色が決まらない画面（結果の色がパレットにないときなど）では、光のない扉を出さない。
+	setStyle(door, "opacity", scene.door && doorStops ? "1" : "0");
+	setStyle(door, "maskImage", doorMask(scene.door?.rise ?? 0));
+	// 結果で散らばり終えた破片をぼかす。canvas 2Dの描画は増やさず、要素のフィルターで合成時にぼかす。
+	// ぼかしの分だけ合成の負荷は増えるので、会場のPCで結果のフレーム時間を確かめる。
+	const blur = scene.shards.blur * SHARD_RESULT_BLUR * Math.min(window.innerWidth, window.innerHeight);
+	setStyle(shardCanvas, "filter", blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : "");
 	setStyle(veil, "opacity", opacity(scene.veil?.opacity ?? 0));
 	if (scene.veil) setStyle(veil, "backgroundColor", scene.veil.color);
 }
@@ -323,6 +374,7 @@ function tick(timestamp: number) {
 	drawShardLayer(scene.shards);
 	drawRippleLayer(scene.ripple);
 	drawDustLayer(scene.dust);
+	drawDoorLayer(scene.door);
 }
 
 onMount(() => {
@@ -351,6 +403,19 @@ onDestroy(() => {
 });
 
 const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
+/**
+ * 色名に重ねるグラデーションの二色。左端をこの画面の色、右端をもう一方の色にする。管理画面の表示確認では
+ * その色だけ。もう一方の色がパレットにないときも、この画面の色だけにする。
+ */
+const namePair = $derived.by(() => {
+	if (!shownColor) return null;
+	const matched = resultChoice?.sessionId != null && displayState?.sessionId === resultChoice.sessionId;
+	const result = matched ? displayState?.result : null;
+	const other = result ? colorOf(result.colors[(displayOrder + 1) % 2]) : null;
+	return [shownColor, other ?? shownColor] as const;
+});
+/** 扉の中の光の帯の色止め。色名のグラデーションと同じく、OKLCHで補間する。 */
+const doorStops = $derived(namePair ? nameGradientStops(nameColor(namePair[0]), nameColor(namePair[1]), 7) : null);
 const sequence = $derived(displayState?.phase === "sequence" ? findSequence(SEQUENCES, displayState.sequenceId) : null);
 const SequenceView = $derived(sequence ? displaySequence(sequence.id) : null);
 const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence, displayState) : 0);
@@ -369,9 +434,20 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	<canvas class="dust" bind:this={dustCanvas}></canvas>
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
-		{#if shownColor && resultChoice}
-			<p class="color-name" style:color={foregroundColor(shownColor)}>{shownColor.name}</p>
+		{#if shownColor && resultChoice && namePair}
+			<div class="result-title">
+				<p class="color-lead">あなたの色は</p>
+				<!-- 鉤括弧も色名と同じグラデーションで塗る。 -->
+				<p class="color-title" style:background-image={nameGradientCss(namePair[0], namePair[1])}>
+					<span>「</span><span class="color-name">{shownColor.name}</span><span>」</span>
+				</p>
+			</div>
 		{/if}
+	</div>
+
+	<!-- 「扉を開く」の後に中央に出す扉。色名と同じ時間で入れ替わる。 -->
+	<div class="door" bind:this={door} style="opacity: 0">
+		<canvas bind:this={doorCanvas}></canvas>
 	</div>
 
 	<div class="veil" bind:this={veil} style="opacity: 0"></div>
@@ -442,6 +518,24 @@ canvas,
 	pointer-events: none;
 	will-change: opacity;
 }
+/* 扉には `will-change` を付けない。ぼかしたcanvasを含む扉を別の層にして見せ方を毎フレーム変えると、現れる途中に
+   扉の上へ崩れた描画が出た（ヘッドレスのChromiumで確認）。 */
+.door {
+	pointer-events: none;
+}
+/* 縦長の扉。左右の中央に置き、下端を画面の下端に揃える。細い明るい灰色の枠と、黒の内側（docs/visual-language.md 3.4.1節）。 */
+.door {
+	position: absolute;
+	left: 50%;
+	bottom: 0;
+	height: 78vh;
+	aspect-ratio: 5 / 12;
+	transform: translateX(-50%);
+	box-sizing: border-box;
+	border: max(1px, 0.16vmin) solid #c8c8c8;
+	background: #000000;
+	overflow: hidden;
+}
 .welcome,
 .description {
 	position: absolute;
@@ -472,15 +566,32 @@ canvas,
 	opacity: 0.55;
 	pointer-events: none;
 }
-.color-name {
+.result-title {
 	position: absolute;
 	inset: 0;
-	margin: 0;
 	display: grid;
 	place-content: center;
+	justify-items: center;
+	gap: 3vmin;
 	text-align: center;
-	font-size: 6vmin;
+}
+.color-lead {
+	margin: 0;
+	font-size: 5vmin;
 	font-weight: 500;
 	letter-spacing: 0.12em;
+	color: #ffffff;
+}
+.color-title {
+	margin: 0;
+	/* 最も長い色名（9文字）も、鉤括弧と字間を含めて画面幅の9割に収まる大きさ。 */
+	font-size: min(14vmin, 7.3vw);
+	white-space: nowrap;
+	font-weight: 500;
+	letter-spacing: 0.12em;
+	/* 結果の二色のグラデーションを文字の形で切り抜く。 */
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
 }
 </style>

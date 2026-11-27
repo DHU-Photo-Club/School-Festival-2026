@@ -1,4 +1,5 @@
-import { backgroundColor, foregroundColor } from "./palette.ts";
+import { COLORS } from "./motion.ts";
+import { backgroundColor, contrastRatio, foregroundColor, nameColor, nameGradientStops, rgbToHex } from "./palette.ts";
 import type { Palette, PaletteId, Photo, Question, Sequence } from "./types.ts";
 import { MAP_CELL_IDS, PALETTE_IDS, QUESTION_KINDS, SEQUENCE_TARGETS, SLIDER_STOP_IDS } from "./types.ts";
 
@@ -6,24 +7,10 @@ import { MAP_CELL_IDS, PALETTE_IDS, QUESTION_KINDS, SEQUENCE_TARGETS, SLIDER_STO
 export const PHOTO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** 質問IDと選択肢IDの形式。refs/handoff の `Q1`、`q1_1` を使えるよう、英数字、ハイフン、アンダースコアにする。 */
 export const QUESTION_ID_PATTERN = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+export { contrastRatio };
+
 /** 色名などの文字と背景の最小コントラスト比（仕様書7.2.2節）。 */
 export const MIN_CONTRAST = 4.5;
-
-function channel(value: number): number {
-	const c = value / 255;
-	return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-}
-
-function luminance(hex: string): number {
-	const n = Number.parseInt(hex.slice(1), 16);
-	return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
-}
-
-/** WCAG 2のコントラスト比。 */
-export function contrastRatio(a: string, b: string): number {
-	const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-	return (hi + 0.05) / (lo + 0.05);
-}
 
 /** 単選択、複数選択、順位つき選択の選択肢の数の範囲。 */
 export const MIN_OPTIONS = 2;
@@ -118,6 +105,17 @@ export function validateExhibitData(input: {
 			errors.push(`パレット ${color.id} の HSL が範囲外です`);
 		if (contrastRatio(foregroundColor(color), backgroundColor(color)) < MIN_CONTRAST)
 			errors.push(`パレット ${color.id} の文字色と背景色のコントラスト比が4.5:1未満です`);
+	}
+	// 展示ディスプレイの結果の色名は、二色のグラデーションで塗り、黒の背景（`COLORS.dark`）に置く。全ての二色の
+	// 組み合わせで、グラデーションの全ての色止めが黒に対して4.5:1以上になることを確かめる。
+	for (const first of palette.colors) {
+		for (const second of palette.colors) {
+			const stops = nameGradientStops(nameColor(first), nameColor(second)).map(rgbToHex);
+			if (stops.some((stop) => contrastRatio(stop, COLORS.dark) < MIN_CONTRAST))
+				errors.push(
+					`パレット ${first.id} と ${second.id} の色名のグラデーションと黒のコントラスト比が4.5:1未満です`,
+				);
+		}
 	}
 
 	const photoIds = new Set<string>();

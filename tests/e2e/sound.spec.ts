@@ -30,7 +30,7 @@ test("サウンド用の画面は全音源を読み込んで鳴らし始め、�
 		await controller.goto("/");
 		await answerAllQuestions(controller);
 		await expect(page.getByTestId("sound-phase")).toHaveText("結果");
-		await controller.getByRole("button", { name: "最初に戻る" }).click();
+		await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
 		await expect(page.getByTestId("sound-phase")).toHaveText("待機");
 		expect(errors).toEqual([]);
 	} finally {

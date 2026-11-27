@@ -24,6 +24,8 @@ const base: DisplayState = {
 	previewColorId: null,
 	phaseStartedAt: 0,
 	phaseEndsAt: null,
+	answeredAt: null,
+	doorOpenedAt: null,
 	revision: 0,
 };
 

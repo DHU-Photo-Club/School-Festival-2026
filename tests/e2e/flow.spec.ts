@@ -9,9 +9,8 @@ import type { Device } from "./fixtures.ts";
 import {
 	answerInput,
 	answerQuestion,
-	backgroundHex,
-	canvasPixel,
 	choiceOption,
+	colorPlanePixel,
 	dragCell,
 	dragSlider,
 	ExhibitHarness,
@@ -195,7 +194,7 @@ async function exploreInput(page: Page, question: Question) {
 }
 
 for (const displayCount of [1, 3]) {
-	test(`展示${displayCount}画面: 開始から結果、最初に戻るまで`, async ({ browser }) => {
+	test(`展示${displayCount}画面: 開始から結果、扉を開いて、強制リセットで待機へ戻るまで`, async ({ browser }) => {
 		test.setTimeout(240_000);
 		const harness = await ExhibitHarness.open(browser);
 		const displays = await harness.openDisplays(displayCount);
@@ -277,12 +276,12 @@ for (const displayCount of [1, 3]) {
 		for (const display of displays)
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
 
-		// iPadに色名と二色を表示し、展示ディスプレイは二色を画面の順に交互に見せる。
+		// iPadは結果開始の時刻に、黒の画面へ二色の破片の束、色名、「扉を開く」を表示する。
+		// 展示ディスプレイは二色を画面の順に交互に見せる。
 		await expect(page.getByText("あなたの色は")).toBeVisible({ timeout: 15_000 });
 		await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name);
-		await expect(page.locator(".palette-names")).toHaveText(
-			`${stubScreenColor(0).name} と ${stubScreenColor(1).name}`,
-		);
+		await expect(page.getByRole("button", { name: "扉を開く" })).toBeVisible();
+		await expect(page.locator("main.screen")).toHaveCSS("background-color", "rgb(0, 0, 0)");
 		for (const [displayOrder, display] of displays.entries()) {
 			await expect(display.page.locator("main.display")).toHaveAttribute(
 				"data-result-color",
@@ -291,25 +290,44 @@ for (const displayCount of [1, 3]) {
 		}
 		await displays[0].page.waitForTimeout(4_500);
 		for (const [displayOrder, display] of displays.entries()) {
-			expect(await canvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(displayOrder)));
+			expect(await colorPlanePixel(display.page, 0.01, 0.01)).toBe("#000000");
+			// 破片はぼかしたまま残る。
+			await expect(display.page.locator("canvas.shards")).toHaveCSS("filter", /blur\(/);
 			// 展示ディスプレイは写真を置かず、色名と破片だけを見せる。
 			await expect(display.page.locator("main.display img")).toHaveCount(0);
 			await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
 		}
 
-		// QRコードと結果URL。結果ページのIDは16桁の16進数。
-		await expect(page.getByRole("img", { name: "結果ページのQRコード" })).toBeVisible();
-		await expect(page.locator(".url")).toHaveText(/^https:\/\/.+\/result\/[0-9a-f]{16}$/);
+		// 「扉を開く」を押すと、展示ディスプレイの中央に扉が下から現れ、色名が消える。iPadは扉への案内に
+		// 切り替わる。QRコードと「最初に戻る」はまだ見せない。
+		for (const display of displays) await expect(display.page.locator(".door")).toHaveCSS("opacity", "0");
+		await page.getByRole("button", { name: "扉を開く" }).click();
+		await expect(page.getByText("あなた色の写真展が完成しました")).toBeVisible();
+		await expect(page.getByText("扉へお進み下さい")).toBeVisible();
+		await expect(page.getByRole("button", { name: "扉を開く" })).toHaveCount(0);
+		await expect(page.locator(".color-name")).toHaveCount(0);
+		await expect(page.locator(".qr")).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "最初に戻る" })).toHaveCount(0);
+		for (const display of displays) {
+			await expect(display.page.locator(".door")).toHaveCSS("opacity", "1", { timeout: 5_000 });
+			// 現れ終えると、扉の全体を見せる（マスクを外す）。
+			await expect(display.page.locator(".door")).toHaveCSS("mask-image", "none");
+			await expect(display.page.locator("main.display > .layer")).toHaveCSS("opacity", "0");
+		}
 
-		// 結果表示中に再読み込みした画面は、演出を再生せず完了状態を表示する。
+		// 結果表示中に再読み込みした画面は、演出を再生せず完了状態を表示する。開いた扉もそのまま見せる。
 		await displays[0].page.reload();
 		await expect(displays[0].page.locator("main.display")).toHaveAttribute(
 			"data-result-color",
 			stubScreenColor(0).id,
 		);
-		expect(await canvasPixel(displays[0].page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(0)));
+		expect(await colorPlanePixel(displays[0].page, 0.01, 0.01)).toBe("#000000");
+		await expect(displays[0].page.locator(".door")).toHaveCSS("opacity", "1");
+		await expect(displays[0].page.locator(".door")).toHaveCSS("mask-image", "none");
+		await expect(displays[0].page.locator("main.display > .layer")).toHaveCSS("opacity", "0");
 
-		await page.getByRole("button", { name: "最初に戻る" }).click();
+		// iPadから待機へ戻る手段はまだないため、管理画面の強制リセットで戻る。
+		await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
 		await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();
 		for (const display of displays)
 			await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "idle");

@@ -54,6 +54,7 @@ describe("接続と配信", () => {
 		expect(Object.keys(display.lastState<DisplayState>()).sort()).toEqual(
 			[
 				"answeredAt",
+				"doorOpenedAt",
 				"phase",
 				"phaseEndsAt",
 				"phaseStartedAt",
@@ -131,6 +132,8 @@ describe("接続と配信", () => {
 		harness.command(light, { name: "start" });
 		harness.command(light, { name: "previewColor", colorId: "sky" });
 		harness.command(admin, { name: "start" });
+		harness.command(admin, { name: "openDoor" });
+		harness.command(display, { name: "openDoor" });
 		expect(harness.core.current()).toMatchObject({ phase: "idle", revision: 0 });
 	});
 

@@ -86,6 +86,7 @@ describe("状態遷移", () => {
 			phaseStartedAt: 10,
 			phaseEndsAt: null,
 			answeredAt: null,
+			doorOpenedAt: null,
 			revision: 0,
 			accepting: true,
 		});
@@ -390,6 +391,31 @@ describe("状態遷移", () => {
 
 	it("result 以外では returnToIdle を拒否する", () => {
 		expect(applyCommand(initialState(0), { name: "returnToIdle" }, context(0)).ok).toBe(false);
+	});
+
+	it("openDoor は result で一度だけ受理して時刻を記録し、idle へ戻ると消す", () => {
+		const result = advance(judged(0), JUDGING_MS);
+		expect(result.doorOpenedAt).toBeNull();
+		const opened = apply(result, { name: "openDoor" }, JUDGING_MS + 5_000);
+		expect(opened).toMatchObject({
+			phase: "result",
+			doorOpenedAt: JUDGING_MS + 5_000,
+			phaseStartedAt: result.phaseStartedAt,
+			phaseEndsAt: result.phaseEndsAt,
+			revision: result.revision + 1,
+		});
+		expect(applyCommand(opened, { name: "openDoor" }, context(JUDGING_MS + 6_000))).toEqual({
+			ok: false,
+			code: "INVALID_PHASE",
+		});
+		expect(apply(opened, { name: "returnToIdle" }).doorOpenedAt).toBeNull();
+		expect(apply(opened, { name: "forceReset" }).doorOpenedAt).toBeNull();
+		expect(advance(opened, JUDGING_MS + RESULT_MS).doorOpenedAt).toBeNull();
+	});
+
+	it("result 以外では openDoor を拒否する", () => {
+		expect(applyCommand(initialState(0), { name: "openDoor" }, context(0)).ok).toBe(false);
+		expect(applyCommand(judged(0), { name: "openDoor" }, context(0)).ok).toBe(false);
 	});
 });
 
