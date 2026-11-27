@@ -1,4 +1,4 @@
-import { GLASS_SETTINGS, SOUND_FILES, SOUND_MIX } from "../../data/sound.ts";
+import { GLASS_SETTINGS, SOUND_FILES, SOUND_MIX, welcomeNarrationGapAfterMs } from "../../data/sound.ts";
 import type { AudioStatus } from "../../shared/protocol.ts";
 import type { SoundCue } from "../../shared/sound.ts";
 import { glassCycle, randomIn } from "../../shared/sound.ts";
@@ -232,8 +232,8 @@ export class SoundEngine {
 			source.connect(gain);
 			source.start(at);
 			sources.push(source);
-			// 02の終了と同時に追加場面へ切り替わるため、導入の02→03だけ間を空けない。
-			at += buffer.duration + (welcome && number === 2 ? 0 : SOUND_MIX.narrationGapMs / 1000);
+			// 企画説明01〜03は連続再生し、04以降や質問内の間隔は保つ。
+			at += buffer.duration + (welcome ? welcomeNarrationGapAfterMs(number) : SOUND_MIX.narrationGapMs) / 1000;
 		}
 		if (sources.length === 0) {
 			gain.disconnect();

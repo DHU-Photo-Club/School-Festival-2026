@@ -99,5 +99,10 @@ export const INTRO_AUDIO = {
 	narration02Ms: 9598.979166666666,
 	narration03Ms: 9125.958333333334,
 } as const;
-export const INTRO_INVITATION_AT_MS = INTRO_AUDIO.narration01Ms + SOUND_MIX.narrationGapMs + INTRO_AUDIO.narration02Ms;
+/** 企画説明01〜03の間は追加の待ち時間なし。03→04など、それ以外の間は維持する。 */
+export function welcomeNarrationGapAfterMs(number: number): number {
+	return number === 1 || number === 2 ? 0 : SOUND_MIX.narrationGapMs;
+}
+export const INTRO_EXPLANATION_AT_MS = INTRO_AUDIO.narration01Ms + welcomeNarrationGapAfterMs(1);
+export const INTRO_INVITATION_AT_MS = INTRO_EXPLANATION_AT_MS + INTRO_AUDIO.narration02Ms + welcomeNarrationGapAfterMs(2);
 export const INTRO_NICKNAME_AT_MS = INTRO_INVITATION_AT_MS + INTRO_AUDIO.narration03Ms;

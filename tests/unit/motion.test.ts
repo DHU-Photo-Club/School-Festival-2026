@@ -26,7 +26,6 @@ import {
 	SHARD_TINT_MS,
 	screenColorId,
 	WELCOME_FADE_MS,
-	WELCOME_FADE_OUT_MS,
 	WELCOME_LEAVE_AT_MS,
 	welcomeOpacity,
 } from "../../src/shared/motion.ts";
@@ -533,10 +532,10 @@ describe("歓迎の文字", () => {
 	});
 
 	it("現れ終えてしばらく見せたあと、説明の文へ入れ替えるために消える", () => {
-		const half = welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS + WELCOME_FADE_OUT_MS / 2, false);
+		const half = welcomeOpacity(intro, T0 + WELCOME_LEAVE_AT_MS + INTRO_DESCRIPTION_FADE_MS / 2, false);
 		expect(half).toBeGreaterThan(0);
 		expect(half).toBeLessThan(1);
-		expect(welcomeOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS, false)).toBe(0);
+		expect(welcomeOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS + 1, false)).toBe(0);
 		expect(welcomeOpacity(intro, T0 + 60_000, false)).toBe(0);
 	});
 
@@ -573,14 +572,16 @@ describe("intro の説明の文", () => {
 		expect(mid).toBeGreaterThan(0);
 		expect(mid).toBeLessThan(1);
 		expect(introDescriptionOpacity(intro, T0 + INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS, false)).toBe(1);
-		expect(introDescriptionOpacity(intro, T0 + INTRO_INVITATION_AT_MS + 1, false)).toBe(0);
+		expect(introDescriptionOpacity(intro, T0 + INTRO_INVITATION_AT_MS + INTRO_DESCRIPTION_FADE_MS + 1, false)).toBe(0);
 	});
 
-	it("歓迎の文字と同時には見えない", () => {
-		for (let t = 0; t <= INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS; t += 100) {
-			const welcome = welcomeOpacity(intro, T0 + t, false);
-			const description = introDescriptionOpacity(intro, T0 + t, false);
-			expect(Math.min(welcome, description)).toBe(0);
+	it("01→02と02→03は音源の境界でクロスフェードし、文字が消えきる待ち時間を作らない", () => {
+		for (const boundary of [INTRO_DESCRIPTION_AT_MS, INTRO_INVITATION_AT_MS]) {
+			for (const offset of [0, 100, 300, 500, 600]) {
+				const now = T0 + boundary + offset;
+				const sum = welcomeOpacity(intro, now, false) + introDescriptionOpacity(intro, now, false) + introInvitationOpacity(intro, now, false);
+				expect(sum).toBeCloseTo(1, 5);
+			}
 		}
 	});
 

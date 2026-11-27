@@ -1,5 +1,5 @@
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
-import { INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
+import { INTRO_EXPLANATION_AT_MS, INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
 import { SETTLE_MARGIN_MS } from "./machine.ts";
 import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
 import { RIPPLE_MS } from "./ripple.ts";
@@ -36,13 +36,13 @@ export const WELCOME_FADE_MS = 3_000;
 /** `intro` を終えて歓迎の文字が消える時間。歓迎の文字から説明の文へ入れ替えるときに歓迎の文字が消える時間にも使う。 */
 export const WELCOME_FADE_OUT_MS = 1_500;
 /** 歓迎の文字が現れ終えてから、説明の文へ入れ替えるために消え始めるまで、そのまま見せる時間。 */
-export const WELCOME_HOLD_MS = 3_000;
+export const WELCOME_HOLD_MS = INTRO_EXPLANATION_AT_MS - WELCOME_FADE_MS;
 /** 歓迎の文字が消え始める時刻（現れ始めからの経過時間）。 */
 export const WELCOME_LEAVE_AT_MS = WELCOME_FADE_MS + WELCOME_HOLD_MS;
-/** 歓迎の文字が消え終え、説明の文が現れ始める時刻（現れ始めからの経過時間）。 */
-export const INTRO_DESCRIPTION_AT_MS = WELCOME_LEAVE_AT_MS + WELCOME_FADE_OUT_MS;
-/** `intro` で説明の文がゆっくり現れる時間。 */
-export const INTRO_DESCRIPTION_FADE_MS = 3_000;
+/** 01の読み上げが終わり、歓迎の文字から説明の文へ切り替え始める時刻（現れ始めからの経過時間）。 */
+export const INTRO_DESCRIPTION_AT_MS = INTRO_EXPLANATION_AT_MS;
+/** 01〜03の文字がクロスフェードする時間。 */
+export const INTRO_DESCRIPTION_FADE_MS = 600;
 /** iPadの `intro` で、説明の文を現れ終えたあとに、進捗バーとニックネームの入力欄が現れる時間。 */
 export const NICKNAME_FADE_IN_MS = 800;
 /** 判定中に灰色の破片を沈める不透明度。 */
@@ -472,7 +472,7 @@ export interface WelcomeLead {
 /**
  * 歓迎の文字の不透明度。`intro` と、その直前に再生するシーケンス `lead` の間だけ見せる。現れ始めるのは
  * シーケンスの開始（シーケンスがなければ `intro` の開始）で、`intro` に入っても途切れずにゆっくり現れ続ける。
- * 現れ終えて `WELCOME_HOLD_MS` 見せたあと、説明の文へ入れ替えるために `WELCOME_FADE_OUT_MS` で消える。
+ * 01の終了で説明の文へクロスフェードする（`INTRO_DESCRIPTION_FADE_MS`）。
  * `intro` の経過時間にシーケンスの定義上の長さを足すので、`intro` の途中から接続した画面も同じ不透明度になる。
  * 見せない段階では0で、`intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
@@ -488,12 +488,12 @@ export function welcomeOpacity(
 	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 1 : 0;
 	return (
 		easeInOutSine(elapsed / WELCOME_FADE_MS) *
-		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS) / WELCOME_FADE_OUT_MS))
+		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS) / INTRO_DESCRIPTION_FADE_MS))
 	);
 }
 
 /**
- * `intro` の説明の文の不透明度。歓迎の文字が消え終えてから（`INTRO_DESCRIPTION_AT_MS`）、`intro` の間だけ
+ * `intro` の説明の文の不透明度。01の音源終了時刻から（`INTRO_DESCRIPTION_AT_MS`）、`intro` の間だけ
  * ゆっくり現れ、ナレーション02が終わるまで見せる。時刻の数え方は `welcomeOpacity` と同じ。
  * `intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
@@ -505,9 +505,9 @@ export function introDescriptionOpacity(
 ): number {
 	if (state.phase !== "intro") return 0;
 	const elapsed = openingElapsed(state, now, lead);
-	if (elapsed >= INTRO_INVITATION_AT_MS) return 0;
-	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 0 : 1;
-	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS);
+	if (reducedMotion) return elapsed >= INTRO_DESCRIPTION_AT_MS && elapsed < INTRO_INVITATION_AT_MS ? 1 : 0;
+	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS) *
+		(1 - easeInOutSine((elapsed - INTRO_INVITATION_AT_MS) / INTRO_DESCRIPTION_FADE_MS));
 }
 
 /** 02の終了で表示し、03の間は白い輪の中央に見せる案内文。 */
@@ -520,7 +520,7 @@ export function introInvitationOpacity(
 	if (state.phase !== "intro") return 0;
 	const elapsed = openingElapsed(state, now, lead) - INTRO_INVITATION_AT_MS;
 	if (elapsed < 0) return 0;
-	return reducedMotion ? 1 : easeInOutSine(elapsed / 800);
+	return reducedMotion ? 1 : easeInOutSine(elapsed / INTRO_DESCRIPTION_FADE_MS);
 }
 
 /**
