@@ -256,5 +256,12 @@ export const ANSWER_ORBIT_BOOST_MS = 3600;
 export function answerOrbitAdvance(elapsed: number): number {
 	const duration = ANSWER_ORBIT_BOOST_MS;
 	const t = Math.max(0, Math.min(duration, elapsed));
-	return 7 * (t / 2 - duration * Math.sin(2 * Math.PI * t / duration) / (4 * Math.PI));
+	// 前半0.72秒で最高速へ、その後2.88秒かけてゆっくり通常速度へ戻す。
+	const attack = duration * 0.2;
+	if (t <= attack) {
+		return 7 * (t / 2 - attack * Math.sin(Math.PI * t / attack) / (2 * Math.PI));
+	}
+	const release = duration - attack;
+	const u = t - attack;
+	return 7 * (attack / 2 + u / 2 + release * Math.sin(Math.PI * u / release) / (2 * Math.PI));
 }

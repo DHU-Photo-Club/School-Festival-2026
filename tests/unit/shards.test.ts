@@ -334,3 +334,11 @@ it("回答の加速は角度を逆戻りさせず、終わると一定の追加�
 	expect(answerOrbitAdvance(1)).toBeLessThan(0.001);
 	expect(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS) - answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS - 1)).toBeLessThan(0.001);
 });
+
+it("回答後早めに最高速へ達し、長い減速で通常速度に戻る", () => {
+	const speed = (t: number) => (answerOrbitAdvance(t + 1) - answerOrbitAdvance(t - 1)) / 2;
+	expect(speed(720)).toBeCloseTo(7, 3);
+	expect(speed(720)).toBeGreaterThan(speed(1800));
+	expect(speed(360)).toBeGreaterThan(speed(3240));
+	expect(speed(1800)).toBeGreaterThan(speed(2800));
+});
