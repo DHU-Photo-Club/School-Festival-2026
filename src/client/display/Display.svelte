@@ -460,7 +460,7 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
 		{#if shownColor && resultChoice}
-			<p class="color-name" style:color={foregroundColor(shownColor)}>{shownColor.name}</p>
+			<p class="color-name" style:color={foregroundColor(shownColor)}><span>{shownColor.name}</span></p>
 		{/if}
 	</div>
 
@@ -626,5 +626,19 @@ canvas,
 	font-size: 6vmin;
 	font-weight: 600;
 	letter-spacing: 0.12em;
+}
+.color-name span {
+	position: relative;
+	isolation: isolate;
+}
+.color-name span::before {
+	content: "";
+	position: absolute;
+	inset: -5vmin -8vmin;
+	z-index: -1;
+	backdrop-filter: blur(18px);
+	-webkit-backdrop-filter: blur(18px);
+	mask-image: radial-gradient(ellipse, #000 35%, transparent 72%);
+	-webkit-mask-image: radial-gradient(ellipse, #000 35%, transparent 72%);
 }
 </style>
