@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { INTRO_AUDIO, INTRO_EXPLANATION_AT_MS, INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS, SOUND_MIX, welcomeNarrationGapAfterMs } from "../../src/data/sound.ts";
+import { INTRO_AUDIO, INTRO_WELCOME_OVERLAP_MS, INTRO_EXPLANATION_AT_MS, INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS, SOUND_MIX, welcomeNarrationGapAfterMs } from "../../src/data/sound.ts";
 
 // 音源差し替えによる導入の同期ずれを検出する。Opusは48kHzで、先頭のpre-skipを除く。
 it("導入の画面時刻が配信する音源01〜03の実尺と一致する", () => {
@@ -23,12 +23,12 @@ it("導入の画面時刻が配信する音源01〜03の実尺と一致する", 
 	}
 });
 
-it("01〜03だけ追加の間隔をなくし、画面の境界も音源終了と一致する", () => {
-	expect(welcomeNarrationGapAfterMs(1)).toBe(0);
+it("01の余韻へ02を重ね、画面の境界も02の再生開始と一致する", () => {
+	expect(welcomeNarrationGapAfterMs(1)).toBe(-1_500);
 	expect(welcomeNarrationGapAfterMs(2)).toBe(0);
 	expect(welcomeNarrationGapAfterMs(3)).toBe(SOUND_MIX.narrationGapMs);
 	expect(welcomeNarrationGapAfterMs(7)).toBe(SOUND_MIX.narrationGapMs);
-	expect(INTRO_EXPLANATION_AT_MS).toBe(INTRO_AUDIO.narration01Ms);
-	expect(INTRO_INVITATION_AT_MS).toBe(INTRO_AUDIO.narration01Ms + INTRO_AUDIO.narration02Ms);
-	expect(INTRO_NICKNAME_AT_MS).toBe(INTRO_AUDIO.narration01Ms + INTRO_AUDIO.narration02Ms + INTRO_AUDIO.narration03Ms);
+	expect(INTRO_EXPLANATION_AT_MS).toBe(INTRO_AUDIO.narration01Ms - INTRO_WELCOME_OVERLAP_MS);
+	expect(INTRO_INVITATION_AT_MS).toBe(INTRO_AUDIO.narration01Ms - INTRO_WELCOME_OVERLAP_MS + INTRO_AUDIO.narration02Ms);
+	expect(INTRO_NICKNAME_AT_MS).toBe(INTRO_AUDIO.narration01Ms - INTRO_WELCOME_OVERLAP_MS + INTRO_AUDIO.narration02Ms + INTRO_AUDIO.narration03Ms);
 });
