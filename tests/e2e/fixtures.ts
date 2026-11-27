@@ -6,7 +6,7 @@ import { PALETTE } from "../../src/data/palette.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import { STUB_COLORS, STUB_NAME } from "../../src/server/ai/judge.ts";
-import { foregroundColor, paletteColor } from "../../src/shared/palette.ts";
+import { backgroundColor, foregroundColor, paletteColor } from "../../src/shared/palette.ts";
 import { selectPhotos } from "../../src/shared/photo-selection.ts";
 import type { PaletteColor, PaletteId, Question, ScreenRole } from "../../src/shared/types.ts";
 import { MAP_SIZE } from "../../src/shared/types.ts";
@@ -36,6 +36,9 @@ export function palette(id: PaletteId): PaletteColor {
 
 /** 画面 `displayOrder` が仮の結果で見せる色（二色を画面の順に交互に割り当てる）。 */
 export const stubScreenColor = (displayOrder: number) => palette(STUB_COLORS[displayOrder % 2]);
+
+/** canvasの画素と比べられる形（大文字の `#RRGGBB`）の背景色。 */
+export const backgroundHex = (color: PaletteColor) => backgroundColor(color).toUpperCase();
 
 /** CSSの計算値と比べられる形（`rgb(r, g, b)`）の文字色。 */
 export function foregroundRgb(color: PaletteColor): string {
@@ -263,7 +266,7 @@ export async function receivedResultId(page: Page): Promise<string> {
 export async function enterNickname(page: Page, nickname = "テスト"): Promise<void> {
 	// 展示ディスプレイが説明の文を現れ終えるまで、入力欄は出ない。
 	const field = page.getByRole("textbox", { name: "ニックネームを入力して下さい" });
-	await field.waitFor({ timeout: 20_000 });
+	await field.waitFor({ timeout: 30_000 });
 	await field.fill(nickname);
 	await page.getByRole("button", { name: "進む" }).click();
 }
@@ -475,4 +478,17 @@ export async function controllableNetwork(context: BrowserContext) {
 			for (const socket of mocked.splice(0)) await socket.close();
 		},
 	};
+}
+
+/** 破片やブルームを含めず、背景描画の色だけを読む。 */
+export async function backgroundCanvasPixel(page: Page, x: number, y: number): Promise<string> {
+	return page.locator("main.display > canvas").first().evaluate((source, [rx, ry]) => {
+		const canvas = source as HTMLCanvasElement;
+		const copy = document.createElement("canvas");
+		copy.width = canvas.width; copy.height = canvas.height;
+		const context = copy.getContext("2d")!;
+		context.drawImage(canvas, 0, 0);
+		const rgba = context.getImageData(Math.min(canvas.width - 1, Math.floor(canvas.width * rx)), Math.min(canvas.height - 1, Math.floor(canvas.height * ry)), 1, 1).data;
+		return `#${Array.from(rgba.slice(0, 3)).map((v) => v.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+	}, [x, y]);
 }

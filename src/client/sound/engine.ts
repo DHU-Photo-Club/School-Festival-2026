@@ -1,4 +1,4 @@
-import { GLASS_SETTINGS, SOUND_FILES, SOUND_MIX } from "../../data/sound.ts";
+import { GLASS_SETTINGS, SOUND_FILES, SOUND_MIX, welcomeNarrationGapAfterMs } from "../../data/sound.ts";
 import type { AudioStatus } from "../../shared/protocol.ts";
 import type { SoundCue } from "../../shared/sound.ts";
 import { glassCycle, randomIn } from "../../shared/sound.ts";
@@ -205,7 +205,7 @@ export class SoundEngine {
 			case "narration": {
 				const fading = this.stopNarration();
 				const delay = NARRATION_DELAY_MS[cue.scene] / 1000;
-				this.playNarration(cue.numbers, this.context.currentTime + Math.max(fading, delay));
+				this.playNarration(cue.numbers, this.context.currentTime + Math.max(fading, delay), cue.scene === "welcome");
 				return;
 			}
 		}
@@ -220,7 +220,7 @@ export class SoundEngine {
 	}
 
 	/** `numbers` のナレーションを `startAt` から間をあけて順に読み、その間はBGMとガラス音を下げる。 */
-	private playNarration(numbers: readonly number[], startAt: number): void {
+	private playNarration(numbers: readonly number[], startAt: number, welcome = false): void {
 		const gain = new GainNode(this.context, { gain: 1 });
 		gain.connect(this.gains.narration);
 		const sources: AudioBufferSourceNode[] = [];
@@ -232,7 +232,8 @@ export class SoundEngine {
 			source.connect(gain);
 			source.start(at);
 			sources.push(source);
-			at += buffer.duration + SOUND_MIX.narrationGapMs / 1000;
+			// 企画説明01〜03は連続再生し、04以降や質問内の間隔は保つ。
+			at += buffer.duration + (welcome ? welcomeNarrationGapAfterMs(number) : SOUND_MIX.narrationGapMs) / 1000;
 		}
 		if (sources.length === 0) {
 			gain.disconnect();

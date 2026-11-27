@@ -48,15 +48,15 @@ test("展示ディスプレイのループ result は、色名を出してから
 	const jade = PALETTE.colors.find((color) => color.id === "jade")?.name ?? "";
 	await openAtCycleStart(page, "/display/1?loop=result&color=jade", "result");
 	await expect(page.locator(".lab-hud")).toContainText("result / jade");
-	await expect(page.locator(".color-title")).toContainText(jade, { timeout: 15_000 });
-	await expect(page.locator(".color-title")).toHaveCount(0, { timeout: 15_000 });
+	await expect(page.locator(".color-name")).toContainText(jade, { timeout: 15_000 });
+	await expect(page.locator(".color-name")).toHaveCount(0, { timeout: 15_000 });
 });
 
 test("展示ディスプレイのループ door は、色名が出た結果から始めて扉を開く", async ({ page }) => {
 	await openAtCycleStart(page, "/display/1?loop=door&color=jade", "door");
 	await expect(page.locator(".display")).toHaveAttribute("data-phase", "result");
 	// 判定を経ずに、色名を初めから見せる。
-	await expect(page.locator(".color-title")).toBeVisible({ timeout: 1_000 });
+	await expect(page.locator(".color-name")).toBeVisible({ timeout: 1_000 });
 	await expect
 		.poll(() => page.locator(".door").evaluate((element) => Number(getComputedStyle(element).opacity)), {
 			timeout: 8_000,

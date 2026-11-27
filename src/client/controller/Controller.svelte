@@ -362,18 +362,22 @@ $effect(() => {
 {:else}
 	<main
 		class="screen"
+		class:blank-intro={pending === "start" || (exhibit.phase === "sequence" && exhibit.sequenceId === introLead?.id) || (exhibit.phase === "intro" && !nicknameReady)}
 		data-phase={exhibit.phase}
-		data-result-started={resultStarted}
-		style:background={resultStarted && resultColors
-			? doorOpened
-				? backgroundColor(resultColors[0])
-				: "#000000"
-			: undefined}
-		style:color={resultStarted && resultColors
-			? doorOpened
-				? foregroundColor(resultColors[0])
-				: "#ffffff"
-			: undefined}
+		style:background={exhibit.phase === "judging"
+			? "#000000"
+			: resultStarted && resultColors
+				? doorOpened
+					? backgroundColor(resultColors[0])
+					: "#000000"
+				: undefined}
+		style:color={exhibit.phase === "judging"
+			? "#ffffff"
+			: resultStarted && resultColors
+				? doorOpened
+					? foregroundColor(resultColors[0])
+					: "#ffffff"
+				: undefined}
 	>
 		{#if exhibit.phase === "idle" && !exhibit.accepting}
 			<section class="center stack top">
@@ -382,7 +386,7 @@ $effect(() => {
 				<p class="muted">しばらくお待ちください</p>
 			</section>
 		{:else if exhibit.phase === "idle"}
-			<section class="center top welcome">
+			<section class="center top welcome" out:fade={{ duration: reducedMotion ? 0 : 600, easing: sineInOut }}>
 				<h1>{EXHIBIT.welcomeMessage}</h1>
 				<button
 					type="button"
@@ -632,6 +636,27 @@ $effect(() => {
 {/if}
 
 <style>
+.screen.blank-intro {
+	background: #000;
+	transition: background-color 600ms ease-in-out;
+}
+.screen.blank-intro > * {
+	visibility: hidden;
+	pointer-events: none;
+}
+/* 開始画面だけは退場フェードが終わるまで見せ、背景と一緒に黒へ沈める。 */
+.screen.blank-intro > .welcome {
+	visibility: visible;
+	position: absolute;
+	inset: 0;
+	padding: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+	.screen.blank-intro {
+		transition: none;
+	}
+}
+
 .screen {
 	position: relative;
 	min-height: 100dvh;

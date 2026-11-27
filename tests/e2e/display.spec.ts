@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { DISPLAY_QUESTION_LINES } from "../../src/data/display-questions.ts";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import {
 	answerQuestion,
+	backgroundHex,
+	backgroundCanvasPixel,
 	bloomHasGraphics,
 	canvasDigest,
 	canvasHasGraphics,
@@ -36,6 +39,8 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	await expect(welcome).toHaveText("あなた色写真展へようこそ");
 	await expect(welcome).toHaveCSS("opacity", "0");
 	await ipad.page.getByRole("button", { name: "はじめる" }).click();
+	await expect(ipad.page.locator("main.screen")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+	await expect(ipad.page.getByRole("heading")).toHaveCount(0);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "intro");
 	await expect(welcome).toHaveCSS("opacity", "1", { timeout: 6_000 });
 	// 説明の文を現れ終えるまで、iPadにニックネームの入力欄は出ない。
@@ -52,10 +57,26 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	// 説明の文が現れている途中でも、入力欄は出ない。現れ終えると出る。
 	await expect(nicknameField).toHaveCount(0);
 	await expect(description).toHaveCSS("opacity", "1", { timeout: 10_000 });
-	await expect(nicknameField).toBeVisible({ timeout: 10_000 });
+	await expect(ipad.page.locator("main.screen")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+	await expect(display.page.locator(".description")).toHaveCSS("opacity", "0", { timeout: 10_000 });
+	await expect(display.page.locator(".invitation")).toHaveCSS("opacity", "1", { timeout: 3_000 });
+	await expect(display.page.locator(".invitation span")).toHaveText(["さあ、あなただけの色を", "見つけましょう"]);
+	await expect(nicknameField).toHaveCount(0);
+	await expect(nicknameField).toBeVisible({ timeout: 15_000 });
+	await expect(ipad.page.locator("main.screen")).not.toHaveClass(/blank-intro/);
+	const nicknamePrompt = display.page.locator(".nickname-prompt:not(.question-prompt)");
+	await expect(nicknamePrompt).toHaveCSS("opacity", "1");
+	await expect(nicknamePrompt).toHaveText("ニックネームを入力して下さい");
+	await expect(nicknamePrompt.locator("p span")).toHaveText(["ニックネームを", "入力して下さい"]);
+	expect(await nicknamePrompt.evaluate((node) => getComputedStyle(node).fontSize)).toBe(
+		await display.page.locator(".invitation").evaluate((node) => getComputedStyle(node).fontSize),
+	);
+	await expect(nicknamePrompt.locator("svg")).toBeVisible();
+	await expect(display.page.locator(".invitation")).toHaveCSS("opacity", "0");
 	await enterNickname(ipad.page);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "question");
 	await expect(description).toHaveCSS("opacity", "0", { timeout: 4_000 });
+	await expect(nicknamePrompt).toHaveCSS("opacity", "0", { timeout: 4_000 });
 	await display.context.close();
 	await ipad.context.close();
 	await harness.close();
@@ -116,15 +137,17 @@ test("reduced-motion でも全状態が色面の切り替えと静止した構�
 	}
 
 	// 判定: 即時に黒（判定は最短10秒なので、その間に黒になることを確かめる）。
-	// 画面中央は輪の内側で、破片のブルームも届かない（中央から最も近い破片まで、広い段のぼかし幅の約5倍ある）。
+	// 小リングの光が中央にも届くため、背景レイヤー自体の暗転を確かめる。
 	await expect
-		.poll(() => canvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
+		.poll(() => backgroundCanvasPixel(displays[0].page, 0.5, 0.5), { timeout: 1_800, intervals: [20] })
 		.toBe("#000000");
 	await expect(page.locator(".color-name")).toHaveText(STUB_RESULT.name, { timeout: 15_000 });
 
-	// 結果: 背景は黒のまま、散らばってぼけた破片の上に色名を一回だけ出す。画面ごとに二色を交互に見せる。
+	// 結果: 動きを減らす設定では深い背景色と静止した散らばりへ切り替わる。
 	for (const [displayOrder, display] of displays.entries()) {
-		await expect.poll(() => colorPlanePixel(display.page, 0.01, 0.01), { timeout: 5_000 }).toBe("#000000");
+		await expect
+			.poll(() => backgroundCanvasPixel(display.page, 0.01, 0.01), { timeout: 5_000 })
+			.toBe(backgroundHex(stubScreenColor(displayOrder)));
 		// 結果でも破片とブルームは残る。
 		await expect.poll(() => bloomHasGraphics(display.page)).toBe(true);
 		await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
@@ -152,4 +175,44 @@ test("開いた台数の展示ディスプレイで動き、管理画面に接�
 	}
 	for (const display of displays) await display.context.close();
 	await harness.close();
+});
+
+test("展示に各質問文を表示し、戻る・途中接続・判定への移行にも追従する", async ({ browser }) => {
+	const harness = await ExhibitHarness.open(browser);
+	const [display] = await harness.openDisplays(1);
+	const ipad = await harness.openDevice("controller");
+	try {
+		await ipad.page.getByRole("button", { name: "はじめる" }).click();
+		await enterNickname(ipad.page);
+		for (const [index, question] of QUESTIONS.entries()) {
+			await expectQuestion(ipad.page, index);
+			await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
+			await expect(display.page.locator(".question-prompt svg")).toHaveCount(0);
+			if (index === 1) {
+				await ipad.page.getByRole("button", { name: "戻る", exact: true }).click();
+				await expectQuestion(ipad.page, 0);
+				await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[QUESTIONS[0].id]]);
+				await ipad.page.getByRole("button", { name: "次へ", exact: true }).click();
+				await expectQuestion(ipad.page, 1);
+				await expect(display.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
+				const late = await harness.openDevice("display");
+				await expect(late.page.locator(".question-prompt p span")).toHaveText([...DISPLAY_QUESTION_LINES[question.id]]);
+				await late.context.close();
+			}
+			await answerQuestion(ipad.page, question, index * 3);
+			await ipad.page.getByRole("button", { name: "次へ", exact: true }).click();
+			if (index < QUESTIONS.length - 1) {
+				// リングの縮小完了（450ms）に合わせて更新され、以前の音声待ち（1660ms）を待たない。
+				await expect(display.page.locator(".question-prompt p span")).toHaveText(
+					[...DISPLAY_QUESTION_LINES[QUESTIONS[index + 1].id]], { timeout: 1_000 },
+				);
+			}
+		}
+		await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "judging");
+		await expect(display.page.locator(".question-prompt")).toHaveCount(0);
+	} finally {
+		await display.context.close();
+		await ipad.context.close();
+		await harness.close();
+	}
 });

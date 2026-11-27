@@ -9,8 +9,9 @@ import type { Device } from "./fixtures.ts";
 import {
 	answerInput,
 	answerQuestion,
+	backgroundCanvasPixel,
+	backgroundHex,
 	choiceOption,
-	colorPlanePixel,
 	dragCell,
 	dragSlider,
 	ExhibitHarness,
@@ -290,9 +291,8 @@ for (const displayCount of [1, 3]) {
 		}
 		await displays[0].page.waitForTimeout(4_500);
 		for (const [displayOrder, display] of displays.entries()) {
-			expect(await colorPlanePixel(display.page, 0.01, 0.01)).toBe("#000000");
-			// 破片はぼかしたまま残る。
-			await expect(display.page.locator("canvas.shards")).toHaveCSS("filter", /blur\(/);
+			// 放射状のバーストが終わると、背景はその画面の結果色の背景色になる。
+			expect(await backgroundCanvasPixel(display.page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(displayOrder)));
 			// 展示ディスプレイは写真を置かず、色名と破片だけを見せる。
 			await expect(display.page.locator("main.display img")).toHaveCount(0);
 			await expect(display.page.locator(".color-name")).toHaveText(stubScreenColor(displayOrder).name);
@@ -322,7 +322,7 @@ for (const displayCount of [1, 3]) {
 			"data-result-color",
 			stubScreenColor(0).id,
 		);
-		expect(await colorPlanePixel(displays[0].page, 0.01, 0.01)).toBe("#000000");
+		expect(await backgroundCanvasPixel(displays[0].page, 0.01, 0.01)).toBe(backgroundHex(stubScreenColor(0)));
 		await expect(displays[0].page.locator(".door")).toHaveCSS("opacity", "1");
 		await expect(displays[0].page.locator(".door")).toHaveCSS("mask-image", "none");
 		await expect(displays[0].page.locator("main.display > .layer")).toHaveCSS("opacity", "0");

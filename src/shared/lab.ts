@@ -3,15 +3,10 @@
 // 配信と同じ範囲に絞って受け取り、診断用iPadはそのまま受け取る。
 // どちらも本番と同じ `onState` を通るので、調整した見た目がそのまま本番になる。
 
+import { INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
+import { FINALE_SETTLE_MS } from "./finale.ts";
 import { JUDGING_MS, RESULT_MS } from "./machine.ts";
-import {
-	ANSWER_PULSE_IN_MS,
-	INTRO_DESCRIPTION_AT_MS,
-	INTRO_DESCRIPTION_FADE_MS,
-	RESULT_BLUR_MS,
-	RESULT_NAME_FADE_MS,
-	RESULT_SCATTER_MS,
-} from "./motion.ts";
+import { ANSWER_PULSE_IN_MS } from "./motion.ts";
 import { RIPPLE_MS } from "./ripple.ts";
 import type { ExhibitState, PaletteId, SessionResult } from "./types.ts";
 import { PALETTE_IDS } from "./types.ts";
@@ -23,7 +18,7 @@ export type LabLoop = (typeof LAB_LOOPS)[number];
 /** 各演出が何を繰り返すか（HUDと使い方の案内に出す）。 */
 export const LAB_LOOP_NOTES: Readonly<Record<LabLoop, string>> = {
 	idle: "質問中の輪から待機の小さな輪へ縮む",
-	opening: "待機 → シーケンス → intro（ようこそ、説明）→ 質問中の灰色の輪",
+	opening: "待機 → シーケンス → intro（ようこそ、説明、色を見つける案内）→ 質問中の灰色の輪",
 	answer: "回答の縮みと波紋",
 	judging: "最終問の回答 → 暗転と塵 → 色づき → 結果",
 	result: "色づき → 破片の散らばり → 色名 → 待機へ戻る",
@@ -78,10 +73,10 @@ export interface LabContext {
 	questionCount: number;
 }
 
-/** 結果を見せている時間。破片の散らばり（2.4秒）とぼかし（2.0秒）、色名が現れ終えたあと、しばらく眺められる長さ。 */
+/** 結果を見せている時間。集合した破片の放射バーストと色名が現れ終えたあと、しばらく眺められる長さ。 */
 const RESULT_HOLD_MS = 7_000;
-/** 結果開始から、破片が散らばり終えてぼかし終え、色名が現れ終えるまでの長さ。 */
-const RESULT_SETTLED_MS = RESULT_SCATTER_MS + Math.max(RESULT_BLUR_MS, RESULT_NAME_FADE_MS);
+/** 結果開始から、放射バーストが終わり、色名が現れ終えるまでの長さ。 */
+const RESULT_SETTLED_MS = FINALE_SETTLE_MS;
 /** `door` で、色名が出た結果を見せてから「扉を開く」を押すまでの長さ。 */
 const DOOR_AT_MS = 2_500;
 /** 扉を見せている長さ。扉の中の光の揺れを確かめられる長さ。 */
@@ -145,9 +140,9 @@ export function labCycle(options: LabOptions, context: LabContext): LabCycle {
 		}
 		case "opening": {
 			const leadMs = context.lead?.durationMs ?? 0;
-			// `intro` は、説明の文が現れ終えて少し見せるまで。
+			// `intro` は、ナレーション03を読み終えて少し見せるまで。
 			const introAt = IDLE_HOLD_MS + leadMs;
-			const introMs = INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS + 3_000 - leadMs;
+			const introMs = INTRO_NICKNAME_AT_MS + 3_000 - leadMs;
 			const questionAt = introAt + Math.max(1_000, introMs);
 			const steps: LabStep[] = [state(0, { phase: "idle" })];
 			if (context.lead) {

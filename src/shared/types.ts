@@ -132,7 +132,11 @@ export type DisplayState = Pick<
 	| "answeredAt"
 	| "doorOpenedAt"
 	| "revision"
-> & { result: DisplayResult | null };
+> & {
+	result: DisplayResult | null;
+	/** 表示する質問の番号。旧データ・描画調整用の台本では省略できる。回答内容は含まない。 */
+	questionIndex?: number | null;
+};
 
 /**
  * サウンド用（`/sound`）へ配信する状態。展示ディスプレイと同じ範囲に、質問ごとのナレーションと回答SEを選ぶための

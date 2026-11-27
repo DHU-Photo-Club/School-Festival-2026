@@ -122,6 +122,7 @@ export function toDisplayState(state: ExhibitState): DisplayState {
 		sessionId: state.sessionId,
 		phase: state.phase,
 		sequenceId: state.sequenceId,
+		questionIndex: state.questionIndex ?? null,
 		result: state.result
 			? { name: state.result.name, colors: state.result.colors, photoIds: state.result.photoIds }
 			: null,

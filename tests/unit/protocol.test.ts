@@ -93,6 +93,7 @@ describe("toDisplayState", () => {
 			sessionId: null,
 			phase: "idle",
 			sequenceId: null,
+			questionIndex: 2,
 			result: null,
 			previewColorId: null,
 			phaseStartedAt: 1,

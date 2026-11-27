@@ -1,6 +1,8 @@
+import { finaleColors, gatheringOrbit, FINALE_SHRINK_MS, FINALE_BURST_MS, FINALE_SETTLE_MS } from "./finale.ts";
 // 展示ディスプレイとiPadの演出を、補正済みサーバー時刻と受信状態だけから決める（docs/visual-language.md）。
+import { INTRO_EXPLANATION_AT_MS, INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
 import { SETTLE_MARGIN_MS } from "./machine.ts";
-import { baseColor, paletteColor } from "./palette.ts";
+import { backgroundColor, baseColor, paletteColor } from "./palette.ts";
 import { RIPPLE_MS } from "./ripple.ts";
 import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
 
@@ -12,7 +14,7 @@ export const JUDGING_FADE_MS = 1_200;
 /** 待機中の輪の半径（質問中の輪に対する倍率）。破片の大きさは変えない。 */
 export const SHARD_IDLE_SCALE = 0.3;
 /** 待機中に見せる破片の割合（質問中の全枚数に対する比）。 */
-export const SHARD_IDLE_DENSITY = 0.3;
+export const SHARD_IDLE_DENSITY = 0.42;
 /** 輪が大きさや枚数を変える時間（待機へ縮む、`intro` の輪へ広がる、`intro` から質問中の輪へ戻る）。 */
 export const SHARD_SCALE_MS = 3_000;
 /** `intro` の破片の散らばり（`shardPoses` の `spread`）。輪の内側を空けたまま、画面いっぱいに散らばる。 */
@@ -35,13 +37,13 @@ export const WELCOME_FADE_MS = 3_000;
 /** `intro` を終えて歓迎の文字が消える時間。歓迎の文字から説明の文へ入れ替えるときに歓迎の文字が消える時間にも使う。 */
 export const WELCOME_FADE_OUT_MS = 1_500;
 /** 歓迎の文字が現れ終えてから、説明の文へ入れ替えるために消え始めるまで、そのまま見せる時間。 */
-export const WELCOME_HOLD_MS = 3_000;
+export const WELCOME_HOLD_MS = INTRO_EXPLANATION_AT_MS - WELCOME_FADE_MS;
 /** 歓迎の文字が消え始める時刻（現れ始めからの経過時間）。 */
 export const WELCOME_LEAVE_AT_MS = WELCOME_FADE_MS + WELCOME_HOLD_MS;
-/** 歓迎の文字が消え終え、説明の文が現れ始める時刻（現れ始めからの経過時間）。 */
-export const INTRO_DESCRIPTION_AT_MS = WELCOME_LEAVE_AT_MS + WELCOME_FADE_OUT_MS;
-/** `intro` で説明の文がゆっくり現れる時間。 */
-export const INTRO_DESCRIPTION_FADE_MS = 3_000;
+/** 01の読み上げが終わり、歓迎の文字から説明の文へ切り替え始める時刻（現れ始めからの経過時間）。 */
+export const INTRO_DESCRIPTION_AT_MS = INTRO_EXPLANATION_AT_MS;
+/** 01〜03の文字がフェードアウトしてから入れ替える時間。 */
+export const INTRO_DESCRIPTION_FADE_MS = 300;
 /** iPadの `intro` で、説明の文を現れ終えたあとに、進捗バーとニックネームの入力欄が現れる時間。 */
 export const NICKNAME_FADE_IN_MS = 800;
 /** 判定中に灰色の破片を沈める不透明度。 */
@@ -139,7 +141,7 @@ export type Primitive =
 	 */
 	| {
 			type: "bloom";
-			shape: "line" | "band" | "frame";
+			shape: "line" | "band" | "frame" | "circle";
 			x: number;
 			y: number;
 			dx: number;
@@ -180,6 +182,10 @@ export interface ShardLayer {
 	 * 散らばるときは散らばりに合わせて公転を減速させ、散らばり終えると止める。
 	 */
 	orbit: number;
+	/** 待機用の接線方向への整形。1が待機、0または省略なら既存の破片。 */
+	idleFit?: number;
+	orbitExtra?: number;
+	burst?: { startAt: number; elapsed: number };
 }
 
 /** 質問の回答のあと、輪が戻り始める瞬間から広がる波紋（`rippleRings` に渡す経過時間）。 */
@@ -194,6 +200,8 @@ export interface DustLayer {
 	elapsed: number;
 	/** 全体の不透明度の倍率（0〜1）。結果の色づきに合わせて消えていく。 */
 	fade: number;
+	colors?: readonly string[];
+	burstElapsed?: number;
 }
 
 export interface Scene {
@@ -241,6 +249,7 @@ export interface SceneInput {
 	lead?: WelcomeLead | null;
 	/** 今の質問へ `intro` から入ったか。`intro` の大きな輪から質問中の輪へ戻す。 */
 	questionFromIntro?: boolean;
+	judgingStartedAt?: number;
 }
 
 /**
@@ -302,6 +311,7 @@ function shardLayer(
 		fill?: number;
 		blur?: number;
 		orbit?: number;
+		idleFit?: number;
 	} = {},
 ): ShardLayer {
 	const colors = options.colors ?? null;
@@ -311,47 +321,26 @@ function shardLayer(
 		colors,
 		tint: colors ? clamp01(options.tint ?? 1) : 0,
 		intensity: clamp01(intensity),
-		scale: (options.scale ?? 1) * answerPulseScale(input.state, input.now, input.reducedMotion),
+		scale: (options.scale ?? 1) * (input.state.phase === "judging" ? 1 : answerPulseScale(input.state, input.now, input.reducedMotion)),
 		density: options.density ?? 1,
 		size: options.size ?? 1,
 		spread: options.spread ?? 0,
 		fill: options.fill ?? 0,
 		blur: options.blur ?? 0,
 		orbit: input.reducedMotion ? 0 : (options.orbit ?? time),
+		...(options.idleFit ? { idleFit: clamp01(options.idleFit) } : {}),
 	};
 }
 
-/**
- * 結果で散らばる破片の公転の時刻。公転の速さに `1 - fill`（`fill` は `easeInOutSine`）をかけて積分した時刻で、
- * 結果開始の時刻から途切れずに減速し、散らばり終えると結果開始から `RESULT_SCATTER_MS / 2` 進んだ時刻で止まる。
- */
-function scatterOrbit(startAt: number, elapsed: number): number {
-	const u = clamp01(elapsed / RESULT_SCATTER_MS);
-	return startAt + RESULT_SCATTER_MS * (u / 2 + Math.sin(Math.PI * u) / (2 * Math.PI));
-}
-
-/**
- * 判定中の破片。灰色のまま沈め、結果の二色が決まると結果開始までに二色へ色づける（docs/visual-language.md 3.3節）。
- * 色づき始める時刻は `phaseEndsAt - SHARD_TINT_MS` とする。結果の配信時刻は全画面で共有できないが、
- * サーバーは通常、配信から `SETTLE_MARGIN_MS` 以上あとを結果開始にするため、この時刻には全画面に結果が届いている。
- * `judging` の期限の直前に結果が決まると間隔が短くなり、色づきは届いた時点の進み具合から始まる。
- */
+/** 最終回答は最初の縮みを保ち、そのままカラフルな待機サイズへ縮小する。 */
 function judgingShards(input: SceneInput): ShardLayer {
-	const { state, now, reducedMotion } = input;
-	const colors = resultShardColors(input);
-	// 暗転を終えてから色づける。`judgingMaxMs` が `JUDGING_MS` より短い設定でも暗転と重ねない。
-	const tintAt =
-		state.phaseEndsAt === null
-			? null
-			: Math.max(state.phaseStartedAt + JUDGING_FADE_MS, state.phaseEndsAt - SHARD_TINT_MS);
-	const tintProgress = colors && tintAt !== null ? (now - tintAt) / SHARD_TINT_MS : 0;
-	if (reducedMotion) {
-		const tinted = tintProgress >= 0 && colors !== null;
-		return shardLayer(input, tinted ? 1 : JUDGING_SHARD_DIM, { colors: tinted ? colors : null });
-	}
-	const tint = easeInOutSine(tintProgress);
-	const dim = lerp(1, JUDGING_SHARD_DIM, easeInSine((now - state.phaseStartedAt) / JUDGING_FADE_MS));
-	return shardLayer(input, lerp(dim, 1, tint), { colors, tint });
+	const elapsed = input.now - input.state.phaseStartedAt;
+	const p = input.reducedMotion ? 1 : easeInOutSine(elapsed / FINALE_SHRINK_MS);
+	return { ...shardLayer(input, 1, {
+		colors: finaleColors(input.reducedMotion ? 0 : elapsed, input.colors.map(baseColor), true), tint: p,
+		scale: lerp(1, SHARD_IDLE_SCALE, p),
+		density: lerp(1, SHARD_IDLE_DENSITY, p), idleFit: p,
+	}), orbitExtra: input.reducedMotion ? 0 : gatheringOrbit(elapsed) };
 }
 
 /**
@@ -375,7 +364,7 @@ export function resultFormPrimitives(
 	// 最も遠い点までの距離に、ぼけ幅と揺れ幅を足した位置まで広げる。
 	const reachTo = (extent: number) => lerp(seed, extent + BLOOM_FEATHER_END * m * (1 + BLOOM_WARP), p);
 	const bloom = (
-		shape: "line" | "band" | "frame",
+		shape: "line" | "band" | "frame" | "circle",
 		x: number,
 		y: number,
 		extent: number,
@@ -428,7 +417,7 @@ export function resultFormPrimitives(
 }
 
 function resultScene(input: SceneInput): BaseScene {
-	const { state, now, colors, reducedMotion, displayOrder } = input;
+	const { state, now, colors, reducedMotion, width, height, displayOrder } = input;
 	const colorId = screenColorId(state.result, displayOrder);
 	const color = paletteColor(colors, colorId);
 	if (!color || !colorId) {
@@ -440,37 +429,24 @@ function resultScene(input: SceneInput): BaseScene {
 			animating: !reducedMotion,
 		};
 	}
-	// `judging` の `phaseEndsAt` と `result` の `phaseStartedAt` は同じ時刻。
 	const startAt = state.phase === "judging" ? (state.phaseEndsAt ?? now) : state.phaseStartedAt;
-	const elapsed = now - startAt;
-	// 結果が出た後も破片は残り、結果の二色で動き続ける。結果開始の瞬間から、輪の内側も含めて画面全体へ散らばり、
-	// 散らばり終えると徐々にぼける。背景は判定中の黒のまま変えず、色は破片と色名だけで見せる。
-	const settled = input.resultMode === "complete" || reducedMotion;
-	const shards = shardLayer(input, 1, {
-		colors: resultShardColors(input),
-		fill: settled ? 1 : easeInOutSine(elapsed / RESULT_SCATTER_MS),
-		blur: settled ? 1 : easeInOutSine((elapsed - RESULT_SCATTER_MS) / RESULT_BLUR_MS),
-		orbit: scatterOrbit(startAt, settled ? RESULT_SCATTER_MS : elapsed),
-	});
-	const primitives: Primitive[] = [{ type: "fill", color: COLORS.dark }];
-	const complete: BaseScene = { primitives, shards, resultLayer: 1, veil: null, animating: !reducedMotion };
-	if (input.resultMode === "complete") return complete;
-
-	if (reducedMotion) {
-		if (elapsed < RESULT_REDUCED_HOLD_MS) return { ...complete, resultLayer: 0, animating: true };
-		return complete;
+	const elapsed = input.resultMode === "complete" ? Math.max(FINALE_SETTLE_MS, now - startAt) : Math.max(0, now - startAt);
+	const gatherDuration = startAt - (input.judgingStartedAt ?? (state.phase === "judging" ? state.phaseStartedAt : startAt - 10000));
+	const shards = { ...shardLayer(input, 1, { colors: finaleColors(0, resultShardColors(input) ?? [], false) }),
+		orbitExtra: gatheringOrbit(gatherDuration), burst: { startAt, elapsed: reducedMotion ? FINALE_SETTLE_MS : elapsed } };
+	if (reducedMotion || input.resultMode === "complete" || elapsed >= FINALE_SETTLE_MS) {
+		return { primitives: [{ type: "fill", color: backgroundColor(color) }], shards, resultLayer: 1, veil: null, animating: !reducedMotion };
 	}
-
-	// 色名は破片が散らばり終えてから現れ始める。色名とぼかしが終わってから完了状態へ切り替える
-	// （切り替えのフレームで描画が跳ばないようにする）。今の値では、ぼかしが終わる結果開始から4.4秒のほうが遅い。
-	if (elapsed >= RESULT_SCATTER_MS + Math.max(RESULT_NAME_FADE_MS, RESULT_BLUR_MS)) return complete;
-	return {
-		primitives,
-		shards,
-		resultLayer: easeInOutSine((elapsed - RESULT_SCATTER_MS) / RESULT_NAME_FADE_MS),
-		veil: null,
-		animating: true,
-	};
+	const p = easeOutCubic(elapsed / FINALE_BURST_MS);
+	const feather = Math.min(width, height) * 0.12;
+	const primitives: Primitive[] = [{ type: "fill", color: COLORS.dark }];
+	if (p < 1) primitives.push({ type: "bloom", shape: "circle", x: width / 2, y: height / 2, dx: 0, dy: 0,
+		reach: lerp(-feather * 1.6, Math.hypot(width, height) / 2 + feather * 1.6, p), feather, color: baseColor(color), drift: 0 });
+	else {
+		primitives.push({ type: "fill", color: baseColor(color) });
+		primitives.push({ type: "fill", color: backgroundColor(color), alpha: easeInOutSine((elapsed - FINALE_BURST_MS) / 1000) });
+	}
+	return { primitives, shards, resultLayer: easeInOutSine((elapsed - 1200) / 300), veil: null, animating: true };
 }
 
 /** `intro` の直前に再生するシーケンス。歓迎の文字はこのシーケンスの開始から現れ始める。 */
@@ -482,7 +458,7 @@ export interface WelcomeLead {
 /**
  * 歓迎の文字の不透明度。`intro` と、その直前に再生するシーケンス `lead` の間だけ見せる。現れ始めるのは
  * シーケンスの開始（シーケンスがなければ `intro` の開始）で、`intro` に入っても途切れずにゆっくり現れ続ける。
- * 現れ終えて `WELCOME_HOLD_MS` 見せたあと、説明の文へ入れ替えるために `WELCOME_FADE_OUT_MS` で消える。
+ * 01の終了で説明の文へフェードアウトしてから入れ替える（`INTRO_DESCRIPTION_FADE_MS`）。
  * `intro` の経過時間にシーケンスの定義上の長さを足すので、`intro` の途中から接続した画面も同じ不透明度になる。
  * 見せない段階では0で、`intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
@@ -498,13 +474,13 @@ export function welcomeOpacity(
 	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 1 : 0;
 	return (
 		easeInOutSine(elapsed / WELCOME_FADE_MS) *
-		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS) / WELCOME_FADE_OUT_MS))
+		(1 - easeInOutSine((elapsed - WELCOME_LEAVE_AT_MS + INTRO_DESCRIPTION_FADE_MS) / INTRO_DESCRIPTION_FADE_MS))
 	);
 }
 
 /**
- * `intro` の説明の文の不透明度。歓迎の文字が消え終えてから（`INTRO_DESCRIPTION_AT_MS`）、`intro` の間だけ
- * ゆっくり現れ、`intro` を終えるまで見せ続ける。時刻の数え方は `welcomeOpacity` と同じ。
+ * `intro` の説明の文の不透明度。01の音源終了時刻から（`INTRO_DESCRIPTION_AT_MS`）、`intro` の間だけ
+ * ゆっくり現れ、ナレーション02が終わるまで見せる。時刻の数え方は `welcomeOpacity` と同じ。
  * `intro` を終えて文字が消えるときの変化（`WELCOME_FADE_OUT_MS`）は描画側のトランジションで付ける。
  */
 export function introDescriptionOpacity(
@@ -515,14 +491,44 @@ export function introDescriptionOpacity(
 ): number {
 	if (state.phase !== "intro") return 0;
 	const elapsed = openingElapsed(state, now, lead);
-	if (reducedMotion) return elapsed < WELCOME_LEAVE_AT_MS ? 0 : 1;
-	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS);
+	if (reducedMotion) return elapsed >= INTRO_DESCRIPTION_AT_MS && elapsed < INTRO_INVITATION_AT_MS ? 1 : 0;
+	return easeInOutSine((elapsed - INTRO_DESCRIPTION_AT_MS) / INTRO_DESCRIPTION_FADE_MS) *
+		(1 - easeInOutSine((elapsed - INTRO_INVITATION_AT_MS + INTRO_DESCRIPTION_FADE_MS) / INTRO_DESCRIPTION_FADE_MS));
+}
+
+/** 02の終了で表示し、03の間は白い輪の中央に見せる案内文。 */
+export function introInvitationOpacity(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	if (state.phase !== "intro") return 0;
+	const elapsed = openingElapsed(state, now, lead) - INTRO_INVITATION_AT_MS;
+	if (elapsed < 0) return 0;
+	const leave = openingElapsed(state, now, lead) - INTRO_NICKNAME_AT_MS;
+	if (reducedMotion) return leave < 0 ? 1 : 0;
+	return easeInOutSine(elapsed / INTRO_DESCRIPTION_FADE_MS) *
+		(1 - easeInOutSine((leave + INTRO_DESCRIPTION_FADE_MS) / INTRO_DESCRIPTION_FADE_MS));
+}
+
+/** 04の読み上げ開始から、展示のニックネーム入力案内を見せる。 */
+export function introNicknameOpacity(
+	state: Pick<DisplayState, "phase" | "phaseStartedAt" | "sequenceId">,
+	now: number,
+	reducedMotion: boolean,
+	lead: WelcomeLead | null = null,
+): number {
+	if (state.phase !== "intro") return 0;
+	const elapsed = openingElapsed(state, now, lead) - INTRO_NICKNAME_AT_MS;
+	if (elapsed < 0) return 0;
+	return reducedMotion ? 1 : easeInOutSine(elapsed / INTRO_DESCRIPTION_FADE_MS);
 }
 
 /**
- * `intro` の説明の文が現れ終えるまでの残り時間（ミリ秒）。0以下なら現れ終えている。iPadは、これが0以下に
+ * 導入ナレーション04が始まるまでの残り時間（ミリ秒）。0以下なら案内を始めている。iPadは、これが0以下に
  * なるまでニックネームの入力欄を出さない。時刻の数え方は `welcomeOpacity` と同じ。
- * reduced-motionでは、説明の文が即時に現れる時刻（`WELCOME_LEAVE_AT_MS`）までの残り時間。
+ * reduced-motionでも音声を省略しないため、同じ長さを待つ。
  */
 export function introDescriptionRemainingMs(
 	state: Pick<DisplayState, "phaseStartedAt">,
@@ -530,7 +536,7 @@ export function introDescriptionRemainingMs(
 	reducedMotion: boolean,
 	lead: WelcomeLead | null = null,
 ): number {
-	const doneAt = reducedMotion ? WELCOME_LEAVE_AT_MS : INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS;
+	const doneAt = INTRO_NICKNAME_AT_MS;
 	return doneAt - openingElapsed({ ...state, phase: "intro" }, now, lead);
 }
 
@@ -553,29 +559,24 @@ function openingElapsed(
  */
 function openingShards(input: SceneInput): ShardLayer {
 	const { state, now, reducedMotion } = input;
-	const p = reducedMotion ? 1 : easeInOutSine(openingElapsed(state, now, input.lead ?? null) / SHARD_SCALE_MS);
+	const elapsed = openingElapsed(state, now, input.lead ?? null);
+	const p = reducedMotion ? 1 : easeInOutSine(elapsed / SHARD_SCALE_MS);
+	const returnToRing = elapsed < INTRO_INVITATION_AT_MS ? 0
+		: reducedMotion ? 1 : easeInOutSine((elapsed - INTRO_INVITATION_AT_MS) / SHARD_SCALE_MS);
 	return shardLayer(input, 1, {
 		colors: input.colors.map(baseColor),
-		tint: p,
+		tint: p * (1 - returnToRing),
 		scale: lerp(SHARD_IDLE_SCALE, 1, p),
 		density: lerp(SHARD_IDLE_DENSITY, 1, p),
-		size: lerp(1, SHARD_OPENING_SIZE, p),
-		spread: lerp(0, SHARD_OPENING_SPREAD, p),
+		idleFit: 1 - p,
+		size: lerp(1, SHARD_OPENING_SIZE, p * (1 - returnToRing)),
+		spread: lerp(0, SHARD_OPENING_SPREAD, p * (1 - returnToRing)),
 	});
 }
 
-/** `intro` から質問へ移った直後の破片。`intro` の色づいて散らばった破片が、質問中の灰色の輪へ戻る。 */
+/** 追加の案内場面で白い輪へ戻っているため、質問でも同じ輪を保つ。 */
 function questionShards(input: SceneInput): ShardLayer {
-	const { state, now, reducedMotion } = input;
-	const p =
-		reducedMotion || !input.questionFromIntro ? 1 : easeInOutSine((now - state.phaseStartedAt) / SHARD_SCALE_MS);
-	if (p >= 1) return shardLayer(input, 1);
-	return shardLayer(input, 1, {
-		colors: input.colors.map(baseColor),
-		tint: 1 - p,
-		size: lerp(SHARD_OPENING_SIZE, 1, p),
-		spread: lerp(SHARD_OPENING_SPREAD, 0, p),
-	});
+	return shardLayer(input, 1);
 }
 
 /** 波紋以外の描画内容。 */
@@ -614,20 +615,19 @@ function rippleLayer(input: SceneInput): RippleLayer | null {
 	return elapsed >= 0 && elapsed < RIPPLE_MS ? { elapsed } : null;
 }
 
-/**
- * 判定中の塵。結果の二色が決まる前から、画面の外から中心へ集まり、少しずつ数と濃さを増す。結果の色づきが始まる
- * 時刻（`phaseEndsAt - SHARD_TINT_MS`）からは、色づきに合わせて消える。reduced-motionでは出さない。
- * 結果の開始時刻を過ぎたフレームでは出さない。
- */
+/** 集約した粒子を結果開始時の位置から爆発へ引き継ぐ。 */
 function dustLayer(input: SceneInput): DustLayer | null {
 	const { state, now, reducedMotion } = input;
-	if (reducedMotion || state.phase !== "judging") return null;
-	if (state.phaseEndsAt !== null && now >= state.phaseEndsAt) return null;
-	const elapsed = now - state.phaseStartedAt;
-	if (elapsed <= 0) return null;
-	const fade =
-		state.phaseEndsAt === null ? 1 : 1 - easeInOutSine((now - (state.phaseEndsAt - SHARD_TINT_MS)) / SHARD_TINT_MS);
-	return { elapsed, fade };
+	if (reducedMotion) return null;
+	const startAt = state.phase === "judging" ? state.phaseEndsAt : state.phase === "result" ? state.phaseStartedAt : null;
+	const burstElapsed = startAt === null ? -1 : now - startAt;
+	if (startAt !== null && burstElapsed >= 0 && state.result) {
+		if (input.resultMode === "complete" || burstElapsed >= FINALE_SETTLE_MS) return null;
+		return { elapsed: startAt - (input.judgingStartedAt ?? (state.phase === "judging" ? state.phaseStartedAt : startAt - 10000)), fade: 1,
+			colors: resultShardColors(input) ?? [], burstElapsed };
+	}
+	if (state.phase !== "judging" || now <= state.phaseStartedAt) return null;
+	return { elapsed: Math.max(0, now - state.phaseStartedAt), fade: 1, colors: input.colors.map(baseColor) };
 }
 
 /** 一フレームの描画内容を求める。同じ入力には同じ結果を返す。 */
@@ -693,6 +693,7 @@ function computeBaseScene(input: SceneInput): BaseScene {
 			shards: shardLayer(input, 1, {
 				scale: lerp(1, SHARD_IDLE_SCALE, shrink),
 				density: lerp(1, SHARD_IDLE_DENSITY, shrink),
+				idleFit: shrink,
 			}),
 			resultLayer: 0,
 			veil: veiled
@@ -714,7 +715,7 @@ function computeBaseScene(input: SceneInput): BaseScene {
 	}
 
 	// `judging`。結果開始時刻を過ぎたフレームからは結果を描く（仕様書7.2.4節）。
-	if (state.phase === "judging" && (state.phaseEndsAt === null || now < state.phaseEndsAt)) {
+	if (state.phase === "judging" && (state.phaseEndsAt === null || now < state.phaseEndsAt || !state.result)) {
 		if (reducedMotion) {
 			return {
 				primitives: [{ type: "fill", color: COLORS.dark }],
