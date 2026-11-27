@@ -155,6 +155,8 @@ function ringPoses(
 	density: number,
 	size: number,
 	spread: number,
+	idleFit: number,
+	orbitAdvance: number,
 ): ShardPose[] {
 	// 破片の大きさは通常の輪の半径で決め、`scale` で縮めるのは輪の半径だけにする。
 	const unit = Math.min(width, height) * SHARD_RING_RADIUS;
@@ -164,7 +166,7 @@ function ringPoses(
 	const cx = width / 2;
 	const cy = height / 2;
 	return RING.map((item, index) => {
-		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
+		const theta = item.a + ((((elapsed + orbitAdvance) * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
 		// 輪の中の位置（内側の縁0〜外側の縁1）に応じて、散らばるときの距離を決める。
 		const rank = (item.b - 1 + RING_SPREAD) / (2 * RING_SPREAD);
 		const b = item.b + (1 + rank * SHARD_SCATTER_DEPTH - item.b) * spread;
@@ -172,6 +174,20 @@ function ringPoses(
 		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
 		const [x, y] = [cx + Math.cos(theta) * r, cy + Math.sin(theta) * r];
 		const base = pose(item, x, y, rotation, shardUnit);
+		if (idleFit > 0) {
+			// 位置・自転・呼吸の計算はそのまま。接線方向を残し、外へ突き出す幅だけ抑える。
+			const fit = clamp01(idleFit);
+			const radialScale = 1 - 0.3 * fit;
+			const rx = Math.cos(theta);
+			const ry = Math.sin(theta);
+			base.vertices = base.vertices.map(([vx, vy]): Point => {
+				const dx = vx - x;
+				const dy = vy - y;
+				const radial = (dx * rx + dy * ry) * radialScale;
+				const tangent = -dx * ry + dy * rx;
+				return [x + radial * rx - tangent * ry, y + radial * ry + tangent * rx];
+			});
+		}
 		const visible = clamp01((density * (RING_COUNT + DENSITY_FADE_COUNT) - index) / DENSITY_FADE_COUNT);
 		return { ...base, alpha: base.alpha * visible };
 	});
@@ -191,9 +207,11 @@ export function shardPoses(
 		density = 1,
 		size = 1,
 		spread = 0,
-	}: { scale?: number; density?: number; size?: number; spread?: number } = {},
+		idleFit = 0,
+		orbitAdvance = 0,
+	}: { scale?: number; density?: number; size?: number; spread?: number; idleFit?: number; orbitAdvance?: number } = {},
 ): ShardPose[] {
-	return ringPoses(width, height, elapsed, scale, density, size, spread);
+	return ringPoses(width, height, elapsed, scale, density, size, spread, idleFit, orbitAdvance);
 }
 
 /** 0〜255の三成分の色。 */
@@ -231,4 +249,19 @@ export function shardColor(
 export function shardOutlineColor(fill: Rgb): [number, number, number] {
 	const lift = (value: number) => value + (255 - value) * OUTLINE_LIGHTEN;
 	return [lift(fill[0]), lift(fill[1]), lift(fill[2])];
+}
+
+/** 回答後3.6秒だけ回転をふわっと加速する積分値。終了後も角度を保ち、逆戻りさせない。 */
+export const ANSWER_ORBIT_BOOST_MS = 3600;
+export function answerOrbitAdvance(elapsed: number): number {
+	const duration = ANSWER_ORBIT_BOOST_MS;
+	const t = Math.max(0, Math.min(duration, elapsed));
+	// 前半0.72秒で最高速へ、その後2.88秒かけてゆっくり通常速度へ戻す。
+	const attack = duration * 0.2;
+	if (t <= attack) {
+		return 7 * (t / 2 - attack * Math.sin(Math.PI * t / attack) / (2 * Math.PI));
+	}
+	const release = duration - attack;
+	const u = t - attack;
+	return 7 * (attack / 2 + u / 2 + release * Math.sin(Math.PI * u / release) / (2 * Math.PI));
 }

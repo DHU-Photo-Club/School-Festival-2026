@@ -9,7 +9,7 @@ export interface SceneRenderer {
 /** 一フレームで重ねる描画内容の上限。`computeScene` は最大3つ（暗転、結果色のにじみ2つ）を返す。 */
 const MAX_LAYERS = 4;
 const KIND = { fill: 0, bloom: 1 } as const;
-const SHAPE = { line: 0, band: 1, frame: 2 } as const;
+const SHAPE = { line: 0, band: 1, frame: 2, circle: 3 } as const;
 
 const VERTEX_SHADER = `#version 300 es
 in vec2 a_position;
@@ -71,6 +71,8 @@ vec4 bloom(vec2 p, vec2 q, vec4 color, vec4 g, vec4 k) {
     d = dot(p - g.xy, g.zw);
   } else if (shape == 1) {
     d = abs(dot(p - g.xy, g.zw));
+  } else if (shape == 3) {
+    d = length(p - g.xy);
   } else {
     // 四辺からの距離の最小値をなめらかに取り、隅から中心へ向かう折れ目を出さない（最小値以下になる）。
     float k = 0.05 * min(u_size.x, u_size.y);
@@ -216,7 +218,14 @@ function drawBloom2d(context: CanvasRenderingContext2D, primitive: Extract<Primi
 		gradient.addColorStop(1, clear);
 		return gradient;
 	};
-	if (primitive.shape === "line") {
+	if (primitive.shape === "circle") {
+		if (far <= 0) return;
+		const gradient = context.createRadialGradient(x, y, Math.max(0, near), x, y, Math.max(0.001, far));
+		gradient.addColorStop(0, color);
+		gradient.addColorStop(1, clear);
+		context.fillStyle = gradient;
+		context.fillRect(0, 0, width, height);
+	} else if (primitive.shape === "line") {
 		context.fillStyle = fade(x, y, dx, dy);
 		context.fillRect(0, 0, width, height);
 	} else if (primitive.shape === "band") {

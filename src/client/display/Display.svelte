@@ -1,24 +1,32 @@
 <script lang="ts">
-import { onDestroy, onMount } from "svelte";
+import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
+import { onDestroy, onMount, untrack } from "svelte";
+import type { TransitionConfig } from "svelte/transition";
+import { DISPLAY_QUESTION_LINES } from "../../data/display-questions.ts";
+import { QUESTIONS } from "../../data/questions.ts";
 import { EXHIBIT } from "../../data/exhibit.ts";
 import { PALETTE } from "../../data/palette.ts";
 import { SEQUENCES } from "../../data/sequences.ts";
-import { dustPoses } from "../../shared/dust.ts";
+import { FINALE_BURST_MS, burstShards, finaleDust } from "../../shared/finale.ts";
 import { LAB_LOOP_NOTES, type LabCycle, labCycle, parseLab } from "../../shared/lab.ts";
 import type { Scene, ShardLayer } from "../../shared/motion.ts";
 import {
+	ANSWER_PULSE_IN_MS,
 	computeScene,
 	IDLE_RETURN_MS,
 	introDescriptionOpacity,
+	introInvitationOpacity,
+	introNicknameOpacity,
 	screenColorId,
-	WELCOME_FADE_OUT_MS,
 	welcomeOpacity,
 } from "../../shared/motion.ts";
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
 import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
-import { shardPoses } from "../../shared/shards.ts";
+import { ANSWER_ORBIT_BOOST_MS, answerOrbitAdvance, shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId } from "../../shared/types.ts";
+import { ambientPoses } from "../../shared/ambient.ts";
+import { AmbientSpeech } from "../../shared/ambient-speech.ts";
 import { drawDust } from "../common/dust.ts";
 import { drawRipple } from "../common/ripple.ts";
 import { drawShardBloom, drawShards, hexToRgb, SHARD_BLOOM_SCALE } from "../common/shards.ts";
@@ -45,11 +53,15 @@ let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
 let bloomCanvas = $state<HTMLCanvasElement>();
 let rippleCanvas = $state<HTMLCanvasElement>();
+let ambientCanvas = $state<HTMLCanvasElement>();
+const ambientSpeech = new AmbientSpeech();
 let dustCanvas = $state<HTMLCanvasElement>();
 let resultLayer = $state<HTMLDivElement>();
 let veil = $state<HTMLDivElement>();
 let welcome = $state<HTMLParagraphElement>();
 let description = $state<HTMLParagraphElement>();
+let invitation = $state<HTMLParagraphElement>();
+let nicknamePrompt = $state<HTMLDivElement>();
 
 let client: RealtimeClient | null = null;
 let renderer: SceneRenderer | null = null;
@@ -62,6 +74,7 @@ let dustDrawn = false;
 let animateSessionId: string | null = null;
 /** 今の質問へ `intro` から入ったか。`intro` の大きく色づいた輪から、質問中の灰色の輪へ戻すために使う。 */
 let questionFromIntro = false;
+let questionTextSwitchAt = $state<number | null>(null);
 let previousBackground: string | null = null;
 let stopWatching = () => {};
 
@@ -113,8 +126,32 @@ function onKey(event: KeyboardEvent) {
 
 const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
+let completedOrbitAdvance = 0;
+let orbitAnswers: number[] = [];
+let judgingStartedAt: number | undefined;
 function onState(next: DisplayState) {
+	if (next.phase === "judging") judgingStartedAt = next.phaseStartedAt;
+	if (next.phase === "idle" || next.phase === "question") judgingStartedAt = undefined;
 	const previous = displayState;
+	ambientSpeech.update(previous, next, serverTime(performance.now()));
+	// ニックネーム送信も、展示の描画上では他の回答と同じ反応にする。
+	if (next.phase === "question" && next.questionIndex === 0 && next.answeredAt === null) {
+		next = { ...next, answeredAt: next.phaseStartedAt };
+	}
+	if (next.answeredAt !== null && next.answeredAt !== previous?.answeredAt && (next.phase === "question" || next.phase === "judging")) {
+		const now = serverTime(performance.now());
+		completedOrbitAdvance += orbitAnswers.filter((at) => now - at >= ANSWER_ORBIT_BOOST_MS).reduce((sum, at) => sum + answerOrbitAdvance(now - at), 0);
+		orbitAnswers = orbitAnswers.filter((at) => now - at < ANSWER_ORBIT_BOOST_MS);
+		orbitAnswers.push(next.answeredAt);
+	}
+	if (next.phase === "question" && previous?.phase === "question" && next.questionIndex !== previous.questionIndex) {
+		// 「戻る」には縮小がないため短いフェード、回答による前進にはリングの縮小完了時刻を使う。
+		questionTextSwitchAt = next.answeredAt !== previous.answeredAt && next.answeredAt !== null
+			? next.answeredAt + ANSWER_PULSE_IN_MS
+			: serverTime(performance.now()) + 300;
+	} else if (next.phase !== "question") {
+		questionTextSwitchAt = null;
+	}
 	if (next.phase === "idle") {
 		if (previous && previous.phase !== "idle" && resultChoice) {
 			const color = colorOf(resultChoice.colorId);
@@ -156,6 +193,10 @@ function resize() {
 		rippleCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
 		rippleCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
 	}
+	if (ambientCanvas) {
+		ambientCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
+		ambientCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+	}
 	if (dustCanvas) {
 		dustCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
 		dustCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
@@ -178,15 +219,19 @@ function resize() {
 function drawShardLayer(layer: ShardLayer) {
 	const context = shardCanvas?.getContext("2d");
 	if (!context) return;
+	if (shardCanvas) shardCanvas.dataset.mode = layer.burst ? (layer.burst.elapsed < FINALE_BURST_MS ? "burst" : "dispersed") : layer.orbitExtra !== undefined ? "gather" : "normal";
 	const key = JSON.stringify(layer);
 	if (key === lastShards) return;
 	lastShards = key;
 	const bloom = bloomCanvas?.getContext("2d");
-	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, {
+	const orbitAdvance = (reducedMotion ? 0 : completedOrbitAdvance + orbitAnswers.reduce((sum, at) => sum + answerOrbitAdvance(layer.time - at), 0)) + (layer.orbitExtra ?? 0);
+	const poses = layer.burst ? burstShards(window.innerWidth, window.innerHeight, layer.burst.startAt, layer.burst.elapsed, orbitAdvance) : shardPoses(window.innerWidth, window.innerHeight, layer.time, {
 		scale: layer.scale,
 		density: layer.density,
 		size: layer.size,
 		spread: layer.spread,
+		idleFit: layer.idleFit,
+		orbitAdvance,
 	});
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
@@ -224,7 +269,7 @@ function drawDustLayer(layer: Scene["dust"]) {
 		return;
 	}
 	dustDrawn = true;
-	drawDust(context, dustPoses(layer.elapsed, window.innerWidth, window.innerHeight, layer.fade), shardRatio());
+	drawDust(context, finaleDust(window.innerWidth, window.innerHeight, layer.elapsed, layer.colors ?? [], layer.burstElapsed ?? null), shardRatio());
 }
 
 /** 結果表示でこの画面が見せる色を決める。 */
@@ -233,14 +278,22 @@ function chooseResult(sessionId: string | null, colorId: PaletteId) {
 }
 
 /** 値が変わったときだけ書き換え、変化のないフレームでスタイルの再計算を起こさない。 */
-function setStyle(element: HTMLElement | undefined, property: "opacity" | "backgroundColor", value: string) {
+function setStyle(element: HTMLElement | undefined, property: "opacity" | "backgroundColor" | "filter", value: string) {
 	if (element && element.style[property] !== value) element.style[property] = value;
 }
 
 const opacity = (value: number) => String(Math.round(value * 1000) / 1000);
+const textBlur = (value: number) => `blur(${reducedMotion ? 0 : Math.round((1 - value) * 80) / 10}px)`;
+function fadeBlur(_node: Element): TransitionConfig {
+	return {
+		duration: reducedMotion ? 0 : 300,
+		css: (t) => `opacity: ${t}; filter: blur(${(1 - t) * 8}px)`,
+	};
+}
 
 function applyLayers(scene: Scene) {
 	setStyle(resultLayer, "opacity", opacity(scene.resultLayer));
+	setStyle(resultLayer, "filter", textBlur(scene.resultLayer));
 	setStyle(veil, "opacity", opacity(scene.veil?.opacity ?? 0));
 	if (scene.veil) setStyle(veil, "backgroundColor", scene.veil.color);
 }
@@ -255,14 +308,29 @@ function applyWelcome(state: DisplayState, now: number) {
 	const visiblePhase =
 		state.phase === "intro" ||
 		(state.phase === "sequence" && welcomeLead !== null && state.sequenceId === welcomeLead.id);
-	const transition = visiblePhase || reducedMotion ? "none" : `opacity ${WELCOME_FADE_OUT_MS}ms ease-in-out`;
+	const transition = visiblePhase || reducedMotion ? "none" : "opacity 200ms ease-in-out, filter 200ms ease-in-out";
 	if (welcome.style.transition !== transition) welcome.style.transition = transition;
 	setStyle(welcome, "opacity", opacity(shown));
+	setStyle(welcome, "filter", textBlur(shown));
 	// 説明の文は `intro` の間だけ見せる。`intro` を終えるときの消える変化は歓迎の文字と同じ。
 	if (!description) return;
 	const descriptionTransition = state.phase === "intro" || reducedMotion ? "none" : transition;
 	if (description.style.transition !== descriptionTransition) description.style.transition = descriptionTransition;
-	setStyle(description, "opacity", opacity(introDescriptionOpacity(state, now, reducedMotion, welcomeLead)));
+	const value = introDescriptionOpacity(state, now, reducedMotion, welcomeLead);
+	setStyle(description, "opacity", opacity(value));
+	setStyle(description, "filter", textBlur(value));
+	if (invitation) {
+		if (invitation.style.transition !== descriptionTransition) invitation.style.transition = descriptionTransition;
+		const value = introInvitationOpacity(state, now, reducedMotion, welcomeLead);
+		setStyle(invitation, "opacity", opacity(value));
+		setStyle(invitation, "filter", textBlur(value));
+	}
+	if (nicknamePrompt) {
+		if (nicknamePrompt.style.transition !== descriptionTransition) nicknamePrompt.style.transition = descriptionTransition;
+		const value = introNicknameOpacity(state, now, reducedMotion, welcomeLead);
+		setStyle(nicknamePrompt, "opacity", opacity(value));
+		setStyle(nicknamePrompt, "filter", textBlur(value));
+	}
 }
 
 function tick(timestamp: number) {
@@ -311,6 +379,7 @@ function tick(timestamp: number) {
 		previousBackground,
 		lead: welcomeLead,
 		questionFromIntro,
+		judgingStartedAt,
 	});
 	applyLayers(scene);
 	applyWelcome(state, now);
@@ -323,6 +392,8 @@ function tick(timestamp: number) {
 	drawShardLayer(scene.shards);
 	drawRippleLayer(scene.ripple);
 	drawDustLayer(scene.dust);
+	const ambientContext = ambientCanvas?.getContext("2d");
+	if (ambientContext) drawDust(ambientContext, ambientPoses(window.innerWidth, window.innerHeight, now, state, scene, ambientSpeech.level(now), reducedMotion), shardRatio());
 }
 
 onMount(() => {
@@ -350,6 +421,36 @@ onDestroy(() => {
 	window.removeEventListener("keydown", onKey);
 });
 
+// 回答時はサーバーの回答時刻から、リングが縮み切る瞬間に文字を入れ替える。
+let questionPromptIndex = $state<number | null>(null);
+let questionTextLeaving = $state(false);
+let questionTextFadeOutMs = $state(ANSWER_PULSE_IN_MS);
+$effect(() => {
+	const index = displayState?.questionIndex ?? null;
+	const phase = displayState?.phase;
+	const switchAt = questionTextSwitchAt;
+	const previous = untrack(() => questionPromptIndex);
+	if (phase !== "question" || index === null) {
+		questionPromptIndex = null;
+		questionTextLeaving = false;
+		return;
+	}
+	if (previous === index) return;
+	const now = serverTime(performance.now());
+	// 最初の質問ではニックネーム案内のフェードアウトを待つ。
+	const remaining = reducedMotion ? 0 : previous === null ? Math.max(0, (displayState?.answeredAt ?? now) + ANSWER_PULSE_IN_MS - now) : Math.max(0, (switchAt ?? now + 300) - now);
+	questionTextFadeOutMs = remaining;
+	questionTextLeaving = true;
+	const timer = window.setTimeout(() => {
+		questionPromptIndex = index;
+		questionTextLeaving = false;
+	}, remaining);
+	return () => window.clearTimeout(timer);
+});
+const questionPromptLines = $derived(
+	questionPromptIndex === null ? null : DISPLAY_QUESTION_LINES[QUESTIONS[questionPromptIndex]?.id ?? ""] ?? null,
+);
+
 const shownColor = $derived(resultChoice ? colorOf(resultChoice.colorId) : null);
 const sequence = $derived(displayState?.phase === "sequence" ? findSequence(SEQUENCES, displayState.sequenceId) : null);
 const SequenceView = $derived(sequence ? displaySequence(sequence.id) : null);
@@ -367,10 +468,11 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 	<canvas class="shards" bind:this={shardCanvas}></canvas>
 	<canvas class="ripple" bind:this={rippleCanvas}></canvas>
 	<canvas class="dust" bind:this={dustCanvas}></canvas>
+	<canvas class="ambient" bind:this={ambientCanvas}></canvas>
 
 	<div class="layer" bind:this={resultLayer} style="opacity: 0">
 		{#if shownColor && resultChoice}
-			<p class="color-name" style:color={foregroundColor(shownColor)}>{shownColor.name}</p>
+			<p class="color-name" style:color={foregroundColor(shownColor)}><span>{shownColor.name}</span></p>
 		{/if}
 	</div>
 
@@ -396,6 +498,26 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 		{/each}
 	</p>
 
+	<p class="invitation" bind:this={invitation} style="opacity: 0">
+		<span>さあ、あなただけの色を</span>
+		<span>見つけましょう</span>
+	</p>
+
+	<div class="nickname-prompt" bind:this={nicknamePrompt} style="opacity: 0">
+		<p><span>ニックネームを</span><span>入力して下さい</span></p>
+		<ArrowDownIcon class="nickname-arrow" aria-hidden="true" />
+	</div>
+
+	{#if displayState?.phase === "question" && questionPromptLines}
+			<div class="nickname-prompt question-prompt"
+				style:opacity={questionTextLeaving ? 0 : 1}
+				style:filter={textBlur(questionTextLeaving ? 0 : 1)}
+				style:transition={reducedMotion ? "none" : `opacity ${questionTextLeaving ? questionTextFadeOutMs : 300}ms ease-in-out, filter ${questionTextLeaving ? questionTextFadeOutMs : 300}ms ease-in-out`}
+				transition:fadeBlur>
+				<p>{#each questionPromptLines as line}<span>{line}</span>{/each}</p>
+			</div>
+	{/if}
+
 	{#if lab && labHudVisible}
 		<p class="lab-hud" data-lab={lab.loop}>{labHud}<br>{LAB_LOOP_NOTES[lab.loop]}（h で隠す）</p>
 	{/if}
@@ -403,6 +525,8 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 <style>
 .display {
+	font-family: "MOBO-SemiBold", var(--font);
+	font-weight: 600;
 	position: fixed;
 	inset: 0;
 	overflow: hidden;
@@ -430,6 +554,7 @@ canvas,
 	mix-blend-mode: hard-light;
 }
 .ripple,
+.ambient,
 .dust {
 	pointer-events: none;
 }
@@ -440,25 +565,58 @@ canvas,
 .layer,
 .veil {
 	pointer-events: none;
-	will-change: opacity;
+	will-change: opacity, filter;
 }
 .welcome,
-.description {
+.description,
+.invitation {
 	position: absolute;
 	inset: 0;
 	margin: 0;
 	display: grid;
 	place-content: center;
 	text-align: center;
-	font-size: 5vmin;
-	font-weight: 500;
+	font-size: 4.2vmin;
+	font-weight: 600;
 	letter-spacing: 0.12em;
 	color: #e8e6e3;
 	pointer-events: none;
-	will-change: opacity;
+	will-change: opacity, filter;
 }
-.description {
-	line-height: 1.9;
+.description,
+.invitation {
+	line-height: 1.45;
+}
+.nickname-prompt {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	grid-template-rows: 1fr auto 1fr;
+	justify-items: center;
+	text-align: center;
+	font-size: 4.2vmin;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	line-height: 1.5;
+	color: #e8e6e3;
+	pointer-events: none;
+	will-change: opacity, filter;
+}
+.nickname-prompt p {
+	grid-row: 2;
+	margin: 0;
+	line-height: 1.45;
+}
+.nickname-prompt p span {
+	display: block;
+}
+.nickname-prompt :global(.nickname-arrow) {
+	grid-row: 3;
+	align-self: start;
+	margin-top: 4vmin;
+	width: 3.6vmin;
+	height: 3.6vmin;
+	stroke-width: 2;
 }
 .lab-hud {
 	position: absolute;
@@ -466,8 +624,7 @@ canvas,
 	bottom: 10px;
 	margin: 0;
 	font:
-		12px / 1.5 ui-monospace,
-		monospace;
+		600 12px / 1.5 "MOBO-SemiBold", sans-serif;
 	color: #e8e6e3;
 	opacity: 0.55;
 	pointer-events: none;
@@ -480,7 +637,21 @@ canvas,
 	place-content: center;
 	text-align: center;
 	font-size: 6vmin;
-	font-weight: 500;
+	font-weight: 600;
 	letter-spacing: 0.12em;
+}
+.color-name span {
+	position: relative;
+	isolation: isolate;
+}
+.color-name span::before {
+	content: "";
+	position: absolute;
+	inset: -5vmin -8vmin;
+	z-index: -1;
+	backdrop-filter: blur(18px);
+	-webkit-backdrop-filter: blur(18px);
+	mask-image: radial-gradient(ellipse, #000 35%, transparent 72%);
+	-webkit-mask-image: radial-gradient(ellipse, #000 35%, transparent 72%);
 }
 </style>

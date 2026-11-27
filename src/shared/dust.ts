@@ -55,6 +55,7 @@ const MOTES: readonly Mote[] = (() => {
 
 /** 一粒の塵を描く位置。座標はCSS画素単位で、画面の左上が原点。 */
 export interface DustPose {
+	color?: string;
 	x: number;
 	y: number;
 	/** 直径（CSS画素）。 */
@@ -69,10 +70,11 @@ const smooth = (t: number) => easeInOutSine(clamp01(t));
 
 /**
  * 経過時間 `elapsed`（ミリ秒、`judging` の開始から）での塵。`fade` は全体の不透明度の倍率（0〜1）。
+ * `sinkRadius` は集約先の半径（CSS画素）。指定すると中心へ入らず、その輪で消える。
  * 塵は画面の縁の外に現れ、ゆるやかに向きを回しながら中心へ集まり、中心の近くで消える。消えるとまた外から現れる。
  * 現れ始める時刻を塵ごとにずらし、時間とともに数が増え、一粒ずつの濃さも増す。まだ現れていない塵は含めない。
  */
-export function dustPoses(elapsed: number, width: number, height: number, fade = 1): DustPose[] {
+export function dustPoses(elapsed: number, width: number, height: number, fade = 1, sinkRadius = 0): DustPose[] {
 	if (elapsed <= 0 || fade <= 0) return [];
 	const short = Math.min(width, height);
 	const ramp = smooth(elapsed / DUST_RAMP_MS);
@@ -89,7 +91,8 @@ export function dustPoses(elapsed: number, width: number, height: number, fade =
 		const sin = Math.abs(Math.sin(mote.angle));
 		const edge = Math.min(cos > 1e-6 ? width / 2 / cos : Infinity, sin > 1e-6 ? height / 2 / sin : Infinity);
 		const start = edge + mote.overshoot * short;
-		const radius = start + (mote.end * short - start) * p;
+		const end = Math.max(mote.end * short, sinkRadius);
+		const radius = start + (end - start) * p;
 		const angle = mote.angle + mote.swirl * p;
 		const sway = Math.sin(mote.sway + age / 2_300) * mote.swayAmount * short * Math.sin(Math.PI * progress);
 		// 縁を越える頃までに現れ、中心の近くで消える。

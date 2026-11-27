@@ -2,8 +2,9 @@
 // サーバーを介さずに、展示ディスプレイが受け取る状態（`DisplayState`）の列を時刻つきで作る。
 // 描画は本番と同じ `onState` と `computeScene` を通るので、調整した見た目がそのまま本番になる。
 
+import { INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
 import { JUDGING_MS, RESULT_MS } from "./machine.ts";
-import { ANSWER_PULSE_IN_MS, INTRO_DESCRIPTION_AT_MS, INTRO_DESCRIPTION_FADE_MS } from "./motion.ts";
+import { ANSWER_PULSE_IN_MS } from "./motion.ts";
 import { RIPPLE_MS } from "./ripple.ts";
 import type { DisplayState, PaletteId } from "./types.ts";
 import { PALETTE_IDS } from "./types.ts";
@@ -15,7 +16,7 @@ export type LabLoop = (typeof LAB_LOOPS)[number];
 /** 各演出が何を繰り返すか（HUDと使い方の案内に出す）。 */
 export const LAB_LOOP_NOTES: Readonly<Record<LabLoop, string>> = {
 	idle: "質問中の輪から待機の小さな輪へ縮む",
-	opening: "待機 → シーケンス → intro（ようこそ、説明）→ 質問中の灰色の輪",
+	opening: "待機 → シーケンス → intro（ようこそ、説明、色を見つける案内）→ 質問中の灰色の輪",
 	answer: "回答の縮みと波紋",
 	judging: "最終問の回答 → 暗転と塵 → 色づき → 結果",
 	result: "色づき → 結果の広がり → 色名 → 待機へ戻る",
@@ -110,9 +111,9 @@ export function labCycle(options: LabOptions, context: LabContext): LabCycle {
 		}
 		case "opening": {
 			const leadMs = context.lead?.durationMs ?? 0;
-			// `intro` は、説明の文が現れ終えて少し見せるまで。
+			// `intro` は、ナレーション03を読み終えて少し見せるまで。
 			const introAt = IDLE_HOLD_MS + leadMs;
-			const introMs = INTRO_DESCRIPTION_AT_MS + INTRO_DESCRIPTION_FADE_MS + 3_000 - leadMs;
+			const introMs = INTRO_NICKNAME_AT_MS + 3_000 - leadMs;
 			const questionAt = introAt + Math.max(1_000, introMs);
 			const steps: LabStep[] = [state(0, { phase: "idle" })];
 			if (context.lead) {

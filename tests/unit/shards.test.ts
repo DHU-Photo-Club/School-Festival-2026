@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+	ANSWER_ORBIT_BOOST_MS,
+	answerOrbitAdvance,
 	BREATH_CYCLE,
 	BREATH_DEPTH,
 	ringBreath,
@@ -293,4 +295,50 @@ describe("破片のアウトライン", () => {
 		expect(b).toBeCloseTo(200 + 55 * 0.12);
 		expect(b > g && g > r).toBe(true);
 	});
+});
+
+describe("待機用の円形に沿った破片", () => {
+	it("公転・呼吸・揺れの軌道と明るさを変えず、半径方向の突き出しを抑える", () => {
+		for (const time of [0, 5_000, 40_000, 1_800_000_000_000]) {
+			const normal = shardPoses(1920, 1080, time, { scale: 0.3 });
+			const idle = shardPoses(1920, 1080, time, { scale: 0.3, idleFit: 1 });
+			for (const [index, piece] of idle.entries()) {
+				const original = normal[index];
+				expect([piece.x, piece.y, piece.shade, piece.alpha]).toEqual([original.x, original.y, original.shade, original.alpha]);
+				const r = Math.hypot(piece.x - 960, piece.y - 540);
+				const [rx, ry] = [(piece.x - 960) / r, (piece.y - 540) / r];
+				for (const [vertexIndex, [x, y]] of piece.vertices.entries()) {
+					const [ox, oy] = original.vertices[vertexIndex];
+					expect((x - piece.x) * rx + (y - piece.y) * ry).toBeCloseTo(((ox - piece.x) * rx + (oy - piece.y) * ry) * 0.7, 5);
+					expect(-(x - piece.x) * ry + (y - piece.y) * rx).toBeCloseTo(-(ox - piece.x) * ry + (oy - piece.y) * rx, 5);
+				}
+			}
+			// 待機の整形を使わない質問・結果は元の幾何形状のまま。
+			expect(shardPoses(1920, 1080, time, { idleFit: 0 })).toEqual(shardPoses(1920, 1080, time));
+		}
+	});
+	it("待機の形も時間とともに動き、すべて同じ大きさ・向きには揃えない", () => {
+		const idle = shardPoses(1920, 1080, 0, { scale: 0.3, idleFit: 1 });
+		expect(idle).not.toEqual(shardPoses(1920, 1080, 5_000, { scale: 0.3, idleFit: 1 }));
+		const lengths = idle.map(({ vertices }) => Math.hypot(vertices[0][0] - vertices[1][0], vertices[0][1] - vertices[1][1]));
+		expect(Math.max(...lengths) / Math.min(...lengths)).toBeGreaterThan(2);
+	});
+});
+
+it("回答の加速は角度を逆戻りさせず、終わると一定の追加角度に落ち着く", () => {
+	expect(answerOrbitAdvance(-1)).toBe(0);
+	expect(answerOrbitAdvance(0)).toBe(0);
+	for (let t = 1; t <= 3000; t += 20) expect(answerOrbitAdvance(t)).toBeGreaterThanOrEqual(answerOrbitAdvance(t - 1));
+	expect(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS)).toBeCloseTo(12600);
+	expect(answerOrbitAdvance(10000)).toBe(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS));
+	expect(answerOrbitAdvance(1)).toBeLessThan(0.001);
+	expect(answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS) - answerOrbitAdvance(ANSWER_ORBIT_BOOST_MS - 1)).toBeLessThan(0.001);
+});
+
+it("回答後早めに最高速へ達し、長い減速で通常速度に戻る", () => {
+	const speed = (t: number) => (answerOrbitAdvance(t + 1) - answerOrbitAdvance(t - 1)) / 2;
+	expect(speed(720)).toBeCloseTo(7, 3);
+	expect(speed(720)).toBeGreaterThan(speed(1800));
+	expect(speed(360)).toBeGreaterThan(speed(3240));
+	expect(speed(1800)).toBeGreaterThan(speed(2800));
 });
