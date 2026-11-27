@@ -2,13 +2,15 @@
 // 会場サーバーの `/api/realtime?role=light` から展示状態を受け取り、電球の色を変える。
 // 通常は白色、結果の表示中はAIが選んだ二色を電球の並び順に交互に割り当てる（`src/shared/lights.ts`）。
 //
-//   pnpm lights pair <ペアリングコード>   電球を登録する（登録した順が電球の並び順）
-//   pnpm lights list                      登録した電球の一覧
+//   pnpm lights pair <ペアリングコード>   電球を登録する（登録した順が電球の並び順）。`LIGHT_WIFI_SSID` を
+//                                         設定すると、初期設定前の電球をBluetoothで見つけてWi-Fiへつなぐ
+//   pnpm lights list                     登録した電球の一覧
 //   pnpm lights identify <番号>           電球を点滅させて、どれが何番かを確かめる
+//   pnpm lights test [番号]               白色とパレットの13色を順に送る（会場サーバーは要らない）
 //   pnpm lights remove <番号>             電球の登録を外す
 //   pnpm lights                           展示状態に合わせて電球を動かす
 //
-// 設定は環境変数か `.env.lights` で渡す（`.env.lights.example`）。
+// 設定は環境変数か、会場サーバーと同じ `.env` で渡す（`.env.example`）。
 import { join } from "node:path";
 import type { ClientNode } from "@matter/main";
 import { ControllerBehavior, Environment, Logger, LogLevel, NodeConnectionState, ServerNode } from "@matter/main";
@@ -49,8 +51,21 @@ const SEED_POLL_MS = 250;
 const OPEN_TIMEOUT_MS = 15_000;
 /** `identify` で点滅させる秒数。 */
 const IDENTIFY_SECONDS = 10;
+/** `test` で一色を見せる秒数。白色から色へ移る時間（`LIGHT_SETTINGS.toColorSeconds`）より長くする。 */
+const TEST_HOLD_SECONDS = 5;
+/**
+ * `test` で一つの電球へ送り終えるまで待つ上限。matter.js は電球が見つかるまでつなぎ直し続けるため、
+ * 上限がないと届かない電球で止まったままになる。
+ */
+const TEST_SEND_TIMEOUT_MS = 20_000;
 
 type ClientEndpoint = ClientNode["endpoints"] extends Iterable<infer E> ? E : never;
+
+/** Bluetoothでの初期設定で電球へ渡すWi-Fiの名前とパスワード。 */
+interface WifiNetwork {
+	wifiSsid: string;
+	wifiCredentials: string;
+}
 
 /** 色を変えられるエンドポイント一つ。一つの機器に複数あれば、それぞれを電球一つとして数える。 */
 interface Bulb {
@@ -82,12 +97,17 @@ if (environment.vars.get("storage.path") === undefined) {
 }
 if (environment.vars.get("log.level") === undefined) Logger.level = LogLevel.WARN;
 
-async function createController(): Promise<ServerNode> {
+/** `ble` はBluetoothで電球を探してつなぐか。`enableBle` を呼んだあとだけ `true` にする。 */
+async function createController(ble: boolean): Promise<ServerNode> {
 	return ServerNode.create(ServerNode.RootEndpointWithoutGroupcast.with(ControllerBehavior), {
 		environment,
 		id: "light-bridge",
 		commissioning: { enabled: false },
-		controller: { adminFabricLabel: "dpc-school-festival" },
+		// このノード自身はBluetoothで登録を受けない。Bluetoothが組み込まれていると、ノード側も受ける側の
+		// インターフェース（peripheral）を登録し、電球へつなぐときにコントローラー側（central）より先に選ばれて
+		// 「Outbound connections are not supported on peripheral interfaces」で失敗する。
+		network: { ble: false },
+		controller: { adminFabricLabel: "dpc-school-festival", ble },
 		subscriptions: { persistenceEnabled: false },
 	});
 }
@@ -390,14 +410,46 @@ async function run(controller: ServerNode): Promise<void> {
 	connectExhibit(origin, (state) => sync.update(state));
 }
 
-async function pair(controller: ServerNode, pairingCode: string | undefined): Promise<void> {
+/** Bluetoothでの初期設定で電球へ渡すWi-Fi。`LIGHT_WIFI_SSID` がなければ `undefined`（Bluetoothを使わない）。 */
+function wifiNetworkFromEnv(): WifiNetwork | undefined {
+	const wifiSsid = process.env.LIGHT_WIFI_SSID?.trim();
+	if (!wifiSsid) return undefined;
+	// パスワードの前後の空白も、パスワードの一部として扱う。
+	return { wifiSsid, wifiCredentials: process.env.LIGHT_WIFI_PASSWORD ?? "" };
+}
+
+/**
+ * Bluetoothを使えるようにする。コントローラーを作る前に呼ぶ。
+ * `@matter/nodejs-ble` は読み込むと、`ble.enable` が立っている環境にBluetoothを組み込む。
+ */
+async function enableBle(): Promise<void> {
+	try {
+		await import("@matter/nodejs-ble");
+	} catch (error) {
+		die(`Bluetoothの機能を読み込めませんでした。pnpm install をやり直してください。\n${error}`);
+	}
+	environment.vars.set("ble.enable", true);
+}
+
+async function pair(
+	controller: ServerNode,
+	pairingCode: string | undefined,
+	wifiNetwork: WifiNetwork | undefined,
+): Promise<void> {
 	if (!pairingCode) die("使い方: pnpm lights pair <ペアリングコード（11桁の数字か MT: から始まるQRコードの文字列）>");
 	await controller.start();
-	console.log("電球を探しています。電球と同じネットワークにつないでおいてください。");
+	if (wifiNetwork) {
+		console.log(
+			`Bluetoothで電球を探して、Wi-Fi「${wifiNetwork.wifiSsid}」へつなぎます。初期設定前の電球を点けて、このPCの近くに置いてください。`,
+		);
+	} else {
+		console.log("電球を探しています。電球と同じネットワークにつないでおいてください。");
+	}
 	const peer = await controller.peers.commission({
 		pairingCode: pairingCode.replace(/[\s-]/g, ""),
 		regulatoryLocation: GeneralCommissioning.RegulatoryLocationType.Indoor,
 		regulatoryCountryCode: "JP",
+		wifiNetwork,
 	});
 	await waitSeeded(peer);
 	console.log(`登録しました: ${peer.id}（${productName(peer)}）`);
@@ -431,6 +483,64 @@ async function identify(controller: ServerNode, number: string | undefined): Pro
 	console.log(`${bulb.label} を${IDENTIFY_SECONDS}秒点滅させます。`);
 }
 
+/**
+ * 電球の動作確認。白色、パレットの13色、白色の順に、全部の電球（番号を指定すればその電球だけ）へ送る。
+ * 展示の状態は使わないため、会場サーバーを動かさずに使える。
+ */
+async function test(controller: ServerNode, number: string | undefined): Promise<void> {
+	let bulbs: Bulb[];
+	if (number === undefined) {
+		await controller.start();
+		bulbs = await collectBulbs(controller);
+		if (bulbs.length === 0) {
+			die("色を変えられる電球が登録されていません。pnpm lights pair <ペアリングコード> で登録してください。");
+		}
+	} else {
+		bulbs = [await bulbAt(controller, number, "使い方: pnpm lights test [番号]")];
+	}
+	for (const bulb of bulbs) console.log(`${bulb.label}  ${bulb.xy ? "xy" : "色相・彩度"}`);
+
+	const targets: LightTarget[] = [
+		{ kind: "white" },
+		...PALETTE.colors.map((color): LightTarget => ({ kind: "color", colorId: color.id, color })),
+		{ kind: "white" },
+	];
+	for (const [index, target] of targets.entries()) {
+		console.log(`[${index + 1}/${targets.length}] ${targetName(target)}`);
+		const results = await Promise.all(
+			bulbs.map(async (bulb) => {
+				let timer: NodeJS.Timeout | undefined;
+				const timeout = new Promise<never>((_, reject) => {
+					timer = setTimeout(
+						() =>
+							reject(
+								new Error(
+									`${TEST_SEND_TIMEOUT_MS / 1000}秒待っても送り終わりませんでした（${bulb.peer.lifecycle.isConnected ? "接続済み" : "未接続"}）`,
+								),
+							),
+						TEST_SEND_TIMEOUT_MS,
+					);
+				});
+				try {
+					await Promise.race([applyTarget(bulb, target), timeout]);
+					return true;
+				} catch (error) {
+					console.warn(`  ${bulb.label} へ送れませんでした。`, error);
+					return false;
+				} finally {
+					clearTimeout(timer);
+				}
+			}),
+		);
+		// 最初の白色をどの電球にも送れなければ、続けても同じなので止める。
+		if (index === 0 && !results.some(Boolean)) {
+			die("どの電球にも送れませんでした。電球とこのPCが同じネットワークにつながっているか確かめてください。");
+		}
+		if (index < targets.length - 1) await new Promise((resolve) => setTimeout(resolve, TEST_HOLD_SECONDS * 1000));
+	}
+	console.log("確認を終えました。");
+}
+
 async function remove(controller: ServerNode, number: string | undefined): Promise<void> {
 	const bulb = await bulbAt(controller, number, "使い方: pnpm lights remove <番号>");
 	try {
@@ -443,7 +553,10 @@ async function remove(controller: ServerNode, number: string | undefined): Promi
 }
 
 const [command, ...args] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
-const controller = await createController();
+// Bluetoothは初期設定前の電球の登録にだけ使う。電球を動かす間は読み込まない。
+const wifiNetwork = command === "pair" ? wifiNetworkFromEnv() : undefined;
+if (wifiNetwork) await enableBle();
+const controller = await createController(wifiNetwork !== undefined);
 const shutdown = async () => {
 	await controller.close();
 	process.exit(0);
@@ -457,7 +570,7 @@ switch (command) {
 		await run(controller);
 		break;
 	case "pair":
-		await pair(controller, args[0]);
+		await pair(controller, args[0], wifiNetwork);
 		await shutdown();
 		break;
 	case "list":
@@ -468,10 +581,14 @@ switch (command) {
 		await identify(controller, args[0]);
 		await shutdown();
 		break;
+	case "test":
+		await test(controller, args[0]);
+		await shutdown();
+		break;
 	case "remove":
 		await remove(controller, args[0]);
 		await shutdown();
 		break;
 	default:
-		die(`知らないコマンドです: ${command}（pair、list、identify、remove、run）`);
+		die(`知らないコマンドです: ${command}（pair、list、identify、test、remove、run）`);
 }

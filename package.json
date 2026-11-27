@@ -19,7 +19,7 @@
     "deploy:results": "pnpm build && pnpm build:results && wrangler deploy",
     "export-photos": "node scripts/export-photos.ts",
     "export-sounds": "node scripts/export-sounds.ts",
-    "lights": "node --env-file-if-exists=.env.lights scripts/light-bridge.ts"
+    "lights": "node --env-file-if-exists=.env scripts/light-bridge.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@matter/main": "0.18.0",
+    "@matter/nodejs-ble": "0.18.0",
     "@playwright/test": "^1.63.0",
     "@project-chip/matter.js": "0.18.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

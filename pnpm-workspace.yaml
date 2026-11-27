@@ -1,3 +1,10 @@
 allowBuilds:
     esbuild: true
     workerd: true
+    # @matter/nodejs-ble が使う Bluetooth のネイティブモジュール。noble は同梱のビルド済みバイナリを使うため
+    # ビルドしない。残りは Linux でだけ使う。
+    "@stoprocent/noble": false
+    "@stoprocent/bleno": false
+    "@stoprocent/bluetooth-hci-socket": false
+    "@serialport/bindings-cpp": false
+    usb: false

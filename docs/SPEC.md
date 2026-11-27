@@ -424,24 +424,32 @@ Matter対応のスマート電球を、会場サーバーと同じPCで動かす
 
 ### 11.1 電球の登録（設営時に一度）
 
-電球は、中継スクリプトを動かすPCと同じネットワークにつないでおく。スマートフォンのアプリで設定済みの電球は、そのアプリの「他のアプリと共有」などで出るペアリングコードを使う。Bluetoothでの初期設定は中継スクリプトでは行わない。
+電球は、中継スクリプトを動かすPCと同じネットワークで使う。登録のしかたは二つある。
+
+- スマートフォンのアプリで設定済みの電球は、そのアプリの「他のアプリと共有」などで出るペアリングコードを使う。
+- 初期設定前の電球は、中継スクリプトがBluetoothで見つけて、`LIGHT_WIFI_SSID`と`LIGHT_WIFI_PASSWORD`のWi-Fiへつなぐ。ハブ（HomePod、Echo、Nest Hubなど）を使わずに登録できる。ペアリングコードは電球か箱に書かれたものを使う。`LIGHT_WIFI_SSID`を設定したときだけ、`pnpm lights pair`でBluetoothを使う。電球を動かす`pnpm lights`はBluetoothを使わない。
+  - Wi-Fiは2.4GHzにする。IDとパスワードでログインするWi-Fi（WPA2/WPA3-Enterprise）にはつなげない。
+  - macOSでは、Appleの「Bluetooth Central Matter Client Developer mode」プロファイル（`EnableBluetoothCentralMatterClientDeveloperMode.mobileconfig`、Apple Developerのサイトから入手する）を入れて再起動し、ターミナルにBluetoothの使用を許可する。WindowsではBluetoothでの登録はできない。
 
 | コマンド                              | 内容                                                         |
 | ------------------------------------- | ------------------------------------------------------------ |
 | `pnpm lights pair <ペアリングコード>` | 電球を登録する。11桁の数字か`MT:`から始まるQRコードの文字列  |
 | `pnpm lights list`                    | 登録した電球を並び順に表示する                               |
 | `pnpm lights identify <番号>`         | その番号の電球を10秒点滅させる（Identifyに対応する電球だけ） |
+| `pnpm lights test [番号]`             | 白色、パレットの13色、白色の順に5秒ずつ送る。番号を指定すればその電球だけ。会場サーバーは要らない |
 | `pnpm lights remove <番号>`           | その番号の電球の登録を外す                                   |
 | `pnpm lights`                         | 展示状態に合わせて電球を動かす                               |
 
 並び順を変えるときは、登録を外して望む順に登録し直す。登録の記録（コントローラーの鍵と電球）はリポジトリ直下の`.matter-lights/`に保存する（`MATTER_STORAGE_PATH`で変えられる）。このフォルダーはコミットしない。`pnpm lights`で電球を動かしている間は、同じ記録を使うほかのコマンドを使えないため、先に止める。
 
-中継スクリプトの設定は、環境変数か`.env.lights`で渡す（`.env.lights.example`）。
+中継スクリプトの設定は、環境変数か会場サーバーと同じ`.env`で渡す（`.env.example`）。
 
 | 環境変数                  | 内容                                                                     |
 | ------------------------- | ------------------------------------------------------------------------ |
 | `LIGHT_ORIGIN`            | 任意。会場サーバーのURL（末尾スラッシュなし）。既定は同じPCの`http://localhost:8787`。開発サーバーなら`http://localhost:5173` |
 | `MATTER_STORAGE_PATH`     | 任意。登録の記録の保存先。既定はリポジトリ直下の`.matter-lights/`        |
+| `LIGHT_WIFI_SSID`         | 任意。初期設定前の電球をBluetoothで登録するときに、電球をつなぐWi-Fiの名前 |
+| `LIGHT_WIFI_PASSWORD`     | 任意。そのWi-Fiのパスワード                                              |
 
 ### 11.2 サウンド演出
 
