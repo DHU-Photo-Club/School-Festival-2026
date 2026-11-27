@@ -493,6 +493,8 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 <style>
 .display {
+	font-family: "MOBO-SemiBold", var(--font);
+	font-weight: 600;
 	position: fixed;
 	inset: 0;
 	overflow: hidden;
@@ -542,7 +544,7 @@ canvas,
 	place-content: center;
 	text-align: center;
 	font-size: 4.2vmin;
-	font-weight: 500;
+	font-weight: 600;
 	letter-spacing: 0.12em;
 	color: #e8e6e3;
 	pointer-events: none;
@@ -560,7 +562,7 @@ canvas,
 	justify-items: center;
 	text-align: center;
 	font-size: 4.2vmin;
-	font-weight: 500;
+	font-weight: 600;
 	letter-spacing: 0.08em;
 	line-height: 1.5;
 	color: #e8e6e3;
@@ -589,8 +591,7 @@ canvas,
 	bottom: 10px;
 	margin: 0;
 	font:
-		12px / 1.5 ui-monospace,
-		monospace;
+		600 12px / 1.5 "MOBO-SemiBold", sans-serif;
 	color: #e8e6e3;
 	opacity: 0.55;
 	pointer-events: none;
@@ -603,7 +604,7 @@ canvas,
 	place-content: center;
 	text-align: center;
 	font-size: 6vmin;
-	font-weight: 500;
+	font-weight: 600;
 	letter-spacing: 0.12em;
 }
 </style>
