@@ -483,7 +483,7 @@ canvas,
 }
 .description,
 .invitation {
-	line-height: 1.9;
+	line-height: 1.45;
 }
 .nickname-prompt {
 	position: absolute;
@@ -503,7 +503,7 @@ canvas,
 }
 .nickname-prompt p {
 	margin: 0;
-	line-height: 1.9;
+	line-height: 1.45;
 }
 .nickname-prompt p span {
 	display: block;
