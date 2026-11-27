@@ -155,6 +155,7 @@ function ringPoses(
 	density: number,
 	size: number,
 	spread: number,
+	idleFit: number,
 ): ShardPose[] {
 	// 破片の大きさは通常の輪の半径で決め、`scale` で縮めるのは輪の半径だけにする。
 	const unit = Math.min(width, height) * SHARD_RING_RADIUS;
@@ -172,6 +173,21 @@ function ringPoses(
 		const rotation = theta + Math.PI / 2 + item.spin + ((elapsed * item.spinSpeed * 0.3) % (Math.PI * 2));
 		const [x, y] = [cx + Math.cos(theta) * r, cy + Math.sin(theta) * r];
 		const base = pose(item, x, y, rotation, shardUnit);
+		if (idleFit > 0) {
+			// 位置・自転・呼吸の計算はそのまま。接線方向を残し、外へ突き出す幅だけ抑える。
+			const fit = clamp01(idleFit);
+			const compact = 1 - 0.25 * fit;
+			const radialScale = 1 - 0.6 * fit;
+			const rx = Math.cos(theta);
+			const ry = Math.sin(theta);
+			base.vertices = base.vertices.map(([vx, vy]): Point => {
+				const dx = vx - x;
+				const dy = vy - y;
+				const radial = (dx * rx + dy * ry) * radialScale;
+				const tangent = -dx * ry + dy * rx;
+				return [x + (radial * rx - tangent * ry) * compact, y + (radial * ry + tangent * rx) * compact];
+			});
+		}
 		const visible = clamp01((density * (RING_COUNT + DENSITY_FADE_COUNT) - index) / DENSITY_FADE_COUNT);
 		return { ...base, alpha: base.alpha * visible };
 	});
@@ -191,9 +207,10 @@ export function shardPoses(
 		density = 1,
 		size = 1,
 		spread = 0,
-	}: { scale?: number; density?: number; size?: number; spread?: number } = {},
+		idleFit = 0,
+	}: { scale?: number; density?: number; size?: number; spread?: number; idleFit?: number } = {},
 ): ShardPose[] {
-	return ringPoses(width, height, elapsed, scale, density, size, spread);
+	return ringPoses(width, height, elapsed, scale, density, size, spread, idleFit);
 }
 
 /** 0〜255の三成分の色。 */

@@ -13,7 +13,7 @@ export const JUDGING_FADE_MS = 1_200;
 /** 待機中の輪の半径（質問中の輪に対する倍率）。破片の大きさは変えない。 */
 export const SHARD_IDLE_SCALE = 0.3;
 /** 待機中に見せる破片の割合（質問中の全枚数に対する比）。 */
-export const SHARD_IDLE_DENSITY = 0.3;
+export const SHARD_IDLE_DENSITY = 0.42;
 /** 輪が大きさや枚数を変える時間（待機へ縮む、`intro` の輪へ広がる、`intro` から質問中の輪へ戻る）。 */
 export const SHARD_SCALE_MS = 3_000;
 /** `intro` の破片の散らばり（`shardPoses` の `spread`）。輪の内側を空けたまま、画面いっぱいに散らばる。 */
@@ -162,6 +162,8 @@ export interface ShardLayer {
 	size: number;
 	/** 輪の太さの広がり。0が輪、1が画面いっぱいの散らばり。 */
 	spread: number;
+	/** 待機用の接線方向への整形。1が待機、0または省略なら既存の破片。 */
+	idleFit?: number;
 }
 
 /** 質問の回答のあと、輪が戻り始める瞬間から広がる波紋（`rippleRings` に渡す経過時間）。 */
@@ -275,6 +277,7 @@ function shardLayer(
 		density?: number;
 		size?: number;
 		spread?: number;
+		idleFit?: number;
 	} = {},
 ): ShardLayer {
 	const colors = options.colors ?? null;
@@ -287,6 +290,7 @@ function shardLayer(
 		density: options.density ?? 1,
 		size: options.size ?? 1,
 		spread: options.spread ?? 0,
+		...(options.idleFit ? { idleFit: clamp01(options.idleFit) } : {}),
 	};
 }
 
@@ -582,6 +586,7 @@ function openingShards(input: SceneInput): ShardLayer {
 		tint: p * (1 - returnToRing),
 		scale: lerp(SHARD_IDLE_SCALE, 1, p),
 		density: lerp(SHARD_IDLE_DENSITY, 1, p),
+		idleFit: 1 - p,
 		size: lerp(1, SHARD_OPENING_SIZE, p * (1 - returnToRing)),
 		spread: lerp(0, SHARD_OPENING_SPREAD, p * (1 - returnToRing)),
 	});
@@ -671,6 +676,7 @@ function computeBaseScene(input: SceneInput): BaseScene {
 			shards: shardLayer(input, 1, {
 				scale: lerp(1, SHARD_IDLE_SCALE, shrink),
 				density: lerp(1, SHARD_IDLE_DENSITY, shrink),
+				idleFit: shrink,
 			}),
 			resultLayer: 0,
 			veil: veiled

@@ -204,6 +204,7 @@ function drawShardLayer(layer: ShardLayer) {
 		density: layer.density,
 		size: layer.size,
 		spread: layer.spread,
+		idleFit: layer.idleFit,
 	});
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
