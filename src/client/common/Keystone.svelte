@@ -1,62 +1,120 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
+import { onMount } from "svelte";
 import type { Keystone } from "../../shared/keystone.ts";
 import {
 	CORNER_LABELS,
+	formatKeystone,
 	IDENTITY_KEYSTONE,
 	keystoneCorners,
+	keystoneEnvName,
 	keystoneTransform,
 	moveCorner,
 	parseKeystone,
+	sameKeystone,
 } from "../../shared/keystone.ts";
 
 /**
  * 台形補正。プロジェクターで斜めから投影したときのゆがみを打ち消すよう、中身全体を四隅の位置合わせで射影変換する。
- * 補正はこのブラウザに `storageKey` ごとに残す（会場の端末とプロジェクターの組み合わせごとに決まるため、サーバーには送らない）。
+ * 補正の正本は会場サーバーの `.env`（`KEYSTONE_{パス}`）で、`/api/keystone` から受け取る。
  *
  * `K` で調整を始め、角をドラッグするか、`1`〜`4` で角を選んで矢印キーで1px（`Shift` で10px）ずつ動かす。
- * `R` で補正を消し、`K` か `Esc` で調整を終える。
+ * 調整した値は `.env` へ書き写す一行として表示し、書き写すまでの下書きとしてこのブラウザに残す。下書きは、
+ * 調整を始めたときの `.env` の値が変わったら（書き写して再起動したら）捨てる。`R` で `.env` の値に戻し、
+ * `Delete` で補正なしにし、`K` か `Esc` で調整を終える。
  */
-let { storageKey, children }: { storageKey: string; children: Snippet } = $props();
+let { path, children }: { path: string; children: Snippet } = $props();
+
+/** 下書きを残すキー。 */
+// svelte-ignore state_referenced_locally
+const draftKey = `dpc-keystone:${path}`;
+// svelte-ignore state_referenced_locally
+const envName = keystoneEnvName(path);
 
 let width = $state(1);
 let height = $state(1);
-// svelte-ignore state_referenced_locally
-let keystone = $state<Keystone>(load(storageKey));
+/** `.env` の補正。受け取るまでは `null`。 */
+let base = $state<Keystone | null>(null);
+let keystone = $state<Keystone>(IDENTITY_KEYSTONE);
 let editing = $state(false);
 let selected = $state(0);
+let copied = $state(false);
+let envLine = $state<HTMLTextAreaElement>();
 let dragging: { index: number; pointerId: number } | null = null;
 
 const transform = $derived(keystoneTransform(keystone, width, height));
 const corners = $derived(keystoneCorners(keystone, width, height));
+const line = $derived(`${envName}=${formatKeystone(keystone)}`);
+const pending = $derived(base !== null && !sameKeystone(keystone, base));
 
-function load(key: string): Keystone {
+/** 下書き。調整を始めたときの `.env` の値（`base`）と、調整した値（`value`）。 */
+function loadDraft(): { base: Keystone; value: Keystone } | null {
 	try {
-		const stored = localStorage.getItem(key);
-		return (stored && parseKeystone(JSON.parse(stored))) || IDENTITY_KEYSTONE;
+		const stored = JSON.parse(localStorage.getItem(draftKey) ?? "null") as {
+			base?: unknown;
+			value?: unknown;
+		} | null;
+		const draftBase = parseKeystone(stored?.base);
+		const value = parseKeystone(stored?.value);
+		return draftBase && value ? { base: draftBase, value } : null;
 	} catch {
-		return IDENTITY_KEYSTONE;
+		return null;
 	}
 }
 
-function save(next: Keystone) {
-	keystone = next;
+function writeDraft(next: Keystone, from: Keystone) {
 	try {
-		if (next.every(([x, y]) => x === 0 && y === 0)) localStorage.removeItem(storageKey);
-		else localStorage.setItem(storageKey, JSON.stringify(next));
+		if (sameKeystone(next, from)) localStorage.removeItem(draftKey);
+		else localStorage.setItem(draftKey, JSON.stringify({ base: from, value: next }));
 	} catch {
 		// 保存できないブラウザでも、このタブの中では補正を使う。
 	}
 }
 
+onMount(async () => {
+	let fromEnv = IDENTITY_KEYSTONE;
+	try {
+		const response = await fetch("/api/keystone", { cache: "no-store" });
+		if (response.ok) fromEnv = parseKeystone((await response.json())?.[path]) ?? IDENTITY_KEYSTONE;
+	} catch {
+		// 受け取れなければ補正しない。
+	}
+	const draft = loadDraft();
+	const keep = draft !== null && sameKeystone(draft.base, fromEnv);
+	base = fromEnv;
+	keystone = keep ? draft.value : fromEnv;
+	if (!keep) writeDraft(fromEnv, fromEnv);
+});
+
+function save(next: Keystone) {
+	if (!base) return;
+	keystone = next;
+	copied = false;
+	writeDraft(next, base);
+}
+
 /** 角 `index` を画面上の点（画素）へ動かす。 */
 function moveTo(index: number, x: number, y: number) {
-	const base = keystoneCorners(IDENTITY_KEYSTONE, width, height)[index];
-	save(moveCorner(keystone, index, [(x - base[0]) / width, (y - base[1]) / height]));
+	const origin = keystoneCorners(IDENTITY_KEYSTONE, width, height)[index];
+	save(moveCorner(keystone, index, [(x - origin[0]) / width, (y - origin[1]) / height]));
+}
+
+/** `.env` へ書き写す一行をクリップボードへ写す。会場のLAN（http）では Clipboard API が使えないため、選択してコピーする。 */
+async function copyLine() {
+	try {
+		if (navigator.clipboard) await navigator.clipboard.writeText(line);
+		else {
+			envLine?.select();
+			document.execCommand("copy");
+		}
+		copied = true;
+	} catch {
+		envLine?.select();
+	}
 }
 
 function onKey(event: KeyboardEvent) {
-	if (event.ctrlKey || event.metaKey || event.altKey) return;
+	if (event.ctrlKey || event.metaKey || event.altKey || !base) return;
 	const key = event.key.toLowerCase();
 	if (key === "k") {
 		editing = !editing;
@@ -64,7 +122,9 @@ function onKey(event: KeyboardEvent) {
 	}
 	if (!editing) return;
 	if (key === "escape") editing = false;
-	else if (key === "r") save(IDENTITY_KEYSTONE);
+	else if (key === "r") save(base);
+	else if (key === "delete" || key === "backspace") save(IDENTITY_KEYSTONE);
+	else if (key === "c") void copyLine();
 	else if (["1", "2", "3", "4"].includes(key)) selected = Number(key) - 1;
 	else if (key === "tab") selected = (selected + (event.shiftKey ? 3 : 1)) % 4;
 	else {
@@ -125,11 +185,25 @@ function onPointerUp(event: PointerEvent) {
 					{index + 1}
 				</button>
 			{/each}
-			<p class="help">
-				台形補正（{CORNER_LABELS[selected]}を選択中）<br>
-				角をドラッグ ／ 1〜4で角を選び矢印で1px（Shiftで10px）<br>
-				R: 補正を消す ／ K・Esc: 終了
-			</p>
+			<div class="help">
+				<p>
+					台形補正（{CORNER_LABELS[selected]}を選択中）<br>
+					角をドラッグ ／ 1〜4で角を選び矢印で1px（Shiftで10px）<br>
+					R: .envの値に戻す ／ Delete: 補正なし ／ C: 一行をコピー ／ K・Esc: 終了
+				</p>
+				<p class="status" data-testid="keystone-status">
+					{pending ? "未反映。下の一行を会場サーバーの.envに書いて再起動する" : ".envの値と同じ"}
+				</p>
+				<textarea
+					bind:this={envLine}
+					readonly
+					rows="2"
+					spellcheck="false"
+					data-testid="keystone-env"
+					onfocus={(event) => event.currentTarget.select()}
+				>{line}</textarea>
+				<button type="button" class="copy" onclick={copyLine}>{copied ? "コピーしました" : "コピー"}</button>
+			</div>
 		</div>
 	{/if}
 </div>

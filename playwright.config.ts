@@ -26,7 +26,8 @@ export default defineConfig({
 	},
 	webServer: {
 		command: `pnpm exec vite dev --port ${port} --strictPort`,
-		env: { DPC_E2E_SERVER: "1" },
+		// 台形補正を環境変数から受け取ることを確かめるため、ほかのテストが開かない画面に補正を渡す（tests/e2e/keystone.spec.ts）。
+		env: { DPC_E2E_SERVER: "1", KEYSTONE_DISPLAY_9: "[[0.1,0.05],[-0.1,0],[0,0],[0,0]]" },
 		url: `http://localhost:${port}`,
 		// 既に起動しているサーバーは、E2E用の設定で起動したものか判別できないため使わない。
 		// 前回の実行が異常終了してポートが使用中のままの場合は、そのプロセスを終了するか `E2E_PORT` を変える。

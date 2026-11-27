@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "jsonc-parser";
+import type { Keystone } from "../shared/keystone.ts";
+import { keystonesFromEnv } from "../shared/keystone.ts";
 
 export const ROOT = join(import.meta.dirname, "..", "..");
 
@@ -30,6 +32,8 @@ export interface ServerConfig {
 	mistralBaseUrl: string | undefined;
 	/** `true` なら AI へ接続せず、開発用の仮の結果を返す。開発とE2Eテスト専用。 */
 	aiStub: boolean;
+	/** ページのパスごとの台形補正（`KEYSTONE_{パス}`）。展示ディスプレイと写真用が `/api/keystone` で受け取る。 */
+	keystones: Readonly<Record<string, Keystone>>;
 }
 
 const optional = (value: string | undefined) => value?.trim() || undefined;
@@ -49,6 +53,7 @@ export function serverConfig(
 		mistralModel: optional(env.MISTRAL_MODEL),
 		mistralBaseUrl: optional(env.MISTRAL_BASE_URL),
 		aiStub: env.AI_STUB === "1",
+		keystones: keystonesFromEnv(env).keystones,
 		...overrides,
 	};
 }

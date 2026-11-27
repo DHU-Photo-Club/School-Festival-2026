@@ -17,8 +17,6 @@ const split = parseSplitScreen(path.match(/^\/display\/split\/([^/]+)$/)?.[1] ??
 const display = parseScreenNumber(path.match(/^\/display\/([^/]+)$/)?.[1] ?? null);
 const photo = parseScreenNumber(path.match(/^\/photo\/([^/]+)$/)?.[1] ?? null);
 const result = path.match(/^\/result\/([^/]+)$/);
-/** 台形補正を、このブラウザにパスごとに残すキー（展示ディスプレイと写真用）。 */
-const keystoneKey = `dpc-keystone:${path}`;
 const pageLabel = split
 	? `展示ディスプレイ ${split}（画面分割）`
 	: display
@@ -43,13 +41,13 @@ const pageLabel = split
 {#if path === "/"}
 	<Controller />
 {:else if split}
-	<Keystone storageKey={keystoneKey}><SplitDisplay screen={split} /></Keystone>
+	<Keystone {path}><SplitDisplay screen={split} /></Keystone>
 	<Fullscreen />
 {:else if display}
-	<Keystone storageKey={keystoneKey}><Display screen={display} /></Keystone>
+	<Keystone {path}><Display screen={display} /></Keystone>
 	<Fullscreen />
 {:else if photo}
-	<Keystone storageKey={keystoneKey}><PhotoDisplay screen={photo} /></Keystone>
+	<Keystone {path}><PhotoDisplay screen={photo} /></Keystone>
 	<Fullscreen />
 {:else if path === "/sound"}
 	<SoundPage />

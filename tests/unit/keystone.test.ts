@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { Keystone } from "../../src/shared/keystone.ts";
 import {
 	applyKeystone,
+	formatKeystone,
 	IDENTITY_KEYSTONE,
 	isValidKeystone,
 	KEYSTONE_LIMIT,
 	keystoneCorners,
+	keystoneEnvName,
+	keystonesFromEnv,
 	keystoneTransform,
 	moveCorner,
 	parseKeystone,
@@ -124,5 +127,43 @@ describe("台形補正", () => {
 				[0, 0],
 			]),
 		).toBeNull();
+	});
+});
+
+describe("台形補正の環境変数", () => {
+	it("ページのパスと環境変数の名前を対応させる", () => {
+		expect(keystoneEnvName("/display/split/1")).toBe("KEYSTONE_DISPLAY_SPLIT_1");
+		expect(keystoneEnvName("/photo/2")).toBe("KEYSTONE_PHOTO_2");
+	});
+
+	it("書き出した値を読み戻すと、パスごとの補正になる", () => {
+		const env = {
+			[keystoneEnvName("/display/split/1")]: formatKeystone(TRAPEZOID),
+			KEYSTONE_PHOTO_1: "",
+			MISTRAL_MODEL: "x",
+		};
+		expect(keystonesFromEnv(env)).toEqual({ keystones: { "/display/split/1": TRAPEZOID }, problems: [] });
+	});
+
+	it("小数は5桁に丸め、補正しない状態は空にする", () => {
+		expect(
+			formatKeystone([
+				[0.2652496337890625, -0.0009960937499999998],
+				[0, 0],
+				[0, 0],
+				[0, 0],
+			]),
+		).toBe("[[0.26525,-0.001],[0,0],[0,0],[0,0]]");
+		expect(formatKeystone(IDENTITY_KEYSTONE)).toBe("");
+	});
+
+	it("読めない値は使わず、問題として挙げる", () => {
+		const { keystones, problems } = keystonesFromEnv({
+			KEYSTONE_DISPLAY_1: "[[0,0]",
+			KEYSTONE_DISPLAY_2: "[1,2,3,4]",
+		});
+		expect(keystones).toEqual({});
+		expect(problems).toHaveLength(2);
+		expect(problems[0]).toContain("KEYSTONE_DISPLAY_1");
 	});
 });

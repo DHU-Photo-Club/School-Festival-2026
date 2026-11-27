@@ -1,4 +1,5 @@
 import type { ServerResponse } from "node:http";
+import type { Keystone } from "../shared/keystone.ts";
 import { goneResponse, notFoundResponse, resultAvailability } from "../shared/result-page.ts";
 import type { Exhibit } from "./exhibit.ts";
 
@@ -19,6 +20,11 @@ export function resultReply(pathname: string, exhibit: Exhibit, publishedUntil: 
 		return { kind: "response", response: Response.json(result, { headers: { "Cache-Control": "no-store" } }) };
 	}
 	return { kind: "page" };
+}
+
+/** `/api/keystone`。ページのパスごとの台形補正。`.env` を変えて再起動したら、ページの再読み込みで反映する。 */
+export function keystoneResponse(keystones: Readonly<Record<string, Keystone>>): Response {
+	return Response.json(keystones, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** Fetch APIの `Response` をNode.jsの応答へ書き出す。 */

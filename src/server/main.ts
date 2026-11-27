@@ -7,9 +7,10 @@ import { networkInterfaces } from "node:os";
 import { extname, join, normalize, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { validatePublicOrigin, validatePublishedUntil } from "../shared/data-validation.ts";
+import { keystonesFromEnv } from "../shared/keystone.ts";
 import { ROOT, readWranglerConfig, serverConfig } from "./config.ts";
 import { Exhibit } from "./exhibit.ts";
-import { parseRange, resultReply, writeResponse } from "./http.ts";
+import { keystoneResponse, parseRange, resultReply, writeResponse } from "./http.ts";
 import { attachRealtime } from "./realtime.ts";
 
 const DIST = join(ROOT, "dist");
@@ -70,6 +71,7 @@ for (const problem of [
 ]) {
 	console.warn(`wrangler.jsonc: ${problem}`);
 }
+for (const problem of keystonesFromEnv(process.env).problems) console.warn(`.env: ${problem}`);
 const exhibit = new Exhibit(config);
 
 const server = createServer(async (req, res) => {
@@ -86,6 +88,8 @@ const server = createServer(async (req, res) => {
 			if (reply.kind === "response") return await writeResponse(res, reply.response);
 			file = await distFile("/index.html");
 			cacheControl = "no-store";
+		} else if (url.pathname === "/api/keystone") {
+			return await writeResponse(res, keystoneResponse(config.keystones));
 		} else if (url.pathname.startsWith("/api/")) {
 			res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not Found");
 			return;

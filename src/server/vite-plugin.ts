@@ -2,10 +2,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import { loadEnv } from "vite";
+import { keystonesFromEnv } from "../shared/keystone.ts";
 import type { ServerConfig } from "./config.ts";
 import { ROOT, serverConfig } from "./config.ts";
 import { Exhibit } from "./exhibit.ts";
-import { resultReply, writeResponse } from "./http.ts";
+import { keystoneResponse, resultReply, writeResponse } from "./http.ts";
 import { attachRealtime } from "./realtime.ts";
 
 /**
@@ -25,6 +26,7 @@ export function exhibitServer(overrides: Partial<ServerConfig> = {}): Plugin {
 				resultsUploadToken: undefined,
 				...overrides,
 			});
+			for (const problem of keystonesFromEnv(env).problems) console.warn(`.env: ${problem}`);
 			const exhibit = new Exhibit(config);
 			const httpServer = server.httpServer;
 			const detach = httpServer ? attachRealtime(httpServer, exhibit) : () => {};
@@ -35,6 +37,8 @@ export function exhibitServer(overrides: Partial<ServerConfig> = {}): Plugin {
 
 			server.middlewares.use(async (req, res, next) => {
 				const url = new URL(req.url ?? "/", "http://localhost");
+				if (url.pathname === "/api/keystone")
+					return await writeResponse(res, keystoneResponse(config.keystones));
 				if (!url.pathname.startsWith("/result/")) return next();
 				try {
 					const reply = resultReply(url.pathname, exhibit, config.resultsPublishedUntil);

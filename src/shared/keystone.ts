@@ -126,3 +126,50 @@ export function moveCorner(keystone: Keystone, index: number, offset: CornerOffs
 	) as unknown as Keystone;
 	return isValidKeystone(next) ? next : keystone;
 }
+
+/** 台形補正の環境変数の接頭辞。`/display/split/1` の補正は `KEYSTONE_DISPLAY_SPLIT_1` に書く。 */
+export const KEYSTONE_ENV_PREFIX = "KEYSTONE_";
+
+/** ページのパス（`/display/split/1`）の補正を書く環境変数の名前（`KEYSTONE_DISPLAY_SPLIT_1`）。 */
+export function keystoneEnvName(path: string): string {
+	return KEYSTONE_ENV_PREFIX + path.split("/").filter(Boolean).join("_").toUpperCase();
+}
+
+/** 補正を環境変数の値（JSON）へ書き出す。小数は5桁に丸める。補正しない状態は空文字列。 */
+export function formatKeystone(keystone: Keystone): string {
+	if (isIdentityKeystone(keystone)) return "";
+	return JSON.stringify(keystone.map((corner) => corner.map((value) => Number(value.toFixed(5)) || 0)));
+}
+
+/** 二つの補正が同じか。 */
+export function sameKeystone(a: Keystone, b: Keystone): boolean {
+	return a.every((corner, index) => corner[0] === b[index][0] && corner[1] === b[index][1]);
+}
+
+/**
+ * 環境変数から台形補正を読む。`KEYSTONE_{パス}` をページのパスごとの補正にする（`KEYSTONE_DISPLAY_SPLIT_1` は
+ * `/display/split/1`）。値が空なら補正しない。読めない値は `problems` に挙げて使わない。
+ */
+export function keystonesFromEnv(env: Record<string, string | undefined>): {
+	keystones: Record<string, Keystone>;
+	problems: string[];
+} {
+	const keystones: Record<string, Keystone> = {};
+	const problems: string[] = [];
+	for (const [name, raw] of Object.entries(env)) {
+		if (!name.startsWith(KEYSTONE_ENV_PREFIX)) continue;
+		const value = raw?.trim();
+		if (!value) continue;
+		const path = `/${name.slice(KEYSTONE_ENV_PREFIX.length).toLowerCase().split("_").filter(Boolean).join("/")}`;
+		let keystone: Keystone | null = null;
+		try {
+			keystone = parseKeystone(JSON.parse(value));
+		} catch {
+			// 下で問題として挙げる。
+		}
+		if (keystone) keystones[path] = keystone;
+		else
+			problems.push(`${name} を台形補正として読めません（四隅のずれのJSON。画面の調整で表示される値を書き写す）`);
+	}
+	return { keystones, problems };
+}
