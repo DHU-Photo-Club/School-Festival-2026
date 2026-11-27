@@ -10,7 +10,7 @@ it("待機の粒子は小さく薄く、下部に留まり、動きを減らす�
  const scene = computeScene(base);
  const poses = ambientPoses(1920,1080,10000,state,scene,0,false);
  expect(poses).toHaveLength(180);
- for (const p of poses) { expect(p.y).toBeGreaterThan(800); expect(p.size).toBeLessThan(3); expect(p.alpha).toBeLessThan(.23); expect(p.color).toBe('#ffffff'); }
+ for (const p of poses) { expect(p.y).toBeGreaterThan(740); expect(p.size).toBeLessThan(3); expect(p.alpha).toBeLessThan(.33); expect(p.color).toBe('#ffffff'); }
  expect(ambientPoses(1920,1080,10000,state,scene,0,true)).toEqual(ambientPoses(1920,1080,12000,state,scene,1,true));
  expect(ambientPoses(1920,1080,10000,state,scene,1,false)).not.toEqual(poses);
 });

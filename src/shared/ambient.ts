@@ -20,15 +20,16 @@ export function ambientPoses(width: number, height: number, now: number, state: 
 	const waves = !reduced && scene.ripple ? rippleRings(scene.ripple.elapsed, width, height) : [];
 	return particles.map((seed, i) => {
 		let x = width * (.025 + seed[0] * .95 + Math.sin(time * .055 + seed[1] * 6.28) * .035);
-		let y = height * (.83 + seed[2] * .15 + Math.sin(time * .16 + seed[3] * 6.28) * .009);
+		let y = height * (.70 + seed[2] * .28 + Math.sin(time * .16 + seed[3] * 6.28) * .009);
 		if (!reduced) {
 			const wave = Math.sin(x / width * Math.PI * 8 - now / 320) * .65 + Math.sin(x / width * Math.PI * 17 + now / 210) * .35;
-			y = mix(y, height * .9 + wave * short * .025, speech * .65);
+			y = mix(y, height * .84 + wave * short * .025, speech * .65);
 			const dx = x - width / 2, dy = y - height / 2, radius = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
 			let push = waves.reduce((sum, wave) => sum + Math.exp(-(((radius - wave.radius) / (short * .13)) ** 2)) * wave.alpha * short * .08, 0);
-			// 拡大したリングに押されて退場し、縮小時には同じ経路から戻る。
+			// 通常の輪とは重なり、画面を覆うほど拡大したときだけ押しのける。
 			const ring = short * .38 * layer.scale * (1 + 1.6 * layer.spread);
-			if (!layer.burst && !gathering) push += Math.max(0, ring + short * .08 - radius);
+			const expansion = smooth((layer.scale * (1 + 1.6 * layer.spread) - 1.3) / 1.0);
+			if (!layer.burst && !gathering) push += Math.max(0, ring - radius) * expansion;
 			x += Math.cos(angle) * push; y += Math.sin(angle) * push;
 			if (gathering) {
 				const targetAngle = angle + merge * .45;
@@ -40,6 +41,6 @@ export function ambientPoses(width: number, height: number, now: number, state: 
 		const color = layer.colors?.[i % layer.colors.length] ?? "#ffffff";
 		const tint = layer.colors ? layer.tint : 0;
 		const channels = [1, 3, 5].map(c => Math.round(mix(255, parseInt(color.slice(c, c + 2), 16), tint)).toString(16).padStart(2, "0"));
-		return { x, y, size: 1 + seed[4] * 1.8, alpha: (.09 + seed[5] * .13) * (1 - smooth((merge - .55) / .45)) * resultReturn, color: `#${channels.join("")}` };
+		return { x, y, size: 1 + seed[4] * 1.8, alpha: (.14 + seed[5] * .18) * (1 - smooth((merge - .55) / .45)) * resultReturn, color: `#${channels.join("")}` };
 	});
 }
