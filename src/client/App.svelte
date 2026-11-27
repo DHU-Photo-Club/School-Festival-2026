@@ -1,28 +1,33 @@
 <script lang="ts">
 import { EXHIBIT } from "../data/exhibit.ts";
-import { parseScreenNumber } from "../shared/screens.ts";
+import { parseScreenNumber, parseSplitScreen } from "../shared/screens.ts";
 import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
+import SplitDisplay from "./display/SplitDisplay.svelte";
 import PhotoDisplay from "./photo/PhotoDisplay.svelte";
 import ResultPage from "./result/ResultPage.svelte";
 import SoundPage from "./sound/SoundPage.svelte";
 
 // ルート数が固定で少ないため、起動時のパスで最上位コンポーネントを決める。
 const path = location.pathname.replace(/\/+$/, "") || "/";
+// 二台のディスプレイを合わせた36:9の一つの画面を、ディスプレイごとのタブで左右に分けて描く画面分割。
+const split = parseSplitScreen(path.match(/^\/display\/split\/([^/]+)$/)?.[1] ?? null);
 const display = parseScreenNumber(path.match(/^\/display\/([^/]+)$/)?.[1] ?? null);
 const photo = parseScreenNumber(path.match(/^\/photo\/([^/]+)$/)?.[1] ?? null);
 const result = path.match(/^\/result\/([^/]+)$/);
-const pageLabel = display
-	? `展示ディスプレイ ${display}`
-	: photo
-		? `写真用 ${photo}`
-		: path === "/"
-			? "診断用iPad"
-			: path === "/admin"
-				? "運営管理"
-				: path === "/sound"
-					? "サウンド"
-					: "ページが見つかりません";
+const pageLabel = split
+	? `展示ディスプレイ ${split}（画面分割）`
+	: display
+		? `展示ディスプレイ ${display}`
+		: photo
+			? `写真用 ${photo}`
+			: path === "/"
+				? "診断用iPad"
+				: path === "/admin"
+					? "運営管理"
+					: path === "/sound"
+						? "サウンド"
+						: "ページが見つかりません";
 </script>
 
 <svelte:head>
@@ -33,6 +38,8 @@ const pageLabel = display
 
 {#if path === "/"}
 	<Controller />
+{:else if split}
+	<SplitDisplay screen={split} />
 {:else if display}
 	<Display screen={display} />
 {:else if photo}

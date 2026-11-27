@@ -34,11 +34,15 @@ import { DOOR_RIBBON_BLUR, drawDoorRibbon } from "./door.ts";
 import type { SceneRenderer } from "./renderer.ts";
 import { createRenderer } from "./renderer.ts";
 
-/** URLの画面番号（`/display/2` の `2`）。来場者から見た順に1から振る。 */
-let { screen }: { screen: number } = $props();
+/**
+ * `screen` はURLの画面番号（`/display/2` の `2`）で、来場者から見た順に1から振り、サーバーへの接続に使う。
+ * `order` は二色の割り当てと演出のずれに使う並び順で、省略すると画面番号 - 1。画面分割では、二つのタブが
+ * 一つの画面を描くため、どちらも0にする。
+ */
+let { screen, order }: { screen: number; order?: number } = $props();
 
 // svelte-ignore state_referenced_locally
-const displayOrder = screen - 1;
+const displayOrder = order ?? screen - 1;
 
 let displayState = $state<DisplayState | null>(null);
 let reducedMotion = $state(false);
@@ -47,6 +51,7 @@ let sequenceT = $state(0);
 /** 結果表示でこの画面が見せる色。結果開始のフレームで決め、そのセッション中は変えない。 */
 let resultChoice = $state<{ sessionId: string | null; colorId: PaletteId } | null>(null);
 
+let root = $state<HTMLElement>();
 let canvas = $state<HTMLCanvasElement>();
 let shardCanvas = $state<HTMLCanvasElement>();
 let bloomCanvas = $state<HTMLCanvasElement>();
@@ -74,6 +79,13 @@ let animateSessionId: string | null = null;
 let questionFromIntro = false;
 let previousBackground: string | null = null;
 let stopWatching = () => {};
+let resizeObserver: ResizeObserver | null = null;
+/**
+ * この画面の大きさ（CSS画素）。一つのウィンドウに二台分を並べる画面分割（`/display/split`）でも画面ごとに
+ * 描けるよう、ウィンドウではなく画面の要素の大きさを使う。
+ */
+let width = 1;
+let height = 1;
 
 /** `intro` の直前に再生するシーケンス。歓迎の文字はここから現れ始める。 */
 const welcomeLead = sequenceBefore(SEQUENCES, "intro");
@@ -150,28 +162,30 @@ const CANVAS_SCALE = 0.5;
 const shardRatio = () => Math.min(window.devicePixelRatio || 1, 2);
 
 function resize() {
-	if (!canvas) return;
-	canvas.width = Math.max(1, Math.round(window.innerWidth * CANVAS_SCALE));
-	canvas.height = Math.max(1, Math.round(window.innerHeight * CANVAS_SCALE));
+	if (!canvas || !root) return;
+	width = Math.max(1, root.clientWidth);
+	height = Math.max(1, root.clientHeight);
+	canvas.width = Math.max(1, Math.round(width * CANVAS_SCALE));
+	canvas.height = Math.max(1, Math.round(height * CANVAS_SCALE));
 	lastDrawn = "";
 	lastShards = "";
 	lastRipple = "";
 	if (rippleCanvas) {
-		rippleCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
-		rippleCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+		rippleCanvas.width = Math.max(1, Math.round(width * shardRatio()));
+		rippleCanvas.height = Math.max(1, Math.round(height * shardRatio()));
 	}
 	if (dustCanvas) {
-		dustCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
-		dustCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+		dustCanvas.width = Math.max(1, Math.round(width * shardRatio()));
+		dustCanvas.height = Math.max(1, Math.round(height * shardRatio()));
 		dustDrawn = true;
 	}
 	if (shardCanvas) {
-		shardCanvas.width = Math.max(1, Math.round(window.innerWidth * shardRatio()));
-		shardCanvas.height = Math.max(1, Math.round(window.innerHeight * shardRatio()));
+		shardCanvas.width = Math.max(1, Math.round(width * shardRatio()));
+		shardCanvas.height = Math.max(1, Math.round(height * shardRatio()));
 	}
 	if (bloomCanvas) {
-		bloomCanvas.width = Math.max(1, Math.round(window.innerWidth * SHARD_BLOOM_SCALE));
-		bloomCanvas.height = Math.max(1, Math.round(window.innerHeight * SHARD_BLOOM_SCALE));
+		bloomCanvas.width = Math.max(1, Math.round(width * SHARD_BLOOM_SCALE));
+		bloomCanvas.height = Math.max(1, Math.round(height * SHARD_BLOOM_SCALE));
 	}
 	if (doorCanvas) {
 		// 扉の中の光はぼかして見せるので、CSS画素と同じ解像度で足りる。
@@ -193,7 +207,7 @@ function drawShardLayer(layer: ShardLayer) {
 	if (key === lastShards) return;
 	lastShards = key;
 	const bloom = bloomCanvas?.getContext("2d");
-	const poses = shardPoses(window.innerWidth, window.innerHeight, layer.time, {
+	const poses = shardPoses(width, height, layer.time, {
 		scale: layer.scale,
 		density: layer.density,
 		size: layer.size,
@@ -204,8 +218,8 @@ function drawShardLayer(layer: ShardLayer) {
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
 	if (bloom) {
-		const ratio = bloom.canvas.width / window.innerWidth;
-		drawShardBloom(bloom, poses, ratio, Math.min(window.innerWidth, window.innerHeight), layer.intensity, tint);
+		const ratio = bloom.canvas.width / width;
+		drawShardBloom(bloom, poses, ratio, Math.min(width, height), layer.intensity, tint);
 	}
 }
 
@@ -216,7 +230,7 @@ function drawShardLayer(layer: ShardLayer) {
 function drawRippleLayer(layer: Scene["ripple"]) {
 	const context = rippleCanvas?.getContext("2d");
 	if (!context) return;
-	const rings = layer ? rippleRings(layer.elapsed, window.innerWidth, window.innerHeight) : [];
+	const rings = layer ? rippleRings(layer.elapsed, width, height) : [];
 	const key = rings.length === 0 ? "" : JSON.stringify(rings);
 	if (key === lastRipple) return;
 	lastRipple = key;
@@ -237,7 +251,7 @@ function drawDustLayer(layer: Scene["dust"]) {
 		return;
 	}
 	dustDrawn = true;
-	drawDust(context, dustPoses(layer.elapsed, window.innerWidth, window.innerHeight, layer.fade), shardRatio());
+	drawDust(context, dustPoses(layer.elapsed, width, height, layer.fade), shardRatio());
 }
 
 /**
@@ -283,7 +297,7 @@ function applyLayers(scene: Scene) {
 	setStyle(doorFrame, "right", inset);
 	// 結果で散らばり終えた破片をぼかす。canvas 2Dの描画は増やさず、要素のフィルターで合成時にぼかす。
 	// ぼかしの分だけ合成の負荷は増えるので、会場のPCで結果のフレーム時間を確かめる。
-	const blur = scene.shards.blur * SHARD_RESULT_BLUR * Math.min(window.innerWidth, window.innerHeight);
+	const blur = scene.shards.blur * SHARD_RESULT_BLUR * Math.min(width, height);
 	setStyle(shardCanvas, "filter", blur > 0.05 ? `blur(${blur.toFixed(1)}px)` : "");
 	setStyle(veil, "opacity", opacity(scene.veil?.opacity ?? 0));
 	if (scene.veil) setStyle(veil, "backgroundColor", scene.veil.color);
@@ -381,7 +395,8 @@ onMount(() => {
 		});
 		client.start();
 	}
-	window.addEventListener("resize", resize);
+	resizeObserver = new ResizeObserver(() => resize());
+	if (root) resizeObserver.observe(root);
 	window.addEventListener("keydown", onKey);
 	resize();
 	frame = requestAnimationFrame(tick);
@@ -391,7 +406,7 @@ onDestroy(() => {
 	cancelAnimationFrame(frame);
 	client?.stop();
 	stopWatching();
-	window.removeEventListener("resize", resize);
+	resizeObserver?.disconnect();
 	window.removeEventListener("keydown", onKey);
 });
 
@@ -416,6 +431,7 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 
 <main
 	class="display"
+	bind:this={root}
 	data-phase={displayState?.phase}
 	data-revision={displayState?.revision}
 	data-result-color={resultChoice?.colorId}
@@ -474,14 +490,17 @@ const sequenceMs = $derived(sequence && displayState ? sequenceDuration(sequence
 </main>
 
 <style>
+/* 親の枠いっぱいに広げる。単独の画面ではウィンドウ全体、画面分割では左右の半分。 */
 .display {
-	position: fixed;
+	position: absolute;
 	inset: 0;
 	overflow: hidden;
 	background: #0b0b0b;
 	cursor: none;
 	/* 破片とブルームの合成先をこの要素の中に限る。 */
 	isolation: isolate;
+	/* 文字や扉の大きさを、ウィンドウではなくこの画面の大きさ（cqh、cqmin など）で決める。 */
+	container-type: size;
 }
 canvas,
 .layer,
@@ -522,8 +541,8 @@ canvas,
 /* 縦長の扉。左右の中央に置き、下端を画面の下端に揃える（docs/visual-language.md 3.4.1節）。 */
 .door {
 	/* 扉の高さと、枠の太さ。 */
-	--door-height: 78vh;
-	--door-border: max(1px, 0.16vmin);
+	--door-height: 78cqh;
+	--door-border: max(1px, 0.16cqmin);
 	position: absolute;
 	left: 50%;
 	bottom: 0;
@@ -556,7 +575,7 @@ canvas,
 	display: grid;
 	place-content: center;
 	text-align: center;
-	font-size: 5vmin;
+	font-size: 5cqmin;
 	font-weight: 500;
 	letter-spacing: 0.12em;
 	color: #e8e6e3;
@@ -584,12 +603,12 @@ canvas,
 	display: grid;
 	place-content: center;
 	justify-items: center;
-	gap: 3vmin;
+	gap: 3cqmin;
 	text-align: center;
 }
 .color-lead {
 	margin: 0;
-	font-size: 5vmin;
+	font-size: 5cqmin;
 	font-weight: 500;
 	letter-spacing: 0.12em;
 	color: #ffffff;
@@ -597,7 +616,7 @@ canvas,
 .color-title {
 	margin: 0;
 	/* 最も長い色名（9文字）も、鉤括弧と字間を含めて画面幅の9割に収まる大きさ。 */
-	font-size: min(14vmin, 7.3vw);
+	font-size: min(14cqmin, 7.3cqw);
 	white-space: nowrap;
 	font-weight: 500;
 	letter-spacing: 0.12em;

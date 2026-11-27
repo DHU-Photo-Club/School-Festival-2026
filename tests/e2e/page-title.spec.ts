@@ -4,6 +4,8 @@ for (const [path, label] of [
 	["/", "診断用iPad"],
 	["/display/1", "展示ディスプレイ 1"],
 	["/display/2", "展示ディスプレイ 2"],
+	["/display/split/1", "展示ディスプレイ 1（画面分割）"],
+	["/display/split/2", "展示ディスプレイ 2（画面分割）"],
 	["/photo/1", "写真用 1"],
 	["/admin", "運営管理"],
 	["/sound", "サウンド"],
