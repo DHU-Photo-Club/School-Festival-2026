@@ -1,6 +1,7 @@
 <script lang="ts">
 import { EXHIBIT } from "../data/exhibit.ts";
 import { parseScreenNumber, parseSplitScreen } from "../shared/screens.ts";
+import Keystone from "./common/Keystone.svelte";
 import Controller from "./controller/Controller.svelte";
 import Display from "./display/Display.svelte";
 import SplitDisplay from "./display/SplitDisplay.svelte";
@@ -15,6 +16,8 @@ const split = parseSplitScreen(path.match(/^\/display\/split\/([^/]+)$/)?.[1] ??
 const display = parseScreenNumber(path.match(/^\/display\/([^/]+)$/)?.[1] ?? null);
 const photo = parseScreenNumber(path.match(/^\/photo\/([^/]+)$/)?.[1] ?? null);
 const result = path.match(/^\/result\/([^/]+)$/);
+/** 台形補正を、このブラウザにパスごとに残すキー（展示ディスプレイと写真用）。 */
+const keystoneKey = `dpc-keystone:${path}`;
 const pageLabel = split
 	? `展示ディスプレイ ${split}（画面分割）`
 	: display
@@ -39,11 +42,11 @@ const pageLabel = split
 {#if path === "/"}
 	<Controller />
 {:else if split}
-	<SplitDisplay screen={split} />
+	<Keystone storageKey={keystoneKey}><SplitDisplay screen={split} /></Keystone>
 {:else if display}
-	<Display screen={display} />
+	<Keystone storageKey={keystoneKey}><Display screen={display} /></Keystone>
 {:else if photo}
-	<PhotoDisplay screen={photo} />
+	<Keystone storageKey={keystoneKey}><PhotoDisplay screen={photo} /></Keystone>
 {:else if path === "/sound"}
 	<SoundPage />
 {:else if path === "/admin"}
