@@ -281,6 +281,7 @@ $effect(() => {
 {:else}
 	<main
 		class="screen"
+		class:blank-intro={pending === "start" || (exhibit.phase === "sequence" && exhibit.sequenceId === introLead?.id) || (exhibit.phase === "intro" && !nicknameReady)}
 		data-phase={exhibit.phase}
 		style:background={exhibit.phase === "result" && resultColors ? backgroundColor(resultColors[0]) : undefined}
 		style:color={exhibit.phase === "result" && resultColors ? foregroundColor(resultColors[0]) : undefined}
@@ -506,6 +507,14 @@ $effect(() => {
 {/if}
 
 <style>
+.screen.blank-intro {
+	background: #000;
+}
+.screen.blank-intro > * {
+	visibility: hidden;
+	pointer-events: none;
+}
+
 .screen {
 	position: relative;
 	min-height: 100dvh;

@@ -37,6 +37,8 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	await expect(welcome).toHaveText("あなた色写真展へようこそ");
 	await expect(welcome).toHaveCSS("opacity", "0");
 	await ipad.page.getByRole("button", { name: "はじめる" }).click();
+	await expect(ipad.page.locator("main.screen")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+	await expect(ipad.page.getByRole("heading")).toHaveCount(0);
 	await expect(display.page.locator("main.display")).toHaveAttribute("data-phase", "intro");
 	await expect(welcome).toHaveCSS("opacity", "1", { timeout: 6_000 });
 	// 説明の文を現れ終えるまで、iPadにニックネームの入力欄は出ない。
@@ -49,11 +51,13 @@ test("intro で「あなた色写真展へようこそ」がゆっくり現れ�
 	// 説明の文が現れている途中でも、入力欄は出ない。現れ終えると出る。
 	await expect(nicknameField).toHaveCount(0);
 	await expect(description).toHaveCSS("opacity", "1", { timeout: 10_000 });
+	await expect(ipad.page.locator("main.screen")).toHaveCSS("background-color", "rgb(0, 0, 0)");
 	await expect(display.page.locator(".description")).toHaveCSS("opacity", "0", { timeout: 10_000 });
 	await expect(display.page.locator(".invitation")).toHaveCSS("opacity", "1", { timeout: 3_000 });
 	await expect(display.page.locator(".invitation span")).toHaveText(["さあ、あなただけの色を", "見つけましょう"]);
 	await expect(nicknameField).toHaveCount(0);
 	await expect(nicknameField).toBeVisible({ timeout: 15_000 });
+	await expect(ipad.page.locator("main.screen")).not.toHaveClass(/blank-intro/);
 	const nicknamePrompt = display.page.locator(".nickname-prompt:not(.question-prompt)");
 	await expect(nicknamePrompt).toHaveCSS("opacity", "1");
 	await expect(nicknamePrompt).toHaveText("ニックネームを入力して下さい");
