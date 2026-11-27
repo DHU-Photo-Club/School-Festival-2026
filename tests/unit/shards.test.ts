@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	answerOrbitAdvance,
 	BREATH_CYCLE,
 	BREATH_DEPTH,
 	ringBreath,
@@ -321,4 +322,14 @@ describe("待機用の円形に沿った破片", () => {
 		const lengths = idle.map(({ vertices }) => Math.hypot(vertices[0][0] - vertices[1][0], vertices[0][1] - vertices[1][1]));
 		expect(Math.max(...lengths) / Math.min(...lengths)).toBeGreaterThan(2);
 	});
+});
+
+it("回答の加速は角度を逆戻りさせず、終わると一定の追加角度に落ち着く", () => {
+	expect(answerOrbitAdvance(-1)).toBe(0);
+	expect(answerOrbitAdvance(0)).toBe(0);
+	for (let t = 1; t <= 3000; t += 20) expect(answerOrbitAdvance(t)).toBeGreaterThanOrEqual(answerOrbitAdvance(t - 1));
+	expect(answerOrbitAdvance(2200)).toBeCloseTo(4400);
+	expect(answerOrbitAdvance(10000)).toBe(answerOrbitAdvance(2200));
+	expect(answerOrbitAdvance(1)).toBeLessThan(0.001);
+	expect(answerOrbitAdvance(2200) - answerOrbitAdvance(2199)).toBeLessThan(0.001);
 });

@@ -156,6 +156,7 @@ function ringPoses(
 	size: number,
 	spread: number,
 	idleFit: number,
+	orbitAdvance: number,
 ): ShardPose[] {
 	// 破片の大きさは通常の輪の半径で決め、`scale` で縮めるのは輪の半径だけにする。
 	const unit = Math.min(width, height) * SHARD_RING_RADIUS;
@@ -165,7 +166,7 @@ function ringPoses(
 	const cx = width / 2;
 	const cy = height / 2;
 	return RING.map((item, index) => {
-		const theta = item.a + (((elapsed * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
+		const theta = item.a + ((((elapsed + orbitAdvance) * item.speed) % ORBIT_MS) / ORBIT_MS) * Math.PI * 2;
 		// 輪の中の位置（内側の縁0〜外側の縁1）に応じて、散らばるときの距離を決める。
 		const rank = (item.b - 1 + RING_SPREAD) / (2 * RING_SPREAD);
 		const b = item.b + (1 + rank * SHARD_SCATTER_DEPTH - item.b) * spread;
@@ -207,9 +208,10 @@ export function shardPoses(
 		size = 1,
 		spread = 0,
 		idleFit = 0,
-	}: { scale?: number; density?: number; size?: number; spread?: number; idleFit?: number } = {},
+		orbitAdvance = 0,
+	}: { scale?: number; density?: number; size?: number; spread?: number; idleFit?: number; orbitAdvance?: number } = {},
 ): ShardPose[] {
-	return ringPoses(width, height, elapsed, scale, density, size, spread, idleFit);
+	return ringPoses(width, height, elapsed, scale, density, size, spread, idleFit, orbitAdvance);
 }
 
 /** 0〜255の三成分の色。 */
@@ -247,4 +249,11 @@ export function shardColor(
 export function shardOutlineColor(fill: Rgb): [number, number, number] {
 	const lift = (value: number) => value + (255 - value) * OUTLINE_LIGHTEN;
 	return [lift(fill[0]), lift(fill[1]), lift(fill[2])];
+}
+
+/** 回答後2.2秒だけ回転をふわっと加速する積分値。終了後も角度を保ち、逆戻りさせない。 */
+export function answerOrbitAdvance(elapsed: number): number {
+	const duration = 2200;
+	const t = Math.max(0, Math.min(duration, elapsed));
+	return 4 * (t / 2 - duration * Math.sin(2 * Math.PI * t / duration) / (4 * Math.PI));
 }

@@ -23,7 +23,7 @@ import {
 import { backgroundColor, foregroundColor, paletteColor } from "../../shared/palette.ts";
 import { rippleRings } from "../../shared/ripple.ts";
 import { findSequence, sequenceBefore, sequenceDuration, sequenceTime } from "../../shared/sequence.ts";
-import { shardPoses } from "../../shared/shards.ts";
+import { answerOrbitAdvance, shardPoses } from "../../shared/shards.ts";
 import type { DisplayState, PaletteId } from "../../shared/types.ts";
 import { drawDust } from "../common/dust.ts";
 import { drawRipple } from "../common/ripple.ts";
@@ -122,8 +122,20 @@ function onKey(event: KeyboardEvent) {
 
 const colorOf = (id: PaletteId | null) => paletteColor(PALETTE.colors, id);
 
+let completedOrbitAdvance = 0;
+let orbitAnswers: number[] = [];
 function onState(next: DisplayState) {
 	const previous = displayState;
+	// ニックネーム送信も、展示の描画上では他の回答と同じ反応にする。
+	if (next.phase === "question" && next.questionIndex === 0 && next.answeredAt === null) {
+		next = { ...next, answeredAt: next.phaseStartedAt };
+	}
+	if (next.answeredAt !== null && next.answeredAt !== previous?.answeredAt && (next.phase === "question" || next.phase === "judging")) {
+		const now = serverTime(performance.now());
+		completedOrbitAdvance += orbitAnswers.filter((at) => now - at >= 2200).reduce((sum, at) => sum + answerOrbitAdvance(now - at), 0);
+		orbitAnswers = orbitAnswers.filter((at) => now - at < 2200);
+		orbitAnswers.push(next.answeredAt);
+	}
 	if (next.phase === "question" && previous?.phase === "question" && next.questionIndex !== previous.questionIndex) {
 		// 「戻る」には縮小がないため短いフェード、回答による前進にはリングの縮小完了時刻を使う。
 		questionTextSwitchAt = next.answeredAt !== previous.answeredAt && next.answeredAt !== null
@@ -205,6 +217,7 @@ function drawShardLayer(layer: ShardLayer) {
 		size: layer.size,
 		spread: layer.spread,
 		idleFit: layer.idleFit,
+		orbitAdvance: reducedMotion ? 0 : completedOrbitAdvance + orbitAnswers.reduce((sum, at) => sum + answerOrbitAdvance(layer.time - at), 0),
 	});
 	const tint = layer.colors ? { colors: layer.colors.map(hexToRgb), amount: layer.tint } : undefined;
 	drawShards(context, poses, shardRatio(), layer.intensity, tint);
@@ -408,7 +421,7 @@ $effect(() => {
 	if (previous === index) return;
 	const now = serverTime(performance.now());
 	// 最初の質問ではニックネーム案内のフェードアウトを待つ。
-	const remaining = reducedMotion ? 0 : previous === null ? 200 : Math.max(0, (switchAt ?? now + 300) - now);
+	const remaining = reducedMotion ? 0 : previous === null ? Math.max(0, (displayState?.answeredAt ?? now) + ANSWER_PULSE_IN_MS - now) : Math.max(0, (switchAt ?? now + 300) - now);
 	questionTextFadeOutMs = remaining;
 	questionTextLeaving = true;
 	const timer = window.setTimeout(() => {
