@@ -23,6 +23,13 @@ test("サウンド用の画面は全音源を読み込んで鳴らし始め、�
 		await expect(status).toHaveText("再生中", { timeout: 30_000 });
 		await expect(page.getByRole("heading", { name: "読み込めなかった音源" })).toHaveCount(0);
 
+		// 全停止と再開。
+		await page.getByRole("button", { name: "すべての音を止める" }).click();
+		await expect(page.getByTestId("halt-note")).toBeVisible();
+		await page.getByRole("button", { name: "音を再開する" }).click();
+		await expect(page.getByTestId("halt-note")).toHaveCount(0);
+		await expect(status).toHaveText("再生中");
+
 		const card = harness.admin.page.getByRole("group", { name: "サウンド", exact: true });
 		await expect(card.getByTestId("device-audio")).toHaveText("再生中");
 
