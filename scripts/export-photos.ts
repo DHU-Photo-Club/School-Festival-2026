@@ -70,7 +70,6 @@ const isFresh = (output: string, source: string) =>
 
 const catalog = readCatalog();
 const byId = new Map(catalog.map((entry) => [entry.id, entry]));
-let nextIdleOrder = Math.max(-1, ...catalog.map((entry) => entry.idleOrder)) + 1;
 let exported = 0;
 const added: string[] = [];
 
@@ -112,8 +111,6 @@ for (const source of sources) {
 		id,
 		source,
 		...size,
-		idleEnabled: true,
-		idleOrder: nextIdleOrder++,
 		shareAllowed: false,
 		creditName,
 		colorTags: await colorTagsFromPixels(jpegFile),

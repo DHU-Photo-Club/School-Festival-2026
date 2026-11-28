@@ -4,8 +4,6 @@
 		"source": "_SDI1218-3.jpg",
 		"width": 1361,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 0,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -36,8 +34,6 @@
 		"source": "_SDI0743.jpg",
 		"width": 2048,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 7,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -67,8 +63,6 @@
 		"source": "_SDI1092-2.jpg",
 		"width": 2048,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 2,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -100,8 +94,6 @@
 		"source": "_SDI0225.jpg",
 		"width": 2048,
 		"height": 1361,
-		"idleEnabled": true,
-		"idleOrder": 4,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -133,8 +125,6 @@
 		"source": "_SDI0776.jpg",
 		"width": 1360,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 10,
 		"shareAllowed": false,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -164,8 +154,6 @@
 		"source": "_SDI0565-2.jpg",
 		"width": 2048,
 		"height": 878,
-		"idleEnabled": true,
-		"idleOrder": 1,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -198,8 +186,6 @@
 		"source": "_SDI1091.jpg",
 		"width": 2048,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 8,
 		"shareAllowed": false,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -230,8 +216,6 @@
 		"source": "_SDI1195-3.jpg",
 		"width": 1361,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 6,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -264,8 +248,6 @@
 		"source": "_SDI1134-2.jpg",
 		"width": 2048,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 11,
 		"shareAllowed": false,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -293,8 +275,6 @@
 		"source": "_SDI1031-2.jpg",
 		"width": 2048,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 3,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -321,8 +301,6 @@
 		"source": "_SDI1163-3.jpg",
 		"width": 1361,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 9,
 		"shareAllowed": false,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -355,8 +333,6 @@
 		"source": "_SDI1070-2.jpg",
 		"width": 1361,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 5,
 		"shareAllowed": true,
 		"creditName": "撮影者名（仮）",
 		"colorTags": {
@@ -386,8 +362,6 @@
 		"source": "01021423 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 12,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -411,8 +385,6 @@
 		"source": "01021730 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 13,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -433,8 +405,6 @@
 		"source": "01032479 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 14,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -456,8 +426,6 @@
 		"source": "1795434696635 - 澤田隼.jpg",
 		"width": 3840,
 		"height": 2892,
-		"idleEnabled": true,
-		"idleOrder": 15,
 		"shareAllowed": false,
 		"creditName": "澤田隼",
 		"colorTags": {
@@ -477,8 +445,6 @@
 		"source": "1795435067113 - 澤田隼.jpg",
 		"width": 3457,
 		"height": 1945,
-		"idleEnabled": true,
-		"idleOrder": 16,
 		"shareAllowed": false,
 		"creditName": "澤田隼",
 		"colorTags": {
@@ -502,8 +468,6 @@
 		"source": "1795738433752 - 石井結菜.jpg",
 		"width": 1045,
 		"height": 1567,
-		"idleEnabled": true,
-		"idleOrder": 17,
 		"shareAllowed": false,
 		"creditName": "石井結菜",
 		"colorTags": {
@@ -524,8 +488,6 @@
 		"source": "DLZX0336 - 鈴木宗和.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 18,
 		"shareAllowed": false,
 		"creditName": "鈴木宗和",
 		"colorTags": {
@@ -547,8 +509,6 @@
 		"source": "DSC01737 - 辻󠄀涼太.jpeg",
 		"width": 1616,
 		"height": 1080,
-		"idleEnabled": true,
-		"idleOrder": 19,
 		"shareAllowed": false,
 		"creditName": "辻󠄀涼太",
 		"colorTags": {
@@ -566,8 +526,6 @@
 		"source": "DSC01743 - 辻󠄀涼太.jpeg",
 		"width": 1080,
 		"height": 1616,
-		"idleEnabled": true,
-		"idleOrder": 20,
 		"shareAllowed": false,
 		"creditName": "辻󠄀涼太",
 		"colorTags": {
@@ -591,8 +549,6 @@
 		"source": "DSC03004 - 溝口結衣.jpeg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 21,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -615,8 +571,6 @@
 		"source": "DSC03019 - 溝口結衣.jpeg",
 		"width": 1454,
 		"height": 969,
-		"idleEnabled": true,
-		"idleOrder": 22,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -638,8 +592,6 @@
 		"source": "DSC03066 - 溝口結衣.jpeg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 23,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -662,8 +614,6 @@
 		"source": "DSC04132 - 溝口結衣.jpeg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 24,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -686,8 +636,6 @@
 		"source": "DSC05247 - 溝口結衣.jpeg",
 		"width": 3840,
 		"height": 2652,
-		"idleEnabled": true,
-		"idleOrder": 25,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -711,8 +659,6 @@
 		"source": "DSC05300 - 溝口結衣.jpeg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 26,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -736,8 +682,6 @@
 		"source": "DSC05435 - 溝口結衣.jpeg",
 		"width": 2967,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 27,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -755,8 +699,6 @@
 		"source": "DSCF4879 - 中村瑠璃.jpeg",
 		"width": 1184,
 		"height": 1776,
-		"idleEnabled": true,
-		"idleOrder": 28,
 		"shareAllowed": false,
 		"creditName": "中村瑠璃",
 		"colorTags": {
@@ -778,8 +720,6 @@
 		"source": "DSCF4882 - 中村瑠璃.jpeg",
 		"width": 1776,
 		"height": 1184,
-		"idleEnabled": true,
-		"idleOrder": 29,
 		"shareAllowed": false,
 		"creditName": "中村瑠璃",
 		"colorTags": {
@@ -803,8 +743,6 @@
 		"source": "DSC_3981 - 小林羽矢斗.jpeg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 30,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -825,8 +763,6 @@
 		"source": "DSC_5144 - 小林羽矢斗.jpeg",
 		"width": 3072,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 31,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -848,8 +784,6 @@
 		"source": "DSC_5315 - 小林羽矢斗.jpeg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 32,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -871,8 +805,6 @@
 		"source": "DSC_5377 - 小林羽矢斗.jpeg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 33,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -893,8 +825,6 @@
 		"source": "DSC_5463 - 小林羽矢斗.jpeg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 34,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -918,8 +848,6 @@
 		"source": "DSC_5542 - 小林羽矢斗.jpeg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 35,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -943,8 +871,6 @@
 		"source": "DSC_5547 - 小林羽矢斗.jpeg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 36,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -968,8 +894,6 @@
 		"source": "DSC_5575 - 小林羽矢斗.jpeg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 37,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -992,8 +916,6 @@
 		"source": "DSC_5578 - 小林羽矢斗.jpeg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 38,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -1017,8 +939,6 @@
 		"source": "DSC_5628 - 小林羽矢斗.jpeg",
 		"width": 3072,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 39,
 		"shareAllowed": false,
 		"creditName": "小林羽矢斗",
 		"colorTags": {
@@ -1041,8 +961,6 @@
 		"source": "DSC_5812_Original - 深谷美波.jpeg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 40,
 		"shareAllowed": false,
 		"creditName": "深谷美波",
 		"colorTags": {
@@ -1065,8 +983,6 @@
 		"source": "DSC_6045_Original - 深谷美波.jpeg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 41,
 		"shareAllowed": false,
 		"creditName": "深谷美波",
 		"colorTags": {
@@ -1087,8 +1003,6 @@
 		"source": "DSC_6396 - 深谷美波.jpeg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 42,
 		"shareAllowed": false,
 		"creditName": "深谷美波",
 		"colorTags": {
@@ -1112,8 +1026,6 @@
 		"source": "GNHU7932 - 鈴木宗和.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 43,
 		"shareAllowed": false,
 		"creditName": "鈴木宗和",
 		"colorTags": {
@@ -1136,8 +1048,6 @@
 		"source": "IMG_0251 - 森田早紀.jpeg",
 		"width": 2765,
 		"height": 3455,
-		"idleEnabled": true,
-		"idleOrder": 44,
 		"shareAllowed": false,
 		"creditName": "森田早紀",
 		"colorTags": {
@@ -1160,8 +1070,6 @@
 		"source": "IMG_2744 - 海野陽斗.jpeg",
 		"width": 2048,
 		"height": 1366,
-		"idleEnabled": true,
-		"idleOrder": 45,
 		"shareAllowed": false,
 		"creditName": "海野陽斗",
 		"colorTags": {
@@ -1183,8 +1091,6 @@
 		"source": "IMG_2745 - 海野陽斗.jpeg",
 		"width": 2048,
 		"height": 1366,
-		"idleEnabled": true,
-		"idleOrder": 46,
 		"shareAllowed": false,
 		"creditName": "海野陽斗",
 		"colorTags": {
@@ -1205,8 +1111,6 @@
 		"source": "IMG_2746 - 海野陽斗.jpeg",
 		"width": 2048,
 		"height": 1366,
-		"idleEnabled": true,
-		"idleOrder": 47,
 		"shareAllowed": false,
 		"creditName": "海野陽斗",
 		"colorTags": {
@@ -1226,8 +1130,6 @@
 		"source": "IMG_2747 - 海野陽斗.jpeg",
 		"width": 1366,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 48,
 		"shareAllowed": false,
 		"creditName": "海野陽斗",
 		"colorTags": {
@@ -1249,8 +1151,6 @@
 		"source": "IMG_2748 - 海野陽斗.jpeg",
 		"width": 2048,
 		"height": 1366,
-		"idleEnabled": true,
-		"idleOrder": 49,
 		"shareAllowed": false,
 		"creditName": "海野陽斗",
 		"colorTags": {
@@ -1271,8 +1171,6 @@
 		"source": "IMG_3341 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 50,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -1294,8 +1192,6 @@
 		"source": "IMG_3354 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 51,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -1315,8 +1211,6 @@
 		"source": "IMG_3934 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 52,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -1338,8 +1232,6 @@
 		"source": "IMG_3939 - 倉田侑季乃.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 53,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -1363,8 +1255,6 @@
 		"source": "IMG_5083 - 溝口結衣.jpeg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 54,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -1388,8 +1278,6 @@
 		"source": "IMG_5727 - 石井結菜.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 55,
 		"shareAllowed": false,
 		"creditName": "石井結菜",
 		"colorTags": {
@@ -1413,8 +1301,6 @@
 		"source": "IMG_5781 - 石井結菜.JPG",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 56,
 		"shareAllowed": false,
 		"creditName": "石井結菜",
 		"colorTags": {
@@ -1435,8 +1321,6 @@
 		"source": "IMG_5977 - 石井結菜.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 57,
 		"shareAllowed": false,
 		"creditName": "石井結菜",
 		"colorTags": {
@@ -1456,8 +1340,6 @@
 		"source": "IMG_6760 - 森田早紀.jpeg",
 		"width": 2448,
 		"height": 3264,
-		"idleEnabled": true,
-		"idleOrder": 58,
 		"shareAllowed": false,
 		"creditName": "森田早紀",
 		"colorTags": {
@@ -1479,8 +1361,6 @@
 		"source": "IMG_7128 - 森田早紀.jpeg",
 		"width": 3264,
 		"height": 2448,
-		"idleEnabled": true,
-		"idleOrder": 59,
 		"shareAllowed": false,
 		"creditName": "森田早紀",
 		"colorTags": {
@@ -1502,8 +1382,6 @@
 		"source": "IMG_8198 - 溝口結衣.jpeg",
 		"width": 1307,
 		"height": 873,
-		"idleEnabled": true,
-		"idleOrder": 60,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -1527,8 +1405,6 @@
 		"source": "IMG_8242 - 森田早紀.jpeg",
 		"width": 2329,
 		"height": 2911,
-		"idleEnabled": true,
-		"idleOrder": 61,
 		"shareAllowed": false,
 		"creditName": "森田早紀",
 		"colorTags": {
@@ -1552,8 +1428,6 @@
 		"source": "IMG_8302 - 溝口結衣.jpeg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 62,
 		"shareAllowed": false,
 		"creditName": "溝口結衣",
 		"colorTags": {
@@ -1577,8 +1451,6 @@
 		"source": "IMG_8790 - 森田早紀.jpeg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 63,
 		"shareAllowed": false,
 		"creditName": "森田早紀",
 		"colorTags": {
@@ -1600,8 +1472,6 @@
 		"source": "IMG_8826 - 森田早紀.jpeg",
 		"width": 2994,
 		"height": 2994,
-		"idleEnabled": true,
-		"idleOrder": 64,
 		"shareAllowed": false,
 		"creditName": "森田早紀",
 		"colorTags": {
@@ -1623,8 +1493,6 @@
 		"source": "KZJY3477 - 鈴木宗和.JPG",
 		"width": 2048,
 		"height": 2048,
-		"idleEnabled": true,
-		"idleOrder": 65,
 		"shareAllowed": false,
 		"creditName": "鈴木宗和",
 		"colorTags": {
@@ -1646,8 +1514,6 @@
 		"source": "LIAF7028 - 鈴木宗和.PNG",
 		"width": 3840,
 		"height": 2161,
-		"idleEnabled": true,
-		"idleOrder": 66,
 		"shareAllowed": false,
 		"creditName": "鈴木宗和",
 		"colorTags": {
@@ -1669,8 +1535,6 @@
 		"source": "P1021405-1 - 山下孝仁.jpg",
 		"width": 3326,
 		"height": 2079,
-		"idleEnabled": true,
-		"idleOrder": 67,
 		"shareAllowed": false,
 		"creditName": "山下孝仁",
 		"colorTags": {
@@ -1691,8 +1555,6 @@
 		"source": "P1032138 - 倉田侑季乃.jpeg",
 		"width": 2465,
 		"height": 3287,
-		"idleEnabled": true,
-		"idleOrder": 68,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -1716,8 +1578,6 @@
 		"source": "P1068442-14 - 山下孝仁.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 69,
 		"shareAllowed": false,
 		"creditName": "山下孝仁",
 		"colorTags": {
@@ -1737,8 +1597,6 @@
 		"source": "TRFI0682 - 鈴木宗和.JPG",
 		"width": 3840,
 		"height": 2559,
-		"idleEnabled": true,
-		"idleOrder": 70,
 		"shareAllowed": false,
 		"creditName": "鈴木宗和",
 		"colorTags": {
@@ -1760,8 +1618,6 @@
 		"source": "photos-naga/nagase1.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 71,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1781,8 +1637,6 @@
 		"source": "photos-naga/nagase10.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 72,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1806,8 +1660,6 @@
 		"source": "photos-naga/nagase12.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 73,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1827,8 +1679,6 @@
 		"source": "photos-naga/nagase15.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 74,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1846,8 +1696,6 @@
 		"source": "photos-naga/nagase16.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 75,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1868,8 +1716,6 @@
 		"source": "photos-naga/nagase17.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 76,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1891,8 +1737,6 @@
 		"source": "photos-naga/nagase19.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 77,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1914,8 +1758,6 @@
 		"source": "photos-naga/nagase2.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 78,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1937,8 +1779,6 @@
 		"source": "photos-naga/nagase20.JPG",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 79,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1958,8 +1798,6 @@
 		"source": "photos-naga/nagase3.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 80,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1979,8 +1817,6 @@
 		"source": "photos-naga/nagase4.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 81,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -1998,8 +1834,6 @@
 		"source": "photos-naga/nagase5.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 82,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -2021,8 +1855,6 @@
 		"source": "photos-naga/nagase6.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 83,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -2043,8 +1875,6 @@
 		"source": "photos-naga/nagase7.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 84,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -2062,8 +1892,6 @@
 		"source": "photos-naga/nagase8.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 85,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -2087,8 +1915,6 @@
 		"source": "photos-naga/nagase9.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 86,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -2111,8 +1937,6 @@
 		"source": "りょた - 打木崚太/りょた-01.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 87,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2134,8 +1958,6 @@
 		"source": "りょた - 打木崚太/りょた-02.jpg",
 		"width": 3840,
 		"height": 2671,
-		"idleEnabled": true,
-		"idleOrder": 88,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2158,8 +1980,6 @@
 		"source": "りょた - 打木崚太/りょた-03.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 89,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2181,8 +2001,6 @@
 		"source": "りょた - 打木崚太/りょた-04.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 90,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2206,8 +2024,6 @@
 		"source": "りょた - 打木崚太/りょた-05.jpg",
 		"width": 2423,
 		"height": 3634,
-		"idleEnabled": true,
-		"idleOrder": 91,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2229,8 +2045,6 @@
 		"source": "りょた - 打木崚太/りょた-06.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 92,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2254,8 +2068,6 @@
 		"source": "りょた - 打木崚太/りょた-07.jpg",
 		"width": 1739,
 		"height": 1304,
-		"idleEnabled": true,
-		"idleOrder": 93,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2279,8 +2091,6 @@
 		"source": "りょた - 打木崚太/りょた-08.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 94,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2301,8 +2111,6 @@
 		"source": "りょた - 打木崚太/りょた-09.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 95,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2325,8 +2133,6 @@
 		"source": "りょた - 打木崚太/りょた-10.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 96,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2348,8 +2154,6 @@
 		"source": "りょた - 打木崚太/りょた-11.jpg",
 		"width": 2780,
 		"height": 3707,
-		"idleEnabled": true,
-		"idleOrder": 97,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2369,8 +2173,6 @@
 		"source": "りょた - 打木崚太/りょた-12.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 98,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2395,8 +2197,6 @@
 		"source": "りょた - 打木崚太/りょた-13.jpg",
 		"width": 2399,
 		"height": 3599,
-		"idleEnabled": true,
-		"idleOrder": 99,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2418,8 +2218,6 @@
 		"source": "りょた - 打木崚太/りょた-14.jpg",
 		"width": 2497,
 		"height": 3746,
-		"idleEnabled": true,
-		"idleOrder": 100,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2441,8 +2239,6 @@
 		"source": "りょた - 打木崚太/りょた-15.jpg",
 		"width": 2531,
 		"height": 3796,
-		"idleEnabled": true,
-		"idleOrder": 101,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2463,8 +2259,6 @@
 		"source": "りょた - 打木崚太/りょた-16.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 102,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2486,8 +2280,6 @@
 		"source": "りょた - 打木崚太/りょた-17.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 103,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2510,8 +2302,6 @@
 		"source": "りょた - 打木崚太/りょた-18.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 104,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2532,8 +2322,6 @@
 		"source": "りょた - 打木崚太/りょた-19.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 105,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2555,8 +2343,6 @@
 		"source": "りょた - 打木崚太/りょた-20.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 106,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2580,8 +2366,6 @@
 		"source": "りょた - 打木崚太/りょた-21.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 107,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2603,8 +2387,6 @@
 		"source": "りょた - 打木崚太/りょた-22.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 108,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2626,8 +2408,6 @@
 		"source": "りょた - 打木崚太/りょた-23.jpg",
 		"width": 1080,
 		"height": 1616,
-		"idleEnabled": true,
-		"idleOrder": 109,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2651,8 +2431,6 @@
 		"source": "りょた - 打木崚太/りょた-24.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 110,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2674,8 +2452,6 @@
 		"source": "りょた - 打木崚太/りょた-25.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 111,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2697,8 +2473,6 @@
 		"source": "りょた - 打木崚太/りょた-26.jpg",
 		"width": 3007,
 		"height": 3007,
-		"idleEnabled": true,
-		"idleOrder": 112,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2720,8 +2494,6 @@
 		"source": "りょた - 打木崚太/りょた-27.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 113,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2742,8 +2514,6 @@
 		"source": "りょた - 打木崚太/りょた-28.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 114,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2765,8 +2535,6 @@
 		"source": "りょた - 打木崚太/りょた-29.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 115,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2789,8 +2557,6 @@
 		"source": "りょた - 打木崚太/りょた-30.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 116,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2811,8 +2577,6 @@
 		"source": "りょた - 打木崚太/りょた-31.jpg",
 		"width": 2048,
 		"height": 3072,
-		"idleEnabled": true,
-		"idleOrder": 117,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2834,8 +2598,6 @@
 		"source": "りょた - 打木崚太/りょた-32.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 118,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2857,8 +2619,6 @@
 		"source": "りょた - 打木崚太/りょた-33.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 119,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2880,8 +2640,6 @@
 		"source": "りょた - 打木崚太/りょた-34.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 120,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2905,8 +2663,6 @@
 		"source": "りょた - 打木崚太/りょた-35.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 121,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2928,8 +2684,6 @@
 		"source": "りょた - 打木崚太/りょた-36.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 122,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2952,8 +2706,6 @@
 		"source": "りょた - 打木崚太/りょた-37.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 123,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2973,8 +2725,6 @@
 		"source": "りょた - 打木崚太/りょた-38.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 124,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -2995,8 +2745,6 @@
 		"source": "りょた - 打木崚太/りょた-39.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 125,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3018,8 +2766,6 @@
 		"source": "りょた - 打木崚太/りょた-40.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 126,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3043,8 +2789,6 @@
 		"source": "りょた - 打木崚太/りょた-41.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 127,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3069,8 +2813,6 @@
 		"source": "りょた - 打木崚太/りょた-42.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 128,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3093,8 +2835,6 @@
 		"source": "りょた - 打木崚太/りょた-43.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 129,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3118,8 +2858,6 @@
 		"source": "りょた - 打木崚太/りょた-44.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 130,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3142,8 +2880,6 @@
 		"source": "りょた - 打木崚太/りょた-45.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 131,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3168,8 +2904,6 @@
 		"source": "りょた - 打木崚太/りょた-46.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 132,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3193,8 +2927,6 @@
 		"source": "りょた - 打木崚太/りょた-47.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 133,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3218,8 +2950,6 @@
 		"source": "りょた - 打木崚太/りょた-48.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 134,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3241,8 +2971,6 @@
 		"source": "りょた - 打木崚太/りょた-49.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 135,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3264,8 +2992,6 @@
 		"source": "りょた - 打木崚太/りょた-50.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 136,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3289,8 +3015,6 @@
 		"source": "りょた - 打木崚太/りょた-51.jpg",
 		"width": 2273,
 		"height": 3409,
-		"idleEnabled": true,
-		"idleOrder": 137,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3310,8 +3034,6 @@
 		"source": "りょた - 打木崚太/りょた-52.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 138,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3334,8 +3056,6 @@
 		"source": "りょた - 打木崚太/りょた-53.jpg",
 		"width": 3840,
 		"height": 2560,
-		"idleEnabled": true,
-		"idleOrder": 139,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3358,8 +3078,6 @@
 		"source": "りょた - 打木崚太/りょた-54.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 140,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3384,8 +3102,6 @@
 		"source": "りょた - 打木崚太/りょた-55.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 141,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3403,8 +3119,6 @@
 		"source": "りょた - 打木崚太/りょた-56.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 142,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3426,8 +3140,6 @@
 		"source": "りょた - 打木崚太/りょた-57.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 143,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3450,8 +3162,6 @@
 		"source": "りょた - 打木崚太/りょた-58.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 144,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3475,8 +3185,6 @@
 		"source": "りょた - 打木崚太/りょた-59.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 145,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3498,8 +3206,6 @@
 		"source": "りょた - 打木崚太/りょた-60.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 146,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3520,8 +3226,6 @@
 		"source": "りょた - 打木崚太/りょた-61.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 147,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3545,8 +3249,6 @@
 		"source": "りょた - 打木崚太/りょた-62.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 148,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3570,8 +3272,6 @@
 		"source": "りょた - 打木崚太/りょた-63.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 149,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3595,8 +3295,6 @@
 		"source": "りょた - 打木崚太/りょた-64.jpg",
 		"width": 2560,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 150,
 		"shareAllowed": false,
 		"creditName": "打木崚太",
 		"colorTags": {
@@ -3618,8 +3316,6 @@
 		"source": "シャキット10.25　編集やり直し - 倉田侑季乃.jpeg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 151,
 		"shareAllowed": false,
 		"creditName": "倉田侑季乃",
 		"colorTags": {
@@ -3641,8 +3337,6 @@
 		"source": "写真部用50/IMG_20260311_172200_30616.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 152,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3662,8 +3356,6 @@
 		"source": "写真部用50/IMG_20260314_230343_30377.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 153,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3684,8 +3376,6 @@
 		"source": "写真部用50/IMG_20260317_214851_30313.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 154,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3707,8 +3397,6 @@
 		"source": "写真部用50/IMG_20260321_154511_30194.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 155,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3729,8 +3417,6 @@
 		"source": "写真部用50/IMG_20260321_172241_30142.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 156,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3752,8 +3438,6 @@
 		"source": "写真部用50/IMG_20260322_163059_30065.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 157,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3776,8 +3460,6 @@
 		"source": "写真部用50/IMG_20260323_184233_30016.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 158,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3795,8 +3477,6 @@
 		"source": "写真部用50/IMG_20260326_172829_29828.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 159,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3820,8 +3500,6 @@
 		"source": "写真部用50/IMG_20260328_191215_29690.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 160,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3839,8 +3517,6 @@
 		"source": "写真部用50/IMG_20260412_152814_28665.jpg",
 		"width": 2893,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 161,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3864,8 +3540,6 @@
 		"source": "写真部用50/IMG_20260412_155551_28588.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 162,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3887,8 +3561,6 @@
 		"source": "写真部用50/IMG_20260415_005744_28540.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 163,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3908,8 +3580,6 @@
 		"source": "写真部用50/IMG_20260419_211908_28343.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 164,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3931,8 +3601,6 @@
 		"source": "写真部用50/IMG_20260425_171500_28032.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 165,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3954,8 +3622,6 @@
 		"source": "写真部用50/IMG_20260427_181125_27699.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 166,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -3977,8 +3643,6 @@
 		"source": "写真部用50/IMG_20260511_141123_26438.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 167,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4001,8 +3665,6 @@
 		"source": "写真部用50/IMG_20260511_152722_26394.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 168,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4024,8 +3686,6 @@
 		"source": "写真部用50/IMG_20260529_173847_25360.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 169,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4043,8 +3703,6 @@
 		"source": "写真部用50/IMG_20260531_174258_24880.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 170,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4065,8 +3723,6 @@
 		"source": "写真部用50/IMG_20260531_181917_24772.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 171,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4087,8 +3743,6 @@
 		"source": "写真部用50/IMG_20260531_183412_24724.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 172,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4110,8 +3764,6 @@
 		"source": "写真部用50/IMG_20260531_183653_24754.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 173,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4135,8 +3787,6 @@
 		"source": "写真部用50/IMG_20260531_191826_24684.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 174,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4158,8 +3808,6 @@
 		"source": "写真部用50/IMG_20260531_192848_24604.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 175,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4179,8 +3827,6 @@
 		"source": "写真部用50/IMG_20260606_185026_24382.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 176,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4202,8 +3848,6 @@
 		"source": "写真部用50/IMG_20260606_185147_24351.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 177,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4225,8 +3869,6 @@
 		"source": "写真部用50/IMG_20260608_002506_24329.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 178,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4246,8 +3888,6 @@
 		"source": "写真部用50/IMG_20260614_121134_32611.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 179,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4267,8 +3907,6 @@
 		"source": "写真部用50/IMG_20260617_191854_32541.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 180,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4290,8 +3928,6 @@
 		"source": "写真部用50/IMG_20260624_221900_32411.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 181,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4314,8 +3950,6 @@
 		"source": "写真部用50/IMG_20260625_213044_32406.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 182,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4333,8 +3967,6 @@
 		"source": "写真部用50/IMG_20260708_171015_31805.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 183,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4352,8 +3984,6 @@
 		"source": "写真部用50/IMG_20260708_180253_31785.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 184,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4376,8 +4006,6 @@
 		"source": "写真部用50/IMG_20260718_174741_31841.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 185,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4398,8 +4026,6 @@
 		"source": "写真部用50/IMG_20260729_163815_31426.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 186,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4422,8 +4048,6 @@
 		"source": "写真部用50/IMG_20260729_163952_31429.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 187,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4443,8 +4067,6 @@
 		"source": "写真部用50/IMG_20260815_122525_28017.jpg",
 		"width": 2891,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 188,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4465,8 +4087,6 @@
 		"source": "写真部用50/IMG_20260815_130906_27884.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 189,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4488,8 +4108,6 @@
 		"source": "写真部用50/IMG_20260825_084211_26496.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 190,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4511,8 +4129,6 @@
 		"source": "写真部用50/IMG_20260825_090445_26462.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 191,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4534,8 +4150,6 @@
 		"source": "写真部用50/IMG_20260830_171417_26261.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 192,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4556,8 +4170,6 @@
 		"source": "写真部用50/IMG_20260912_125658_25676.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 193,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4579,8 +4191,6 @@
 		"source": "写真部用50/IMG_20260914_111116_25226.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 194,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4598,8 +4208,6 @@
 		"source": "写真部用50/IMG_20260918_175121_24781.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 195,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4622,8 +4230,6 @@
 		"source": "写真部用50/IMG_20260930_132327_34024.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 196,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4641,8 +4247,6 @@
 		"source": "写真部用50/IMG_20261005_145047.jpg",
 		"width": 2850,
 		"height": 2143,
-		"idleEnabled": true,
-		"idleOrder": 197,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4664,8 +4268,6 @@
 		"source": "写真部用50/IMG_20261019_140147_33363.jpg",
 		"width": 3840,
 		"height": 2891,
-		"idleEnabled": true,
-		"idleOrder": 198,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4690,8 +4292,6 @@
 		"source": "写真部用50/IMG_20261107_144833_34527.jpg",
 		"width": 2880,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 199,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4709,8 +4309,6 @@
 		"source": "写真部用50/IMG_20261116_205932_136756.jpg",
 		"width": 3840,
 		"height": 2880,
-		"idleEnabled": true,
-		"idleOrder": 200,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4731,8 +4329,6 @@
 		"source": "写真部用50/WM_1780041090917.png",
 		"width": 2266,
 		"height": 3009,
-		"idleEnabled": true,
-		"idleOrder": 201,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4754,8 +4350,6 @@
 		"source": "学祭/DSC_2856.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 202,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4777,8 +4371,6 @@
 		"source": "学祭/DSC_2949.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 203,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4802,8 +4394,6 @@
 		"source": "学祭/DSC_3290.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 204,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4825,8 +4415,6 @@
 		"source": "学祭/DSC_3761.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 205,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4848,8 +4436,6 @@
 		"source": "学祭/DSC_3799.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 206,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4872,8 +4458,6 @@
 		"source": "学祭/_DSC0874.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 207,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4897,8 +4481,6 @@
 		"source": "学祭/_DSC0906.jpg",
 		"width": 3840,
 		"height": 2484,
-		"idleEnabled": true,
-		"idleOrder": 208,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4922,8 +4504,6 @@
 		"source": "学祭/_DSC0921.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 209,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4944,8 +4524,6 @@
 		"source": "学祭/_DSC1038.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 210,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4969,8 +4547,6 @@
 		"source": "学祭/_DSC1047.jpg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 211,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -4993,8 +4569,6 @@
 		"source": "学祭/_DSC1208.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 212,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5016,8 +4590,6 @@
 		"source": "学祭/_DSC1279.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 213,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5038,8 +4610,6 @@
 		"source": "学祭/_DSC1691.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 214,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5062,8 +4632,6 @@
 		"source": "学祭/_DSC1695.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 215,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5087,8 +4655,6 @@
 		"source": "学祭/_DSC1774.jpg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 216,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5112,8 +4678,6 @@
 		"source": "学祭/_DSC1814.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 217,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5137,8 +4701,6 @@
 		"source": "学祭/_DSC2160.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 218,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5160,8 +4722,6 @@
 		"source": "学祭/_DSC2576.jpg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 219,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5182,8 +4742,6 @@
 		"source": "学祭/_DSC2722.jpg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 220,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5206,8 +4764,6 @@
 		"source": "学祭/_DSC2770.jpg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 221,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5231,8 +4787,6 @@
 		"source": "学祭/_DSC3112.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 222,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5255,8 +4809,6 @@
 		"source": "学祭/_DSC3205.jpg",
 		"width": 2555,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 223,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5278,8 +4830,6 @@
 		"source": "学祭/_DSC3982.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 224,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5299,8 +4849,6 @@
 		"source": "学祭/_DSC4055.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 225,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5322,8 +4870,6 @@
 		"source": "学祭/_DSC4602.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 226,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5347,8 +4893,6 @@
 		"source": "学祭/_DSC4903.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 227,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5366,8 +4910,6 @@
 		"source": "学祭/_DSC4951.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 228,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5389,8 +4931,6 @@
 		"source": "学祭/_DSC5216.jpg",
 		"width": 3840,
 		"height": 2575,
-		"idleEnabled": true,
-		"idleOrder": 229,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5412,8 +4952,6 @@
 		"source": "学祭/_DSC5963.jpg",
 		"width": 2563,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 230,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5436,8 +4974,6 @@
 		"source": "学祭/_DSC5965.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 231,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5460,8 +4996,6 @@
 		"source": "学祭/_DSC6882.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 232,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5479,8 +5013,6 @@
 		"source": "学祭/_DSC6892.jpg",
 		"width": 2615,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 233,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5500,8 +5032,6 @@
 		"source": "学祭/_DSC7140.jpg",
 		"width": 3840,
 		"height": 2555,
-		"idleEnabled": true,
-		"idleOrder": 234,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5522,8 +5052,6 @@
 		"source": "学祭/_DSC7222.jpg",
 		"width": 2535,
 		"height": 3840,
-		"idleEnabled": true,
-		"idleOrder": 235,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5544,8 +5072,6 @@
 		"source": "学祭/_DSC7248.jpg",
 		"width": 3840,
 		"height": 2563,
-		"idleEnabled": true,
-		"idleOrder": 236,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5567,8 +5093,6 @@
 		"source": "学祭/_MG_5713.jpg",
 		"width": 3456,
 		"height": 2304,
-		"idleEnabled": true,
-		"idleOrder": 237,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5590,8 +5114,6 @@
 		"source": "学祭/_MG_5733.jpg",
 		"width": 2048,
 		"height": 1365,
-		"idleEnabled": true,
-		"idleOrder": 238,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5613,8 +5135,6 @@
 		"source": "学祭/_MG_5904.jpg",
 		"width": 3456,
 		"height": 2304,
-		"idleEnabled": true,
-		"idleOrder": 239,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5636,8 +5156,6 @@
 		"source": "学祭/_MG_6101.jpg",
 		"width": 2304,
 		"height": 3456,
-		"idleEnabled": true,
-		"idleOrder": 240,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5658,8 +5176,6 @@
 		"source": "学祭/_MG_6120.jpg",
 		"width": 2304,
 		"height": 3456,
-		"idleEnabled": true,
-		"idleOrder": 241,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {
@@ -5681,8 +5197,6 @@
 		"source": "学祭/歩き２.jpg",
 		"width": 3240,
 		"height": 2160,
-		"idleEnabled": true,
-		"idleOrder": 242,
 		"shareAllowed": false,
 		"creditName": null,
 		"colorTags": {

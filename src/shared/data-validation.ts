@@ -125,8 +125,6 @@ export function validateExhibitData(input: {
 		if (!PHOTO_ID_PATTERN.test(photo.id)) errors.push(`写真ID ${photo.id} の形式が不正です`);
 		if (photoIds.has(photo.id)) errors.push(`写真ID ${photo.id} が重複しています`);
 		photoIds.add(photo.id);
-		if (!Number.isInteger(photo.idleOrder) || photo.idleOrder < 0)
-			errors.push(`${label} の idleOrder は0以上の整数にします`);
 		if (!Number.isInteger(photo.width) || photo.width <= 0 || !Number.isInteger(photo.height) || photo.height <= 0)
 			errors.push(`${label} の寸法は正の整数にします`);
 		for (const id of [...photo.colorTags.overall, ...photo.colorTags.partial]) {

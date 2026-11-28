@@ -12,7 +12,7 @@ import catalog from "./photo-catalog.json" with { type: "json" };
  *
  * 仮データ（`tagStatus: "provisional"`）: タグと説明は、実装担当が写真を見て付けた値か、画素から計算した値。
  * タグの語彙と色の「近い」の基準は未決定（実装仕様書11章 2、3）のため、写真担当が見直す。
- * `shareAllowed`、`creditName`、`idleOrder` も仮の値。
+ * `shareAllowed`、`creditName` も仮の値。
  */
 export type PhotoCatalogEntry = Photo & {
 	/** `originals/photos/` からの原本の相対パス。 */

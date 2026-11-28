@@ -8,8 +8,6 @@ import type { DisplayState, PaletteColor, PaletteId } from "./types.ts";
 
 // ---- 時間（docs/visual-language.md 3章） ----
 
-/** `/photo` の写真表示が写真を切り替える間隔。展示ディスプレイは写真を置かない。 */
-export const IDLE_FRAME_MS = 8_000;
 export const JUDGING_FADE_MS = 1_200;
 /** 待機中の輪の半径（質問中の輪に対する倍率）。破片の大きさは変えない。 */
 export const SHARD_IDLE_SCALE = 0.3;

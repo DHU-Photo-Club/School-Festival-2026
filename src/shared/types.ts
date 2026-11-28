@@ -246,8 +246,6 @@ export interface Photo {
 	id: string;
 	width: number;
 	height: number;
-	idleEnabled: boolean;
-	idleOrder: number;
 	shareAllowed: boolean;
 	creditName: string | null;
 	creditUrl?: string;
