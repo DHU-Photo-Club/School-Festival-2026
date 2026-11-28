@@ -1,183 +1,28 @@
 import type { Photo } from "../shared/types.ts";
+import catalog from "./photo-catalog.json" with { type: "json" };
 
 /**
  * 写真カタログ（refs/handoff 実装仕様書7.4節、examples/photo-catalog.json）。ファイルは
- * `public/photos/{id}.avif` と `public/photos/{id}.jpg`。原本は `photos/originals/` に置き、
- * `pnpm export-photos` で表示用ファイルを書き出す。
+ * `public/photos/{id}.avif` と `public/photos/{id}.jpg`。
  *
- * 仮データ（`tagStatus: "provisional"`）: 色タグ、内容タグ、雰囲気タグ、説明は、実装担当が写真を見て
- * 仮に付けた値。タグの語彙と色の「近い」の基準は未決定（実装仕様書11章 2、3）のため、写真担当が見直す。
+ * 中身は `photo-catalog.json`。原本を `originals/photos/` の下（サブフォルダー可）に置き、
+ * `pnpm export-photos` で表示用ファイルを書き出すと、見つけた写真がカタログへ追加される。
+ * 追加された写真の色タグは画素から計算する（`colorTagsFrom: "pixels"`、書き出しのたびに計算し直す）。
+ * 内容タグ、雰囲気タグ、説明は空のままで、AIの内容の判定には渡さず、色だけで選ぶ（段階2）。
+ *
+ * 仮データ（`tagStatus: "provisional"`）: タグと説明は、実装担当が写真を見て付けた値か、画素から計算した値。
+ * タグの語彙と色の「近い」の基準は未決定（実装仕様書11章 2、3）のため、写真担当が見直す。
  * `shareAllowed`、`creditName`、`idleOrder` も仮の値。
  */
-const CREDIT = "撮影者名（仮）";
+export type PhotoCatalogEntry = Photo & {
+	/** `originals/photos/` からの原本の相対パス。 */
+	source: string;
+	/** 色タグを人が付けたか（`manual`）、画素から計算したか（`pixels`）。 */
+	colorTagsFrom: "manual" | "pixels";
+};
 
-export const PHOTOS: readonly Photo[] = [
-	{
-		id: "sdi1218-3",
-		width: 1361,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 0,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: ["orange"], partial: ["vermilion", "amber"] },
-		contentTags: ["食べ物", "麺", "湯気", "食卓"],
-		moodTags: ["温かい", "満ちる"],
-		description: "赤みのあるスープから麺を持ち上げた瞬間。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi0743",
-		width: 2048,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 7,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: [], partial: ["orange", "amber"] },
-		contentTags: ["食べ物", "料理", "鉄板", "手仕事"],
-		moodTags: ["温かい", "きらめき", "つくる"],
-		description: "暗い鉄板の上で、卵をのせたトーストに塩が降る。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1092-2",
-		width: 2048,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 2,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: ["gold", "jade"], partial: ["sky"] },
-		contentTags: ["水", "網", "光", "揺らぎ"],
-		moodTags: ["きらめき", "発見", "解放感"],
-		description: "黄色い網に光が当たり、水色の床へにじむ。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi0225",
-		width: 2048,
-		height: 1361,
-		idleEnabled: true,
-		idleOrder: 4,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: ["leaf"], partial: ["emerald", "gold"] },
-		contentTags: ["植物", "若葉", "街の片隅", "細部"],
-		moodTags: ["静か", "芽生え", "穏やか"],
-		description: "灰色の壁の前で、金網から若い葉が伸びる。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi0776",
-		width: 1360,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 10,
-		shareAllowed: false,
-		creditName: CREDIT,
-		colorTags: { overall: ["forest"], partial: ["leaf"] },
-		contentTags: ["草地", "日常の道具", "置き去り"],
-		moodTags: ["静か", "ひっそり", "余白"],
-		description: "草の上に置かれた電源タップとコード。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi0565-2",
-		width: 2048,
-		height: 878,
-		idleEnabled: true,
-		idleOrder: 1,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: ["sky"], partial: ["vermilion", "amber"] },
-		contentTags: ["空", "柵", "標識", "枯れ草", "遠景"],
-		moodTags: ["遠く", "乾いた", "静か"],
-		description: "青空の下、有刺鉄線の柵に赤い「立入禁止」の札。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1091",
-		width: 2048,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 8,
-		shareAllowed: false,
-		creditName: CREDIT,
-		colorTags: { overall: ["sky"], partial: ["gold"] },
-		contentTags: ["棚", "道具", "スプレー缶", "余白"],
-		moodTags: ["静か", "落ち着き", "余白"],
-		description: "淡い青の棚に置かれたスプレー缶。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1195-3",
-		width: 1361,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 6,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: ["jade"], partial: ["amber", "vermilion"] },
-		contentTags: ["商店街", "夜", "人", "横断歩道", "アーケード"],
-		moodTags: ["にぎやか", "人の気配", "夜"],
-		description: "夜のアーケード街の入口に、人が行き交う。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1134-2",
-		width: 2048,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 11,
-		shareAllowed: false,
-		creditName: CREDIT,
-		colorTags: { overall: [], partial: ["orange"] },
-		contentTags: ["建物", "室外機", "電線", "見上げる"],
-		moodTags: ["雑多", "街の気配"],
-		description: "室外機と電線が重なる建物の側面を見上げる。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1031-2",
-		width: 2048,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 3,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: [], partial: [] },
-		contentTags: ["暗がり", "小さな光", "白黒", "抽象"],
-		moodTags: ["静か", "内省", "夜"],
-		description: "白黒の暗がりに、金具が小さく光る。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1163-3",
-		width: 1361,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 9,
-		shareAllowed: false,
-		creditName: CREDIT,
-		colorTags: { overall: ["jade", "emerald"], partial: ["vermilion", "gold"] },
-		contentTags: ["サイン", "文字", "寄せ書き", "思い出"],
-		moodTags: ["温かい", "名残", "感謝"],
-		description: "緑の金属面に残された手書きのサインと、感謝の掲示。",
-		tagStatus: "provisional",
-	},
-	{
-		id: "sdi1070-2",
-		width: 1361,
-		height: 2048,
-		idleEnabled: true,
-		idleOrder: 5,
-		shareAllowed: true,
-		creditName: CREDIT,
-		colorTags: { overall: [], partial: ["gold", "vermilion"] },
-		contentTags: ["自動販売機", "お菓子", "値札", "街"],
-		moodTags: ["わくわく", "遊び", "にぎやか"],
-		description: "自動販売機の棚に並ぶお菓子と値札。",
-		tagStatus: "provisional",
-	},
-];
+export const PHOTO_CATALOG = catalog as readonly PhotoCatalogEntry[];
+
+export const PHOTOS: readonly Photo[] = PHOTO_CATALOG.map(
+	({ source: _source, colorTagsFrom: _colorTagsFrom, ...photo }) => photo,
+);

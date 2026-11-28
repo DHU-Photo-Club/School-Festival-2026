@@ -24,3 +24,6 @@ playwright-report/
 
 # Personal references
 refs/
+
+# 素材の原本（写真、音など）。リポジトリには書き出した配信用のファイル（public/）だけを入れる
+/originals/

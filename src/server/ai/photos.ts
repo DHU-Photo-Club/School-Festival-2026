@@ -1,4 +1,4 @@
-import type { ContentMatch } from "../../shared/photo-selection.ts";
+import { type ContentMatch, hasContent } from "../../shared/photo-selection.ts";
 import type { Photo, QuestionId } from "../../shared/types.ts";
 import type { Checked } from "./color.ts";
 
@@ -9,9 +9,12 @@ const isObject = (value: unknown): value is Json =>
 /** 理由の文字数の上限。内部用の記録で、来場者には見せない。 */
 const REASON_MAX = 120;
 
-/** AIへ渡す写真カタログ。内容の判定に使う情報だけを渡す（色は実装側で判定する）。 */
+/**
+ * AIへ渡す写真カタログ。内容の判定に使う情報だけを渡す（色は実装側で判定する）。
+ * 内容の情報がない写真（画素から色だけを計算した写真）は、AIが判定できないため渡さない。
+ */
 export function photoCatalogInput(photos: readonly Photo[]) {
-	return photos.map((photo) => ({
+	return photos.filter(hasContent).map((photo) => ({
 		id: photo.id,
 		contentTags: photo.contentTags,
 		moodTags: photo.moodTags,
