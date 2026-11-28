@@ -6,7 +6,7 @@
 //                                         設定すると、初期設定前の電球をBluetoothで見つけてWi-Fiへつなぐ
 //   pnpm lights list                     登録した電球の一覧
 //   pnpm lights identify <番号>           電球を点滅させて、どれが何番かを確かめる
-//   pnpm lights test [番号]               白色とパレットの13色を順に送る（会場サーバーは要らない）
+//   pnpm lights test [番号]               白色とパレットの13色を順にすぐ切り替えて送る（会場サーバーは要らない）
 //   pnpm lights remove <番号>             電球の登録を外す
 //   pnpm lights                           展示状態に合わせて電球を動かす
 //
@@ -51,8 +51,8 @@ const SEED_POLL_MS = 250;
 const OPEN_TIMEOUT_MS = 15_000;
 /** `identify` で点滅させる秒数。 */
 const IDENTIFY_SECONDS = 10;
-/** `test` で一色を見せる秒数。白色から色へ移る時間（`LIGHT_SETTINGS.toColorSeconds`）より長くする。 */
-const TEST_HOLD_SECONDS = 5;
+/** `test` で一色を見せる秒数。`test` は遷移の時間をかけずにすぐ色を変える。 */
+const TEST_HOLD_SECONDS = 1;
 /**
  * `test` で一つの電球へ送り終えるまで待つ上限。matter.js は電球が見つかるまでつなぎ直し続けるため、
  * 上限がないと届かない電球で止まったままになる。
@@ -183,11 +183,14 @@ async function step(name: string, run: () => Promise<unknown>): Promise<void> {
 	}
 }
 
-/** 電球一つを目標の色へ移す。点灯と明るさもそろえる。 */
-async function applyTarget(bulb: Bulb, target: LightTarget): Promise<void> {
+/**
+ * 電球一つを目標の色へ移す。点灯と明るさもそろえる。
+ * `transitionSeconds` を渡すと、設定（`LIGHT_SETTINGS`）の遷移の秒数の代わりに使う。
+ */
+async function applyTarget(bulb: Bulb, target: LightTarget, transitionSeconds?: number): Promise<void> {
 	const { endpoint } = bulb;
 	const scene = lightScene(target, LIGHT_SETTINGS);
-	const transitionTime = toTransitionTime(scene.transitionSeconds);
+	const transitionTime = toTransitionTime(transitionSeconds ?? scene.transitionSeconds);
 	const hasLevel = endpoint.behaviors.has(LevelControlClient);
 	const levelRequest = { level: scene.level, transitionTime, optionsMask: {}, optionsOverride: {} };
 	if (hasLevel && bulb.levelWithOnOff) {
@@ -522,7 +525,8 @@ async function test(controller: ServerNode, number: string | undefined): Promise
 					);
 				});
 				try {
-					await Promise.race([applyTarget(bulb, target), timeout]);
+					// 色の見え方を確かめやすいよう、グラデーションにせずすぐ切り替える。
+					await Promise.race([applyTarget(bulb, target, 0), timeout]);
 					return true;
 				} catch (error) {
 					console.warn(`  ${bulb.label} へ送れませんでした。`, error);
