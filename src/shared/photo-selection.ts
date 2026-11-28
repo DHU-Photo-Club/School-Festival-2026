@@ -9,6 +9,11 @@ export interface ContentMatch {
 	reason: string;
 }
 
+/** 写真に内容の情報（内容タグ、雰囲気タグ、説明のどれか）があるか。ないものはAIの内容の判定に使わない。 */
+export function hasContent(photo: Photo): boolean {
+	return photo.contentTags.length > 0 || photo.moodTags.length > 0 || photo.description.trim().length > 0;
+}
+
 /**
  * 写真の色適合（refs/handoff 実装仕様書7.1節）。二色のどちらかが写真全体の印象（`overall`）か、
  * 視認できる一部分（`partial`）の色タグにあれば適合。全体を部分より、一色目を二色目より先に見る。

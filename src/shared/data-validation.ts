@@ -1,4 +1,5 @@
 import { COLORS } from "./motion.ts";
+import { hasContent } from "./photo-selection.ts";
 import { backgroundColor, contrastRatio, foregroundColor, nameColor, nameGradientStops, rgbToHex } from "./palette.ts";
 import type { Palette, PaletteId, Photo, Question, Sequence } from "./types.ts";
 import { MAP_CELL_IDS, PALETTE_IDS, QUESTION_KINDS, SEQUENCE_TARGETS, SLIDER_STOP_IDS } from "./types.ts";
@@ -133,7 +134,8 @@ export function validateExhibitData(input: {
 		}
 		if ([...photo.contentTags, ...photo.moodTags].some((tag) => !filled(tag)))
 			errors.push(`${label} に空のタグがあります`);
-		if (!filled(photo.description)) errors.push(`${label} の説明がありません`);
+		// 内容タグも雰囲気タグもない写真（画素から色だけを計算した写真）は、説明も空でよい。
+		if (!filled(photo.description) && hasContent(photo)) errors.push(`${label} の説明がありません`);
 		if (photo.shareAllowed && !photo.creditName)
 			errors.push(`${label} は配布を許可していますが creditName がありません`);
 	}

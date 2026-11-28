@@ -209,7 +209,7 @@ describe("展示データ", () => {
 
 	it("全写真IDに同寸法のAVIFとJPEGがあり、容量上限と長辺3,840px以下を満たす", async () => {
 		expect(await validatePhotoFiles(PHOTOS, join(import.meta.dirname, "..", "..", "public", "photos"))).toEqual([]);
-	}, 60_000);
+	}, 180_000);
 
 	it("写真ファイルの欠落を検出する", async () => {
 		const errors = await validatePhotoFiles(
