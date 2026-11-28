@@ -21,7 +21,7 @@ export const COLOR_SELECTION_PROMPT = `あなた色写真展の色表現を提�
  * 写真の選定の指示（refs/handoff prompts/photo-selection.txt を元にした）。
  *
  * 原文との違い: 色の適合は写真の色タグから実装側で判定する（実装仕様書7.1節の「人のタグ」の方式）。
- * AIには内容の適合だけを判定させ、段階1→2→3の組み立てと枚数の調整は実装側で行う（`selectPhotos`）。
+ * 色が合う写真に絞ってAIへ渡し、内容の適合を補助に使う。色の一致度の順位と枚数の調整は実装側で行う（`selectPhotos`）。
  */
 export const PHOTO_SELECTION_PROMPT = `あなた色写真展の写真選定を支援してください。
 入力は、5問の回答（質問文・回答文言・軸方向を含む）、確定した二色、実在写真のカタログです。

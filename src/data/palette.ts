@@ -6,6 +6,7 @@ import type { Palette } from "../shared/types.ts";
  * 自然や都市風景の写真につながる展示用の候補色。
  */
 export const PALETTE: Palette = {
+	version: "scenery-v2",
 	colors: [
 		{ id: "vermilion", name: "朱色", h: 12, s: 76, l: 53, scene: "紅葉、鳥居、赤い外壁" },
 		{ id: "orange", name: "夕映えオレンジ", h: 28, s: 79, l: 57, scene: "夕日、柑橘、街の灯り" },

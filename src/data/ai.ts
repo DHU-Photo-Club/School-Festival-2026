@@ -26,11 +26,11 @@ export const COLOR_OUTPUT_LIMITS = {
 	relationship: 150,
 } as const;
 
-/** 写真選定の方針（refs/handoff config/photo-selection.json）。`null` は未決定。 */
+/** 写真選定の方針。診断結果の二色との一致を必須とする。 */
 export const PHOTO_POLICY = {
-	version: "photo-policy-v1",
-	/** 一回の体験で選ぶ写真の枚数（暫定値）。全段階でも足りなければ不足数を記録する。 */
+	version: "photo-policy-v2-color",
+	/** 一回の体験で選ぶ写真の枚数（暫定値）。色が合う写真が足りなければ不足数を記録する。 */
 	sessionPhotoCount: 10,
-	/** 段階3（内容だけ合う写真）の上限。未決定のため設けない。 */
-	tier3Quota: null,
+	/** 色が合わず内容だけ合う写真は選ばない。 */
+	tier3Quota: 0,
 } as const;

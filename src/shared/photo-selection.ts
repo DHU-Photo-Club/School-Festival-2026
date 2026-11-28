@@ -27,12 +27,12 @@ export function colorMatch(photo: Photo, colors: readonly PaletteId[]): PhotoPic
 }
 
 /**
- * 写真を段階1→2→3の順に選ぶ（refs/handoff 実装仕様書7.2節、7.3節）。
- * - 段階1: 色と内容の両方が合う。段階2: 色だけ合う（内容が不明でもよい）。段階3: 内容だけ合う。
- * - 各写真は上位の一つの段階だけに属し、同じ写真を二度選ばない。重み付きの合計で段階を入れ替えない。
- * - 段階内の順位は未決定のため、段階1と段階3はAIの判定順、段階2は全体の色を部分の色より先にし、
- *   同じならカタログの順にする。
- * - `contentMatches` が `null`（AIの写真選定に失敗）なら、内容は根拠不足として段階2だけを使う。
+ * 診断結果の二色に合う写真だけを選ぶ。
+ * - 全体の色（overall）が合う写真を、部分の色（partial）だけ合う写真より優先する。
+ * - 色の一致度が同じ場合だけ、内容も合う写真を優先し、その中ではAIの判定順を使う。
+ * - 内容だけ合う写真や、色タグがない写真では不足枚数を埋めない。
+ * - `tier` は根拠の記録に使う（1: 色と内容、2: 色だけ）。段階3は過去の記録にだけ残る。
+ * - `contentMatches` が `null`（AIの写真選定に失敗）でも、色の条件は変えない。
  * - カタログにない写真IDは使わない。足りない枚数は `shortage` に記録し、架空の写真や重複で埋めない。
  */
 export function selectPhotos(input: {
@@ -48,35 +48,28 @@ export function selectPhotos(input: {
 	for (const match of contentMatches ?? []) {
 		if (byId.has(match.photoId) && !content.has(match.photoId)) content.set(match.photoId, match);
 	}
-	const contentOrder = [...content.keys()];
-	const pick = (photo: Photo, tier: PhotoPick["tier"]): PhotoPick => {
+	const contentOrder = new Map([...content.keys()].map((id, index) => [id, index]));
+	const pick = (photo: Photo, tier: 1 | 2): PhotoPick => {
 		const match = content.get(photo.id);
 		return {
 			photoId: photo.id,
 			tier,
-			colorEvidence: tier === 3 ? null : colorMatch(photo, colors),
+			colorEvidence: colorMatch(photo, colors),
 			contentEvidence:
 				tier === 2 || !match
 					? null
 					: { questionIds: match.questionIds, matchedTags: match.matchedTags, reason: match.reason },
 		};
 	};
-	const tier1 = contentOrder
-		.map((id) => byId.get(id) as Photo)
+	const selected = photos
 		.filter((photo) => colorMatch(photo, colors) !== null)
-		.map((photo) => pick(photo, 1));
-	const tier2 = photos
-		.filter((photo) => !content.has(photo.id) && colorMatch(photo, colors) !== null)
 		.sort(
 			(a, b) =>
-				Number(colorMatch(a, colors)?.kind === "partial") - Number(colorMatch(b, colors)?.kind === "partial"),
+				Number(colorMatch(a, colors)?.kind === "partial") - Number(colorMatch(b, colors)?.kind === "partial") ||
+				(contentOrder.get(a.id) ?? content.size) - (contentOrder.get(b.id) ?? content.size),
 		)
-		.map((photo) => pick(photo, 2));
-	const tier3 = contentOrder
-		.map((id) => byId.get(id) as Photo)
-		.filter((photo) => colorMatch(photo, colors) === null)
-		.map((photo) => pick(photo, 3));
-	const selected = [...tier1, ...tier2, ...tier3].slice(0, Math.max(0, count));
+		.slice(0, Math.max(0, count))
+		.map((photo) => pick(photo, content.has(photo.id) ? 1 : 2));
 	return {
 		policyVersion: input.policyVersion,
 		requested: count,

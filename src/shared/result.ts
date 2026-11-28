@@ -18,7 +18,7 @@ export interface ColorOutput {
 	relationship: string;
 }
 
-/** 写真選定の段階（refs/handoff 実装仕様書7.2節）。1: 色と内容、2: 色だけ、3: 内容だけ。 */
+/** 写真選定の根拠。1: 色と内容、2: 色だけ。3（内容だけ）は過去の記録の読み込み用に残す。 */
 export type PhotoTier = 1 | 2 | 3;
 
 /** 選んだ写真一枚と、その根拠（refs/handoff examples/photo-selection.json）。 */

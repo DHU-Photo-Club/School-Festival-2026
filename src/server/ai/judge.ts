@@ -1,7 +1,7 @@
 import { AI_SETTINGS, PHOTO_POLICY } from "../../data/ai.ts";
 import { paletteColor } from "../../shared/palette.ts";
 import type { ContentMatch } from "../../shared/photo-selection.ts";
-import { selectPhotos } from "../../shared/photo-selection.ts";
+import { colorMatch, selectPhotos } from "../../shared/photo-selection.ts";
 import type { ColorOutput, ResultRecord } from "../../shared/result.ts";
 import type { Answer, Palette, PaletteId, Photo, Question, QuestionId } from "../../shared/types.ts";
 import type { PromptRequest } from "../mistral.ts";
@@ -99,20 +99,22 @@ export function createJudge(options: JudgeOptions): Judge {
 		if (!color) return null;
 
 		const resolved = color.colors.map((choice) => paletteColor(options.palette.colors, choice.id));
+		const colorIds = color.colors.map((choice) => choice.id);
+		const matchingPhotos = options.photos.filter((photo) => colorMatch(photo, colorIds) !== null);
 		const photoReply = await ask<{ matches: ContentMatch[]; dropped: number }>(
 			"写真の選定",
 			{
 				system: PHOTO_SELECTION_PROMPT,
-				prompt: `確定した二色:\n${json(resolved)}\n\n回答データ:\n${json(input)}\n\n写真カタログ:\n${json(photoCatalogInput(options.photos))}`,
+				prompt: `確定した二色:\n${json(resolved)}\n\n回答データ:\n${json(input)}\n\n写真カタログ:\n${json(photoCatalogInput(matchingPhotos))}`,
 				maxTokens: PHOTO_MAX_TOKENS,
 			},
-			(value) => checkPhotoOutput(value, options.photos, questionIds),
+			(value) => checkPhotoOutput(value, matchingPhotos, questionIds),
 			signal,
 		);
 		if (photoReply && photoReply.dropped > 0) log(`写真の選定で使えない項目を${photoReply.dropped}件除きました`);
 		const photos = selectPhotos({
 			photos: options.photos,
-			colors: color.colors.map((choice) => choice.id),
+			colors: colorIds,
 			contentMatches: photoReply?.matches ?? null,
 			count: PHOTO_POLICY.sessionPhotoCount,
 			policyVersion: PHOTO_POLICY.version,

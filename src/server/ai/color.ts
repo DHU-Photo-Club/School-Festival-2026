@@ -39,6 +39,7 @@ export function checkColorOutput(
 	const fail = (error: string): Checked<ColorOutput> => ({ ok: false, error });
 	const limits = COLOR_OUTPUT_LIMITS;
 	if (!isObject(value)) return fail("応答からJSONオブジェクトを読み取れません");
+	if (value.paletteVersion !== palette.version) return fail("パレットの版（paletteVersion）が一致しません");
 	const name = checkText(value.name, "色名（name）", limits.name);
 	if (!name.ok) return name;
 	if (ENUMERATION.test(name.value) || /\n/.test(String(value.name)))

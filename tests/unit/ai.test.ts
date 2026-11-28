@@ -180,7 +180,7 @@ describe("写真の選定", () => {
 		expect(colorMatch(catalog[4], ["jade", "amber"])).toBeNull();
 	});
 
-	it("段階1→2→3の順に選び、段階2は全体の色を先にし、足りない枚数を記録する", () => {
+	it("色が一致する写真だけを選び、内容だけ合う写真で不足を埋めない", () => {
 		const selection = selectPhotos({
 			photos: catalog,
 			colors: ["jade", "amber"],
@@ -192,11 +192,35 @@ describe("写真の選定", () => {
 			["both", 1],
 			["color-overall", 2],
 			["color-partial", 2],
-			["content-only", 3],
 		]);
-		expect(selection).toMatchObject({ requested: 10, shortage: 6, contentStatus: "ai" });
-		expect(selection.selected[3].colorEvidence).toBeNull();
+		expect(selection).toMatchObject({ requested: 10, shortage: 7, contentStatus: "ai" });
+		expect(selection.selected.every((pick) => pick.colorEvidence !== null)).toBe(true);
 		expect(selection.selected[1].contentEvidence).toBeNull();
+	});
+
+	it("内容が合う部分色の写真より、内容情報のない追加写真の全体色の一致を優先する", () => {
+		const selection = selectPhotos({
+			photos: [photo("old-partial", [], ["jade"]), { ...photo("new-overall", ["jade"]), contentTags: [], moodTags: [], description: "" }],
+			colors: ["jade", "amber"],
+			contentMatches: [match("old-partial")],
+			count: 1,
+			policyVersion: "photo-policy-v2-color",
+		});
+		expect(selection.selected).toMatchObject([
+			{ photoId: "new-overall", tier: 2, colorEvidence: { kind: "overall", matchedResultColorId: "jade" } },
+		]);
+	});
+
+	it("AIが内容の一致を返しても、二色が合わない写真や無色タグの写真は選ばない", () => {
+		const selection = selectPhotos({
+			photos: [photo("wrong-color", ["rose"]), photo("untagged", [])],
+			colors: ["jade", "amber"],
+			contentMatches: [match("wrong-color"), match("untagged")],
+			count: 10,
+			policyVersion: "photo-policy-v2-color",
+		});
+		expect(selection.selected).toEqual([]);
+		expect(selection.shortage).toBe(10);
 	});
 
 	it("内容の判定がなければ色だけで選び、枚数で打ち切る", () => {
@@ -292,6 +316,21 @@ describe("AIで結果を決める", () => {
 		expect(record?.color.colors.map((color) => color.id)).toEqual(["jade", "amber"]);
 		expect(record?.photos.contentStatus).toBe("unavailable");
 		expect(record?.photos.selected.every((pick) => pick.tier === 2)).toBe(true);
+	});
+
+	it("写真の候補を確定した二色で絞り、AIが色の合わない写真を返しても採用しない", async () => {
+		const { judge, requests } = setup([
+			JSON.stringify(colorOutput()),
+			JSON.stringify({ contentMatches: [{ photoId: "sdi0225", questionIds: ["Q2"], matchedTags: ["若葉"], reason: "穏やか" }] }),
+		]);
+		const record = await judge(ANSWERS, new AbortController().signal);
+		expect(record).not.toBeNull();
+		expect(requests[1].prompt).not.toContain('"id": "sdi0225"');
+		expect(record!.photos.selected.length).toBeGreaterThan(0);
+		for (const pick of record!.photos.selected) {
+			expect(pick.colorEvidence).not.toBeNull();
+			expect(["jade", "amber"]).toContain(pick.colorEvidence!.matchedResultColorId);
+		}
 	});
 
 	it("打ち切られたら送らずに null を返す", async () => {

@@ -2,6 +2,7 @@ import type { Page, WebSocketRoute } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { EXHIBIT } from "../../src/data/exhibit.ts";
 import { PHOTOS } from "../../src/data/photos.ts";
+import { resultPhotoOrder } from "../../src/shared/assignment.ts";
 import { initialState } from "../../src/shared/machine.ts";
 import { toDisplayState } from "../../src/shared/protocol.ts";
 import type { DisplayState } from "../../src/shared/types.ts";
@@ -27,20 +28,24 @@ test("写真用は待機中に展示タイトルを表示し、管理画面へ�
 	}
 });
 
-test("診断結果で画面番号順に選定写真を表示し、再読み込みで復元、リセットでタイトルへ戻る", async ({ browser }) => {
+test("診断結果の選定写真を重複なくランダム表示し、再読み込みで復元、リセットでタイトルへ戻る", async ({ browser }) => {
 	const harness = await ExhibitHarness.open(browser);
 	const controller = await harness.openDevice("controller");
 	const first = await harness.openDevice("photo");
 	const second = await harness.openDevice("photo");
 	try {
 		await answerAllQuestions(controller.page);
-		for (const [index, { page }] of [first, second].entries()) {
-			await expect(page.locator(".photo.visible img")).toHaveAttribute("data-photo-id", STUB_RESULT.photoIds[index]);
+		const shown: string[] = [];
+		for (const { page } of [first, second]) {
 			await expect(page.locator(".photo.visible img")).toBeVisible();
+			const id = await page.locator(".photo.visible img").getAttribute("data-photo-id");
+			expect(STUB_RESULT.photoIds).toContain(id);
+			shown.push(id!);
 			await expect(page.locator("main.photo-display > p")).toHaveCount(0);
 		}
+		expect(new Set(shown).size).toBe(2);
 		await first.page.reload();
-		await expect(first.page.locator(".photo.visible img")).toHaveAttribute("data-photo-id", STUB_RESULT.photoIds[0]);
+		await expect(first.page.locator(".photo.visible img")).toHaveAttribute("data-photo-id", shown[0]);
 		await harness.reset();
 		for (const { page } of [first, second]) {
 			await expect(page.locator("main.photo-display > p")).toHaveText(EXHIBIT.title);
@@ -52,6 +57,25 @@ test("診断結果で画面番号順に選定写真を表示し、再読み込�
 		await second.context.close();
 		await harness.close();
 	}
+});
+
+test("選定順位が後ろの追加写真も表示し、同じ診断の再読み込み・扉の操作では写真を変えない", async ({ page }) => {
+	const ids = [...PHOTOS.slice(0, 2), ...PHOTOS.slice(12, 20)].map((photo) => photo.id);
+	const state = selected("result", ids);
+	const expected = resultPhotoOrder(ids, state.sessionId!)[0];
+	// 従来の先頭2枚固定では表示できなかった、追加写真が選ばれるセッション。
+	expect(ids.slice(2)).toContain(expected);
+	const send = await mockPhoto(page, state);
+	await expect(page.locator(".photo.visible img")).toHaveAttribute("data-photo-id", expected);
+	await page.reload();
+	await expect(page.locator(".photo.visible img")).toHaveAttribute("data-photo-id", expected);
+	send({ ...state, doorOpenedAt: serverNow(), revision: state.revision + 1 });
+	await expect(page.locator(".photo.visible img")).toHaveAttribute("data-photo-id", expected);
+	const next = { ...state, sessionId: "next-photo-session" };
+	send(next);
+	await expect(page.locator(".photo.visible img")).toHaveAttribute(
+		"data-photo-id", resultPhotoOrder(ids, next.sessionId)[0],
+	);
 });
 
 // 端末とサーバーの時計を1分ずらし、補正された結果開始時刻と状態の更新を確認する。

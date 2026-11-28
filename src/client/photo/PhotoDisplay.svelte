@@ -15,10 +15,10 @@ let exhibit = $state<DisplayState | null>(null);
 let resultStarted = $state(false);
 let photoStatus = $state<{ key: string; status: "loaded" | "failed" } | null>(null);
 
-// 判定中に届く結果を先読みし、画面番号順に選定写真を一枚ずつ割り当てる。
+// 判定中に届く結果を先読みし、セッションごとにシャッフルした選定写真を画面番号順に割り当てる。
 const photo = $derived(
 	(exhibit?.phase === "judging" || exhibit?.phase === "result") && exhibit.result
-		? resultPhotoFor(PHOTOS, exhibit.result.photoIds, screen - 1)
+		? resultPhotoFor(PHOTOS, exhibit.result.photoIds, screen - 1, exhibit.sessionId)
 		: null,
 );
 const photoKey = $derived(photo ? `${exhibit?.sessionId}:${photo.id}` : null);
