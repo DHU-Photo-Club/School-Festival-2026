@@ -220,7 +220,7 @@ function next() {
  */
 let resultStarted = $state(false);
 /**
- * それまでの結果画面（混色の円、読み取り、QRコード、「最初に戻る」）を見せるか。「扉を開く」の後は扉への案内
+ * それまでの結果画面（混色の円、読み取り、QRコード）を見せるか。「扉を開く」の後は扉への案内
  * （`DoorGuide`）を見せ、それまでの結果画面を見せる時機は未定（docs/progress.md）なので常に `false`。
  * それまでの結果画面は、この先に見せる画面の候補として残してある。
  */
@@ -608,16 +608,6 @@ $effect(() => {
 							<p class="url">結果URL: {qr.url}</p>
 						</div>
 					{/if}
-					<button
-						type="button"
-						class="primary-button return"
-						style:background={foregroundColor(resultColors[0])}
-						style:color={backgroundColor(resultColors[0])}
-						disabled={!online || pending !== null}
-						onclick={() => send({ name: "returnToIdle" })}
-					>
-						最初に戻る
-					</button>
 				</div>
 			</section>
 		{/if}
@@ -1016,9 +1006,6 @@ p {
 .qr-fallback {
 	display: grid;
 	gap: 8px;
-}
-.return {
-	margin-top: 12px;
 }
 @media (orientation: landscape) and (min-width: 900px) {
 	.result {

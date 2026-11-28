@@ -299,7 +299,7 @@ for (const displayCount of [1, 3]) {
 		}
 
 		// 「扉を開く」を押すと、展示ディスプレイの中央に扉が左右へ開いて現れ、色名が消える。iPadは扉への案内に
-		// 切り替わる。QRコードと「最初に戻る」はまだ見せない。
+		// 切り替わる。QRコードは表示せず、待機へ戻す操作は管理画面で行う。
 		for (const display of displays) await expect(display.page.locator(".door")).toHaveCSS("opacity", "0");
 		await page.getByRole("button", { name: "扉を開く" }).click();
 		await expect(page.getByText("あなた色の写真展が完成しました")).toBeVisible();
@@ -327,7 +327,7 @@ for (const displayCount of [1, 3]) {
 		await expect(displays[0].page.locator(".door")).toHaveCSS("mask-image", "none");
 		await expect(displays[0].page.locator("main.display > .layer")).toHaveCSS("opacity", "0");
 
-		// iPadから待機へ戻る手段はまだないため、管理画面の強制リセットで戻る。
+		// 管理画面の強制リセットで待機へ戻る。
 		await harness.admin.page.getByRole("button", { name: "強制リセット" }).click();
 		await expect(page.getByRole("button", { name: "はじめる" })).toBeVisible();
 		for (const display of displays)

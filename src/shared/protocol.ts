@@ -61,7 +61,6 @@ function parseCommand(value: unknown): Command | null {
 	switch (value.name) {
 		case "start":
 		case "back":
-		case "returnToIdle":
 		case "openDoor":
 		case "forceReset":
 		case "clearPreview":

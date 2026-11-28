@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { QUESTIONS } from "../../src/data/questions.ts";
 import type { Judge } from "../../src/server/ai/judge.ts";
 import { STALE_AFTER_MS } from "../../src/server/core.ts";
-import { INACTIVITY_MS, JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
+import { JUDGING_MS } from "../../src/shared/machine.ts";
 import type { ResultRecord } from "../../src/shared/result.ts";
 import type { DisplayState, ExhibitState, Sequence } from "../../src/shared/types.ts";
 import type { FakeConnection } from "./helpers.ts";
@@ -377,51 +377,60 @@ describe("強制リセット", () => {
 	});
 });
 
-describe("期限", () => {
-	it("result 開始から60秒後に操作がなくても idle へ戻して全端末へ配信する", async () => {
-		const harness = new Harness();
-		const ipad = harness.connect("controller");
-		const display = harness.connect("display", 1);
-		await answerAll(harness, ipad);
-		harness.advance(JUDGING_MS);
-		harness.alarm();
-		expect(display.lastState()).toMatchObject({ phase: "result" });
-		harness.advance(RESULT_MS);
-		harness.alarm();
-		expect(display.lastState()).toMatchObject({ phase: "idle", sessionId: null });
-		expect(ipad.lastState()).toMatchObject({ phase: "idle" });
-	});
-
-	it("「最初に戻る」で全端末が同じ状態更新で idle へ戻る", async () => {
+describe("管理画面から待機へ戻す", () => {
+	it("60秒経過やiPadの旧コマンドでは結果を維持し、管理画面の強制リセットを全端末に配信する", async () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
 		const displays = [1, 2, 3].map((screen) => harness.connect("display", screen));
+		const admin = harness.connect("admin");
 		await answerAll(harness, ipad);
 		harness.advance(JUDGING_MS);
-		harness.command(ipad, { name: "returnToIdle" });
+		harness.alarm();
+		const result = harness.core.current();
+		expect(result.phase).toBe("result");
+		expect(harness.core.nextWakeAt()).toBeNull();
+		harness.advance(60_001);
+		harness.alarm();
+		harness.send(ipad, { type: "command", command: { name: "returnToIdle" } });
+		harness.command(ipad, { name: "forceReset" });
+		expect(harness.core.current()).toEqual(result);
+		for (const display of displays) expect(display.lastState()).toMatchObject({ phase: "result" });
+
+		harness.command(admin, { name: "forceReset" });
 		const revision = harness.core.current().revision;
-		for (const display of displays) expect(display.lastState()).toMatchObject({ phase: "idle", revision });
+		for (const connection of [ipad, ...displays, admin]) {
+			expect(connection.lastState()).toMatchObject({ phase: "idle", sessionId: null, result: null, revision });
+		}
 	});
 
-	it("question で5分操作がなければ idle へ戻して回答を消去する", () => {
+	it("導入と回答中は5分を過ぎてもセッションと回答を保持する", () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
 		harness.command(ipad, { name: "start" });
+		const intro = harness.core.current();
+		expect(intro.phase).toBe("intro");
+		expect(harness.core.nextWakeAt()).toBeNull();
+		harness.advance(300_001);
+		harness.alarm();
+		expect(harness.core.current()).toEqual(intro);
+
 		harness.command(ipad, { name: "continue", nickname: "テスト" });
 		harness.command(ipad, { name: "answer", questionId: QUESTIONS[0].id, answer: sampleAnswer(QUESTIONS[0]) });
-		expect(harness.core.nextWakeAt()).toBe(harness.time + INACTIVITY_MS);
-		harness.advance(INACTIVITY_MS);
+		const question = harness.core.current();
+		expect(question).toMatchObject({ phase: "question", questionIndex: 1, sessionId: intro.sessionId });
+		expect(harness.core.nextWakeAt()).toBeNull();
+		harness.advance(300_001);
 		harness.alarm();
-		expect(harness.store.get<ExhibitState>("state")).toMatchObject({ phase: "idle", answers: {} });
+		expect(harness.store.get<ExhibitState>("state")).toEqual(question);
 	});
 
-	it("期限切れの状態を送らず、接続時にも期限を確認する", async () => {
+	it("接続時に判定の期限を確認し、結果を配信する", async () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
 		await answerAll(harness, ipad);
-		harness.advance(JUDGING_MS + RESULT_MS + 5);
+		harness.advance(JUDGING_MS + 60_001);
 		const display = harness.connect("display", 1);
-		expect(display.lastState()).toMatchObject({ phase: "idle" });
+		expect(display.lastState()).toMatchObject({ phase: "result", phaseEndsAt: null });
 	});
 });
 

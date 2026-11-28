@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LAB_LOOPS, LabPlayer, labCycle, parseLab } from "../../src/shared/lab.ts";
-import { JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
+import { JUDGING_MS } from "../../src/shared/machine.ts";
 import { FINALE_SETTLE_MS } from "../../src/shared/finale.ts";
 import type { ExhibitState } from "../../src/shared/types.ts";
 import { PALETTE_IDS } from "../../src/shared/types.ts";
@@ -55,7 +55,7 @@ describe("演出の調整用ループ", () => {
 		expect(cycle.steps.map((step) => step.state.phase)).toEqual(["result", "result", "idle"]);
 		const [first] = cycle.steps;
 		expect(first.state.phaseStartedAt).toBe(10_000 - FINALE_SETTLE_MS);
-		expect(first.state.phaseEndsAt).toBe(first.state.phaseStartedAt + RESULT_MS);
+		expect(first.state.phaseEndsAt).toBeNull();
 	});
 
 	it("周ごとにセッションと、`all` では結果の色が変わる。色を指定すると同じ色を繰り返す", () => {

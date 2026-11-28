@@ -61,6 +61,7 @@ describe("parseClientMessage", () => {
 		expect(command({ name: "previewColor", colorId: "black" })).toBeNull();
 		expect(command({ name: "previewColor", colorId: "red" })).toBeNull();
 		expect(command({ name: "releaseController" })).toBeNull();
+		expect(command({ name: "returnToIdle" })).toBeNull();
 		expect(command("start")).toBeNull();
 	});
 

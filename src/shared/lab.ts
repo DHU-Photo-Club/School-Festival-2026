@@ -5,7 +5,7 @@
 
 import { INTRO_NICKNAME_AT_MS } from "../data/sound.ts";
 import { FINALE_SETTLE_MS } from "./finale.ts";
-import { JUDGING_MS, RESULT_MS } from "./machine.ts";
+import { JUDGING_MS } from "./machine.ts";
 import { ANSWER_PULSE_IN_MS } from "./motion.ts";
 import { RIPPLE_MS } from "./ripple.ts";
 import type { ExhibitState, PaletteId, SessionResult } from "./types.ts";
@@ -186,7 +186,7 @@ export function labCycle(options: LabOptions, context: LabContext): LabCycle {
 					state(judgingAt, judging),
 					// 結果は判定の途中で届く。届く前の塵と、届いたあとの色づきを見分けられるよう、半ばにする。
 					state(judgingAt + 5_000, { ...judging, result }),
-					state(resultAt, { phase: "result", phaseEndsAt: at(resultAt + RESULT_MS), result }),
+					state(resultAt, { phase: "result", result }),
 				],
 			};
 		}
@@ -206,7 +206,7 @@ export function labCycle(options: LabOptions, context: LabContext): LabCycle {
 						phaseEndsAt: at(resultAt),
 						result,
 					}),
-					state(resultAt, { phase: "result", phaseEndsAt: at(resultAt + RESULT_MS), result }),
+					state(resultAt, { phase: "result", result }),
 					state(idleAt, { phase: "idle" }),
 				],
 			};
@@ -220,7 +220,6 @@ export function labCycle(options: LabOptions, context: LabContext): LabCycle {
 			const shown = {
 				phase: "result",
 				phaseStartedAt: resultStartedAt,
-				phaseEndsAt: resultStartedAt + RESULT_MS,
 				result,
 			} as const;
 			return {

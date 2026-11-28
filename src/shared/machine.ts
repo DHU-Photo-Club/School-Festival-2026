@@ -23,17 +23,12 @@ export const DEFAULT_JUDGING_MAX_MS = 30_000;
  * （`src/shared/motion.ts` の `SHARD_TINT_MS`）もこの値に合わせる。
  */
 export const SETTLE_MARGIN_MS = 800;
-/** `result` の長さ（仕様書5章）。 */
-export const RESULT_MS = 60_000;
-/** `intro` と `question` で操作がないまま `idle` へ戻すまでの時間（仕様書8.2節）。 */
-export const INACTIVITY_MS = 5 * 60_000;
 
 export type Command =
 	| { name: "start" }
 	| { name: "continue"; nickname: string }
 	| { name: "answer"; questionId: string; answer: Answer }
 	| { name: "back" }
-	| { name: "returnToIdle" }
 	| { name: "openDoor" }
 	| { name: "setAccepting"; accepting: boolean }
 	| { name: "forceReset" }
@@ -44,7 +39,7 @@ export type CommandName = Command["name"];
 
 /** 役割ごとに許可するコマンド（仕様書8.3節）。 */
 export const ROLE_COMMANDS: Readonly<Record<Role, readonly CommandName[]>> = {
-	controller: ["start", "continue", "answer", "back", "returnToIdle", "openDoor"],
+	controller: ["start", "continue", "answer", "back", "openDoor"],
 	admin: ["setAccepting", "forceReset", "previewColor", "clearPreview"],
 	display: [],
 	photo: [],
@@ -146,7 +141,7 @@ function toFailedQuestion(state: ExhibitState, at: number): ExhibitState {
 		result: null,
 		judgeFailed: true,
 		phaseStartedAt: at,
-		phaseEndsAt: at + INACTIVITY_MS,
+		phaseEndsAt: null,
 		revision: state.revision + 1,
 	};
 }
@@ -158,7 +153,7 @@ function enterTarget(target: SequenceTarget, at: number): Partial<ExhibitState> 
 		sequenceId: null,
 		questionIndex: target === "question" ? 0 : null,
 		phaseStartedAt: at,
-		phaseEndsAt: at + INACTIVITY_MS,
+		phaseEndsAt: null,
 	};
 }
 
@@ -215,7 +210,6 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 					answeredAt: now,
 					judgeFailed: false,
 					questionIndex: state.questionIndex + 1,
-					phaseEndsAt: now + INACTIVITY_MS,
 				});
 			}
 			// 最終問でも未回答の質問が残っていれば（質問定義の変更で回答を除いた場合）、その質問へ戻す。
@@ -228,7 +222,6 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 					answeredAt: now,
 					judgeFailed: false,
 					questionIndex: missing,
-					phaseEndsAt: now + INACTIVITY_MS,
 				});
 			}
 			// 回答はAIの選定が終わるまで保持する。失敗したら最終問へ戻すため、`questionIndex` も残す。
@@ -250,11 +243,7 @@ export function applyCommand(state: ExhibitState, command: Command, context: Mac
 			return accept({
 				questionIndex: state.questionIndex - 1,
 				judgeFailed: false,
-				phaseEndsAt: now + INACTIVITY_MS,
 			});
-		case "returnToIdle":
-			if (state.phase !== "result") return reject("INVALID_PHASE");
-			return { ok: true, state: toIdle(state, now) };
 		case "openDoor":
 			// 扉は一回の結果で一度だけ開く。
 			if (state.phase !== "result" || (state.doorOpenedAt ?? null) !== null) return reject("INVALID_PHASE");
@@ -291,35 +280,31 @@ export function settleJudging(
 }
 
 /**
- * 期限を過ぎた状態を順に進める（仕様書8.2節）。遷移先の開始時刻は実行時刻ではなく期限の時刻とする。
- * `sequence` は再生を終えたら `before` の段階へ進む。シーケンスの定義が見つからなければ `idle` へ戻す。
+ * 期限を過ぎた `sequence` と `judging` を進める（仕様書8.2節）。遷移先の開始時刻は期限の時刻とする。
+ * `sequence` の定義が削除されていた場合は、ニックネームの入力状況から遷移先を決める。
  * `judging` は結果があれば `result` へ進み、なければ（AIの選定が時間切れ）最終問へ戻す。
- * 期限内なら同じ状態オブジェクトを返す。
  */
 export function advanceDeadlines(state: ExhibitState, now: number, sequences: readonly Sequence[]): ExhibitState {
-	let current = state;
-	while (current.phaseEndsAt !== null && now >= current.phaseEndsAt) {
-		const deadline = current.phaseEndsAt;
-		if (current.phase === "judging") {
-			current = current.result
-				? {
-						...current,
-						phase: "result",
-						questionIndex: null,
-						answers: {},
-						phaseStartedAt: deadline,
-						phaseEndsAt: deadline + RESULT_MS,
-						revision: current.revision + 1,
-					}
-				: toFailedQuestion(current, deadline);
-		} else if (current.phase === "sequence") {
-			const sequence = findSequence(sequences, current.sequenceId);
-			current = sequence
-				? { ...current, ...enterTarget(sequence.before, deadline), revision: current.revision + 1 }
-				: toIdle(current, deadline);
-		} else {
-			current = toIdle(current, deadline);
-		}
+	const deadline = state.phaseEndsAt;
+	if (deadline === null) return state;
+	if (state.phase !== "sequence" && state.phase !== "judging") {
+		// 保存済みのセッションに残っている旧版の自動リセット期限を解除する。
+		return { ...state, phaseEndsAt: null, revision: state.revision + 1 };
 	}
-	return current;
+	if (now < deadline) return state;
+	if (state.phase === "sequence") {
+		const sequence = findSequence(sequences, state.sequenceId);
+		const target = sequence?.before ?? (state.nickname === null ? "intro" : "question");
+		return { ...state, ...enterTarget(target, deadline), revision: state.revision + 1 };
+	}
+	if (!state.result) return toFailedQuestion(state, deadline);
+	return {
+		...state,
+		phase: "result",
+		questionIndex: null,
+		answers: {},
+		phaseStartedAt: deadline,
+		phaseEndsAt: null,
+		revision: state.revision + 1,
+	};
 }

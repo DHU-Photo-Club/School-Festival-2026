@@ -4,7 +4,7 @@ import { QUESTIONS } from "../../src/data/questions.ts";
 import { SEQUENCES } from "../../src/data/sequences.ts";
 import { SOUND_CUES, SOUND_FILES, SOUND_MIX } from "../../src/data/sound.ts";
 import { parseRange } from "../../src/server/http.ts";
-import { JUDGING_MS, RESULT_MS } from "../../src/shared/machine.ts";
+import { JUDGING_MS } from "../../src/shared/machine.ts";
 import { parseClientMessage, type ServerMessage } from "../../src/shared/protocol.ts";
 import type { SoundCue } from "../../src/shared/sound.ts";
 import { glassCycle, soundCues } from "../../src/shared/sound.ts";
@@ -58,6 +58,7 @@ describe("soundCues", () => {
 		const harness = new Harness({ sequences: SEQUENCES });
 		const sound = harness.connect("sound");
 		const ipad = harness.connect("controller");
+		const admin = harness.connect("admin");
 		harness.command(ipad, { name: "start" });
 		harness.advance(SEQUENCES[0].durationMs);
 		harness.alarm();
@@ -66,7 +67,7 @@ describe("soundCues", () => {
 		await answerAt(harness, ipad, QUESTIONS.length - 1);
 		harness.advance(JUDGING_MS);
 		harness.alarm();
-		harness.command(ipad, { name: "returnToIdle" });
+		harness.command(admin, { name: "forceReset" });
 
 		expect(cuesOf(sound)).toEqual([
 			{ kind: "narration", numbers: [1, 2, 3, 4], scene: "welcome" },
@@ -139,9 +140,10 @@ describe("soundCues", () => {
 		expect(soundCues(during, sound.lastState<SoundState>(), IDS, SOUND_CUES)).toEqual([{ kind: "stopNarration" }]);
 	});
 
-	it("結果の表示中に時間切れで待機へ戻ったときもナレーションを止める", async () => {
+	it("結果の表示中は60秒を過ぎても再生状態を保ち、管理画面でリセットするとナレーションを止める", async () => {
 		const harness = new Harness();
 		const ipad = harness.connect("controller");
+		const admin = harness.connect("admin");
 		harness.command(ipad, { name: "start" });
 		harness.command(ipad, { name: "continue", nickname: "テスト" });
 		for (let index = 0; index < QUESTIONS.length - 1; index += 1) answerAt(harness, ipad, index);
@@ -149,8 +151,10 @@ describe("soundCues", () => {
 		harness.advance(JUDGING_MS);
 		harness.alarm();
 		const sound = harness.connect("sound");
-		harness.advance(RESULT_MS);
+		harness.advance(60_001);
 		harness.alarm();
+		expect(cuesOf(sound)).toEqual([]);
+		harness.command(admin, { name: "forceReset" });
 		expect(cuesOf(sound)).toEqual([{ kind: "stopNarration" }]);
 	});
 });

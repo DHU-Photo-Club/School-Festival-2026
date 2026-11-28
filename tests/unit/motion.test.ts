@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INTRO_INVITATION_AT_MS, INTRO_NICKNAME_AT_MS } from "../../src/data/sound.ts";
 import { PALETTE } from "../../src/data/palette.ts";
-import { INACTIVITY_MS, JUDGING_MS } from "../../src/shared/machine.ts";
+import { JUDGING_MS } from "../../src/shared/machine.ts";
 import type { Primitive, Scene, SceneInput } from "../../src/shared/motion.ts";
 import {
 	ANSWER_PULSE_DEPTH,
@@ -74,10 +74,9 @@ const base = (state: Partial<DisplayState>, patch: Partial<SceneInput> = {}): Sc
 	...patch,
 });
 
-const questionState = (lastAcceptedAt: number, revision = 12): Partial<DisplayState> => ({
+const questionState = (revision = 12): Partial<DisplayState> => ({
 	phase: "question",
 	phaseStartedAt: T0,
-	phaseEndsAt: lastAcceptedAt + INACTIVITY_MS,
 	revision,
 });
 
@@ -86,7 +85,7 @@ const shardsOf = (scene: Scene) => scene.shards;
 describe("回答の瞬間の輪の収縮", () => {
 	const at = (elapsed: number, patch: Partial<DisplayState> = {}, input: Partial<SceneInput> = {}) =>
 		computeScene(
-			base({ ...questionState(T0), answeredAt: T0 + 1_000, ...patch }, { now: T0 + 1_000 + elapsed, ...input }),
+			base({ ...questionState(), answeredAt: T0 + 1_000, ...patch }, { now: T0 + 1_000 + elapsed, ...input }),
 		).shards.scale;
 
 	it("回答の瞬間から一瞬で縮み、勢いよく戻って、減速しながら元の大きさへ着く", () => {
@@ -145,7 +144,7 @@ describe("回答の瞬間の輪の収縮", () => {
 
 	it("縮むのは輪の半径だけで、破片の大きさや枚数は変えない", () => {
 		const shards = computeScene(
-			base({ ...questionState(T0), answeredAt: T0 + 1_000 }, { now: T0 + 1_000 + ANSWER_PULSE_IN_MS }),
+			base({ ...questionState(), answeredAt: T0 + 1_000 }, { now: T0 + 1_000 + ANSWER_PULSE_IN_MS }),
 		).shards;
 		expect(shards).toMatchObject({ size: 1, density: 1, spread: 0, intensity: 1 });
 	});
@@ -166,7 +165,7 @@ describe("回答の瞬間の輪の収縮", () => {
 
 describe("回答の波紋", () => {
 	const answered = (answeredAt: number | null, patch: Partial<DisplayState> = {}) => ({
-		...questionState(T0),
+		...questionState(),
 		answeredAt,
 		...patch,
 	});
@@ -225,7 +224,7 @@ describe("回答の波紋", () => {
 
 describe("決定性", () => {
 	it("同じ入力からは同じ描画内容を返す", () => {
-		const input = base(questionState(T0 + 10_000), { now: T0 + 12_345 });
+		const input = base(questionState(), { now: T0 + 12_345 });
 		expect(computeScene(input)).toEqual(computeScene(structuredClone(input)));
 	});
 });
@@ -233,38 +232,38 @@ describe("決定性", () => {
 describe("質問中の破片", () => {
 	it("再接続した画面もほかの画面と同じ角度から再開する（描画は時刻と状態だけで決まる）", () => {
 		const at = T0 + 23_456;
-		const first = computeScene(base(questionState(T0 + 20_000), { now: at }));
-		const reconnected = computeScene(base(questionState(T0 + 20_000), { now: at }));
+		const first = computeScene(base(questionState(), { now: at }));
+		const reconnected = computeScene(base(questionState(), { now: at }));
 		expect(shardsOf(reconnected)).toEqual(shardsOf(first));
 	});
 
 	it("破片は灰色で描き、色を付けない", () => {
-		const shards = shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000 })));
+		const shards = shardsOf(computeScene(base(questionState(), { now: T0 + 30_000 })));
 		expect(shards).toMatchObject({ colors: null, tint: 0, intensity: 1 });
 	});
 
 	it("全画面が同じ破片を描く", () => {
 		const at = (displayOrder: number) =>
-			shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 30_000, displayOrder })));
+			shardsOf(computeScene(base(questionState(), { now: T0 + 30_000, displayOrder })));
 		expect(at(1)).toEqual(at(0));
 	});
 
 	it("破片は補正済みサーバー時刻で動き、reduced-motion では止まる", () => {
 		const at = (reducedMotion: boolean) =>
-			shardsOf(computeScene(base(questionState(T0 + 1_000), { now: T0 + 12_500, reducedMotion })));
+			shardsOf(computeScene(base(questionState(), { now: T0 + 12_500, reducedMotion })));
 		expect(at(false)).toMatchObject({ time: T0 + 12_500 });
 		expect(at(true)).toMatchObject({ time: 0 });
 	});
 
 	it("回答を確定しても描画内容は変わらない（時刻だけで動く）", () => {
 		const now = T0 + 23_000;
-		const before = computeScene(base(questionState(T0 + 1_000, 12), { now }));
-		const after = computeScene(base(questionState(T0 + 20_000, 13), { now }));
+		const before = computeScene(base(questionState(12), { now }));
+		const after = computeScene(base(questionState(13), { now }));
 		expect(after).toEqual(before);
 	});
 
 	it("reduced-motion では時刻が進んでも同じ構図のまま", () => {
-		const at = (now: number) => computeScene(base(questionState(T0 + 1_000), { now, reducedMotion: true }));
+		const at = (now: number) => computeScene(base(questionState(), { now, reducedMotion: true }));
 		expect(at(T0 + 2_000).primitives).toEqual(at(T0 + 9_000).primitives);
 		expect(at(T0 + 2_000).shards).toEqual(at(T0 + 9_000).shards);
 		expect(at(T0 + 2_000).animating).toBe(false);
@@ -322,7 +321,7 @@ describe("判定と結果", () => {
 		expect(computeScene(base(state, { now: T0 + JUDGING_MS })).dust).toMatchObject({ elapsed: JUDGING_MS, burstElapsed: 0 });
 		expect(computeScene(base(state, { now: T0 + JUDGING_MS + 1800 })).dust).toBeNull();
 		expect(computeScene(base(state, { now: T0 + 3000, reducedMotion: true })).dust).toBeNull();
-		expect(computeScene(base(questionState(T0), { now: T0 + 3000 })).dust).toBeNull();
+		expect(computeScene(base(questionState(), { now: T0 + 3000 })).dust).toBeNull();
 	});
 
 	it("爆発開始で決定した二色だけを破片に割り当てる", () => {
@@ -667,7 +666,7 @@ describe("opening と intro の破片", () => {
 		const ring = { tint: 0, spread: 0, size: 1, scale: 1, density: 1 };
 		expect(at(intro, T0 + INTRO_INVITATION_AT_MS + SHARD_SCALE_MS + 1)).toMatchObject(ring);
 		expect(at(intro, T0 + INTRO_INVITATION_AT_MS + 1, { reducedMotion: true })).toMatchObject(ring);
-		expect(computeScene(base(questionState(T0), { now: T0, questionFromIntro: true })).shards).toMatchObject(ring);
+		expect(computeScene(base(questionState(), { now: T0, questionFromIntro: true })).shards).toMatchObject(ring);
 	});
 
 	it("02の間は案内文を出さず、終了後に2行の案内を現す", () => {
@@ -699,7 +698,7 @@ describe("待機", () => {
 	});
 
 	it("質問へ intro 以外から入ったときは、輪は最初から質問中の大きさ", () => {
-		const shards = computeScene(base(questionState(T0), { now: T0 })).shards;
+		const shards = computeScene(base(questionState(), { now: T0 })).shards;
 		expect(shards).toMatchObject({ colors: null, scale: 1, density: 1, size: 1, tint: 0 });
 	});
 

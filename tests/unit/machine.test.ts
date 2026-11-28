@@ -5,10 +5,8 @@ import {
 	advanceDeadlines,
 	applyCommand,
 	DEFAULT_JUDGING_MAX_MS,
-	INACTIVITY_MS,
 	initialState,
 	JUDGING_MS,
-	RESULT_MS,
 	reconcileState,
 	SETTLE_MARGIN_MS,
 	settleJudging,
@@ -94,7 +92,7 @@ describe("状態遷移", () => {
 
 	it("受理した更新ごとに revision を1ずつ増やす", () => {
 		const intro = apply(initialState(0), { name: "start" }, 5);
-		expect(intro).toMatchObject({ phase: "intro", revision: 1, phaseEndsAt: 5 + INACTIVITY_MS });
+		expect(intro).toMatchObject({ phase: "intro", revision: 1, phaseEndsAt: null });
 		expect(intro.sessionId).not.toBeNull();
 		const question = apply(intro, { name: "continue", nickname: "テスト" }, 6);
 		expect(question).toMatchObject({
@@ -112,9 +110,8 @@ describe("状態遷移", () => {
 		expect(question.nickname).toBe("ゆき ちゃん");
 		const result = advance(judged(0), JUDGING_MS);
 		expect(result).toMatchObject({ phase: "result", nickname: "テスト" });
-		expect(apply(result, { name: "returnToIdle" }).nickname).toBeNull();
+		expect(apply(result, { name: "forceReset" }).nickname).toBeNull();
 		expect(apply(question, { name: "forceReset" }).nickname).toBeNull();
-		expect(advance(question, INACTIVITY_MS).nickname).toBeNull();
 	});
 
 	it("空や長すぎるニックネームの continue を拒否する", () => {
@@ -140,7 +137,7 @@ describe("状態遷移", () => {
 		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" });
 		state = apply(state, { name: "answer", questionId: "Q1", answer: ["q1_1"] }, 100);
 		expect(state.questionIndex).toBe(1);
-		expect(state.phaseEndsAt).toBe(100 + INACTIVITY_MS);
+		expect(state.phaseEndsAt).toBeNull();
 		state = apply(state, { name: "back" }, 200);
 		expect(state.questionIndex).toBe(0);
 		expect(state.answers.Q1).toEqual(["q1_1"]);
@@ -295,7 +292,7 @@ describe("状態遷移", () => {
 			judgeFailed: true,
 			result: null,
 			phaseStartedAt: 5_000,
-			phaseEndsAt: 5_000 + INACTIVITY_MS,
+			phaseEndsAt: null,
 			answers: judging.answers,
 		});
 		if (!failed) throw new Error("失敗の状態がない");
@@ -314,7 +311,7 @@ describe("状態遷移", () => {
 		).toBeNull();
 	});
 
-	it("judging は期限に結果があれば result へ、なければ最終問へ進み、result は60秒後に idle へ進む", () => {
+	it("judging は期限に結果があれば result へ、なければ最終問へ進む", () => {
 		const settled = judged(1_000, 1_100);
 		const endsAt = 1_000 + JUDGING_MS;
 		expect(advance(settled, endsAt - 1)).toBe(settled);
@@ -323,17 +320,9 @@ describe("状態遷移", () => {
 			phase: "result",
 			questionIndex: null,
 			phaseStartedAt: endsAt,
-			phaseEndsAt: endsAt + RESULT_MS,
+			phaseEndsAt: null,
 			revision: settled.revision + 1,
 			result: RESULT,
-		});
-		const idle = advance(result, endsAt + RESULT_MS);
-		expect(idle).toMatchObject({
-			phase: "idle",
-			sessionId: null,
-			result: null,
-			phaseEndsAt: null,
-			revision: result.revision + 1,
 		});
 		const timedOut = advance(finalAnswer(toLastQuestion(0), 1_000), 1_000 + DEFAULT_JUDGING_MAX_MS);
 		expect(timedOut).toMatchObject({
@@ -343,28 +332,26 @@ describe("状態遷移", () => {
 		});
 	});
 
-	it("alarm が遅れても期限の時刻を開始時刻にして順に進める", () => {
+	it("alarm が遅れても判定の期限を結果の開始時刻にする", () => {
 		const settled = judged(1_000, 1_100);
 		const endsAt = 1_000 + JUDGING_MS;
-		expect(advance(settled, endsAt + 500).phaseStartedAt).toBe(endsAt);
-		expect(advance(settled, endsAt + RESULT_MS + 10)).toMatchObject({
-			phase: "idle",
-			phaseStartedAt: endsAt + RESULT_MS,
-			revision: settled.revision + 2,
+		expect(advance(settled, endsAt + 60_000 + 10)).toMatchObject({
+			phase: "result",
+			phaseStartedAt: endsAt,
+			revision: settled.revision + 1,
 		});
 	});
 
-	it("intro と question は最終操作から5分で idle へ戻り、回答を消去する", () => {
-		let state = apply(apply(initialState(0), { name: "start" }), { name: "continue", nickname: "テスト" }, 10);
-		state = apply(state, { name: "answer", questionId: "Q1", answer: ["q1_1"] }, 1_000);
-		expect(advance(state, 1_000 + INACTIVITY_MS - 1).phase).toBe("question");
-		expect(advance(state, 1_000 + INACTIVITY_MS)).toMatchObject({
-			phase: "idle",
-			answers: {},
-			questionIndex: null,
-			sessionId: null,
-		});
-		expect(advance(apply(initialState(0), { name: "start" }, 0), INACTIVITY_MS).phase).toBe("idle");
+	it("保存済みの intro、question、result に残る旧版の期限を解除してセッションを保持する", () => {
+		const intro = apply(initialState(0), { name: "start" });
+		const question = toLastQuestion(0);
+		const result = advance(judged(0), JUDGING_MS);
+		for (const state of [intro, question, result]) {
+			const stored = { ...state, phaseEndsAt: 300_000 };
+			for (const now of [299_999, 300_001]) {
+				expect(advance(stored, now)).toEqual({ ...state, revision: state.revision + 1 });
+			}
+		}
 	});
 
 	it("受付停止中は start を拒否し、リセットでは accepting を変えない", () => {
@@ -389,10 +376,6 @@ describe("状態遷移", () => {
 		expect(applyCommand(intro, { name: "previewColor", colorId: "rose" }, context(0)).ok).toBe(false);
 	});
 
-	it("result 以外では returnToIdle を拒否する", () => {
-		expect(applyCommand(initialState(0), { name: "returnToIdle" }, context(0)).ok).toBe(false);
-	});
-
 	it("openDoor は result で一度だけ受理して時刻を記録し、idle へ戻ると消す", () => {
 		const result = advance(judged(0), JUDGING_MS);
 		expect(result.doorOpenedAt).toBeNull();
@@ -408,9 +391,8 @@ describe("状態遷移", () => {
 			ok: false,
 			code: "INVALID_PHASE",
 		});
-		expect(apply(opened, { name: "returnToIdle" }).doorOpenedAt).toBeNull();
 		expect(apply(opened, { name: "forceReset" }).doorOpenedAt).toBeNull();
-		expect(advance(opened, JUDGING_MS + RESULT_MS).doorOpenedAt).toBeNull();
+		expect(advance(opened, JUDGING_MS + 60_000)).toBe(opened);
 	});
 
 	it("result 以外では openDoor を拒否する", () => {
@@ -444,7 +426,7 @@ describe("シーケンス", () => {
 			sequenceId: null,
 			sessionId: state.sessionId,
 			phaseStartedAt: 1_600,
-			phaseEndsAt: 1_600 + INACTIVITY_MS,
+			phaseEndsAt: null,
 			revision: state.revision + 1,
 		});
 	});
@@ -457,7 +439,7 @@ describe("シーケンス", () => {
 			phase: "question",
 			questionIndex: 0,
 			phaseStartedAt: 4_000,
-			phaseEndsAt: 4_000 + INACTIVITY_MS,
+			phaseEndsAt: null,
 		});
 	});
 
@@ -477,12 +459,12 @@ describe("シーケンス", () => {
 		});
 	});
 
-	it("alarm が大きく遅れても、期限の時刻を開始時刻にして sequence から intro、idle へ順に進める", () => {
+	it("alarm が大きく遅れても、再生期限を導入の開始時刻にする", () => {
 		const state = apply(initialState(0), { name: "start" }, 0, sequences);
-		expect(advanceDeadlines(state, 1_500 + INACTIVITY_MS + 10, sequences)).toMatchObject({
-			phase: "idle",
-			phaseStartedAt: 1_500 + INACTIVITY_MS,
-			revision: state.revision + 2,
+		expect(advanceDeadlines(state, 1_500 + 300_000 + 10, sequences)).toMatchObject({
+			phase: "intro",
+			phaseStartedAt: 1_500,
+			revision: state.revision + 1,
 		});
 	});
 
@@ -494,9 +476,18 @@ describe("シーケンス", () => {
 		expect(sequenceTime(1_500, 100, 9_000)).toBe(1_500);
 	});
 
-	it("定義が見つからないシーケンスは期限で idle へ戻す", () => {
+	it("定義が見つからないシーケンスはニックネームの入力状況に応じて導入または質問へ進む", () => {
 		const state = apply(initialState(0), { name: "start" }, 0, sequences);
-		expect(advanceDeadlines(state, 1_500, [])).toMatchObject({ phase: "idle", sequenceId: null });
+		const intro = advanceDeadlines(state, 1_500, []);
+		expect(intro).toMatchObject({ phase: "intro", sequenceId: null, sessionId: state.sessionId });
+		const afterNickname = apply(intro, { name: "continue", nickname: "テスト" }, 2_000, sequences);
+		expect(advanceDeadlines(afterNickname, 4_000, [])).toMatchObject({
+			phase: "question",
+			sequenceId: null,
+			sessionId: state.sessionId,
+			nickname: "テスト",
+			questionIndex: 0,
+		});
 	});
 
 	it("再生時間が0のシーケンスは再生しない", () => {
